@@ -5,6 +5,9 @@ import time
 import random
 import ctypes
 from ctypes import wintypes
+import threading
+import queue
+import tkinter as tk
 
 # --- CTypes Structures for SendInput ---
 if ctypes.sizeof(ctypes.c_void_p) == 8: # 64-bit
@@ -20,12 +23,64 @@ class MOUSEINPUT(ctypes.Structure):
                 ("time",        wintypes.DWORD),
                 ("dwExtraInfo", ctypes.POINTER(ULONG_PTR)))
 
+class KEYBDINPUT(ctypes.Structure):
+    _fields_ = (("wVk",         wintypes.WORD),
+                ("wScan",       wintypes.WORD),
+                ("dwFlags",     wintypes.DWORD),
+                ("time",        wintypes.DWORD),
+                ("dwExtraInfo", ctypes.POINTER(ULONG_PTR)))
+
 class INPUT_I(ctypes.Union):
-    _fields_ = (("mi", MOUSEINPUT),)
+    _fields_ = (("mi", MOUSEINPUT),
+                ("ki", KEYBDINPUT))
 
 class INPUT(ctypes.Structure):
     _fields_ = (("type", wintypes.DWORD),
                 ("ii",   INPUT_I))
+
+# --- Persistent Visual Indicator ---
+class IndicatorWindow:
+    def __init__(self):
+        self.root = None
+        self.pos_queue = queue.Queue()
+        self.current_pos = (0, 0)
+        self.thread = threading.Thread(target=self._run, daemon=True)
+
+    def _run(self):
+        self.root = tk.Tk()
+        self.root.overrideredirect(True)
+        self.root.geometry("5x5+0+0")
+        self.root.attributes("-topmost", True, "-alpha", 0.5)
+        self.root.configure(bg='red')
+        
+        self._check_queue()
+        self.root.mainloop()
+
+    def _check_queue(self):
+        try:
+            while True:
+                new_pos = self.pos_queue.get_nowait()
+                self.current_pos = new_pos
+                self.root.geometry(f"+{new_pos[0]}+{new_pos[1]}")
+        except queue.Empty:
+            pass
+        
+        if self.root:
+            self.root.after(5, self._check_queue)
+
+    def start(self):
+        self.thread.start()
+
+    def stop(self):
+        if self.root:
+            self.root.quit()
+    
+    def move(self, x, y):
+        self.pos_queue.put((x, y))
+
+indicator = IndicatorWindow()
+
+# --- Automation Functions ---
 
 def get_game_window_hwnd():
     """Finds the window handle for a window whose title starts with 'RuneLite'."""
@@ -46,9 +101,8 @@ def get_game_window_hwnd():
         
     return windows[0]
 
-
 def background_click(hwnd, x, y):
-    """Sends a background left-click using SendInput and restores the original cursor position."""
+    """Moves mouse, sends a click using SendInput, and restores the original cursor position."""
     # --- Save original cursor position ---
     orig_x, orig_y = win32gui.GetCursorPos()
 
@@ -56,83 +110,77 @@ def background_click(hwnd, x, y):
     target_class = win32gui.GetClassName(hwnd)
     print(f"VERIFICATION: Sending click to HWND: {hwnd}, Class: '{target_class}'")
 
-    # --- Coordinate Conversion for SendInput ---
+    # --- Coordinate Conversion ---
     screen_x, screen_y = win32gui.ClientToScreen(hwnd, (x, y))
-    
     screen_width = win32api.GetSystemMetrics(win32con.SM_CXSCREEN)
     screen_height = win32api.GetSystemMetrics(win32con.SM_CYSCREEN)
     
-    # Target coordinates
+    # --- Movement Simulation ---
+    start_x, start_y = indicator.current_pos
+    num_steps = 20
+    
+    for i in range(num_steps + 1):
+        t = i / num_steps
+        inter_x = int(start_x + t * (screen_x - start_x))
+        inter_y = int(start_y + t * (screen_y - start_y))
+        
+        nx = int(inter_x * 65535 / screen_width)
+        ny = int(inter_y * 65535 / screen_height)
+
+        move_flags = win32con.MOUSEEVENTF_MOVE | win32con.MOUSEEVENTF_ABSOLUTE
+        move = INPUT(type=win32con.INPUT_MOUSE, ii=INPUT_I(mi=MOUSEINPUT(dx=nx, dy=ny, dwFlags=move_flags)))
+        ctypes.windll.user32.SendInput(1, ctypes.byref(move), ctypes.sizeof(INPUT))
+        indicator.move(inter_x, inter_y)
+        time.sleep(0.01) # Controls movement speed
+
+    # --- SendInput Click ---
+    click_flags = win32con.MOUSEEVENTF_LEFTDOWN | win32con.MOUSEEVENTF_LEFTUP | win32con.MOUSEEVENTF_ABSOLUTE
     target_nx = int(screen_x * 65535 / screen_width)
     target_ny = int(screen_y * 65535 / screen_height)
+    click = INPUT(type=win32con.INPUT_MOUSE, ii=INPUT_I(mi=MOUSEINPUT(dx=target_nx, dy=target_ny, dwFlags=click_flags)))
+    ctypes.windll.user32.SendInput(1, ctypes.byref(click), ctypes.sizeof(INPUT))
 
-    # Original coordinates
+    # --- Restore original cursor position ---
     orig_nx = int(orig_x * 65535 / screen_width)
     orig_ny = int(orig_y * 65535 / screen_height)
-
-    # --- Visual Debugger ---
-    hdc = win32gui.GetDC(0)
-    red = win32api.RGB(255, 0, 0)
-    brush = win32gui.CreateSolidBrush(red)
-    rect = (screen_x - 2, screen_y - 2, screen_x + 2, screen_y + 2)
-    win32gui.FillRect(hdc, rect, brush) # type: ignore
-    win32gui.DeleteObject(brush)
-    win32gui.ReleaseDC(0, hdc)
-    
-    # --- SendInput Implementation ---
-    # Sequence of events: move to target, click down, click up, move back
-    flags = win32con.MOUSEEVENTF_MOVE | win32con.MOUSEEVENTF_ABSOLUTE
-    
-    # Move to target
-    move = INPUT(type=win32con.INPUT_MOUSE,
-                 ii=INPUT_I(mi=MOUSEINPUT(dx=target_nx, dy=target_ny, dwFlags=flags, mouseData=0, time=0, dwExtraInfo=None)))
-                 
-    # Left button down
-    down = INPUT(type=win32con.INPUT_MOUSE,
-                 ii=INPUT_I(mi=MOUSEINPUT(dx=target_nx, dy=target_ny, dwFlags=flags | win32con.MOUSEEVENTF_LEFTDOWN, mouseData=0, time=0, dwExtraInfo=None)))
-                 
-    # Left button up
-    up = INPUT(type=win32con.INPUT_MOUSE,
-               ii=INPUT_I(mi=MOUSEINPUT(dx=target_nx, dy=target_ny, dwFlags=flags | win32con.MOUSEEVENTF_LEFTUP, mouseData=0, time=0, dwExtraInfo=None)))
-
-    # Move back to original position
-    restore = INPUT(type=win32con.INPUT_MOUSE,
-                    ii=INPUT_I(mi=MOUSEINPUT(dx=orig_nx, dy=orig_ny, dwFlags=flags, mouseData=0, time=0, dwExtraInfo=None)))
-
-    inputs = (INPUT * 4)(move, down, up, restore)
-    ctypes.windll.user32.SendInput(4, ctypes.byref(inputs), ctypes.sizeof(INPUT))
-
-    # --- Cleanup Visual Debugger ---
-    time.sleep(0.1) # Keep the dot visible briefly
-    win32gui.InvalidateRect(0, rect, True) # type: ignore
-
+    restore = INPUT(type=win32con.INPUT_MOUSE, ii=INPUT_I(mi=MOUSEINPUT(dx=orig_nx, dy=orig_ny, dwFlags=win32con.MOUSEEVENTF_MOVE | win32con.MOUSEEVENTF_ABSOLUTE)))
+    ctypes.windll.user32.SendInput(1, ctypes.byref(restore), ctypes.sizeof(INPUT))
 
 VIRTUAL_KEYS = {
     'shift': win32con.VK_SHIFT,
 }
 
+def _send_key_input(vk_code, is_down):
+    flags = win32con.KEYEVENTF_SCANCODE
+    if not is_down:
+        flags |= win32con.KEYEVENTF_KEYUP
+        
+    scan_code = win32api.MapVirtualKey(vk_code, 0)
+    key_input = INPUT(type=win32con.INPUT_KEYBOARD, ii=INPUT_I(ki=KEYBDINPUT(wVk=0, wScan=scan_code, dwFlags=flags)))
+    ctypes.windll.user32.SendInput(1, ctypes.byref(key_input), ctypes.sizeof(INPUT))
+
 def background_key_press(hwnd, key):
-    """Sends a background key press (down and up) to the specified window."""
+    """Sends a background key press (down and up) using SendInput."""
     vk_code = VIRTUAL_KEYS.get(key.lower())
     if not vk_code:
         raise ValueError(f"Unsupported key: {key}")
     
-    win32gui.PostMessage(hwnd, win32con.WM_KEYDOWN, vk_code, 0)
+    _send_key_input(vk_code, is_down=True)
     time.sleep(random.uniform(0.02, 0.05))
-    win32gui.PostMessage(hwnd, win32con.WM_KEYUP, vk_code, 0)
+    _send_key_input(vk_code, is_down=False)
 
 def background_key_hold(hwnd, key):
-    """Sends a background key down message to the specified window."""
+    """Sends a background key down message using SendInput."""
     vk_code = VIRTUAL_KEYS.get(key.lower())
     if not vk_code:
         raise ValueError(f"Unsupported key: {key}")
     
-    win32gui.PostMessage(hwnd, win32con.WM_KEYDOWN, vk_code, 0)
+    _send_key_input(vk_code, is_down=True)
 
 def background_key_release(hwnd, key):
-    """Sends a background key up message to the specified window."""
+    """Sends a background key up message using SendInput."""
     vk_code = VIRTUAL_KEYS.get(key.lower())
     if not vk_code:
         raise ValueError(f"Unsupported key: {key}")
     
-    win32gui.PostMessage(hwnd, win32con.WM_KEYUP, vk_code, 0) 
+    _send_key_input(vk_code, is_down=False) 

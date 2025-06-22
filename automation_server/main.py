@@ -4,6 +4,15 @@ import automation
 
 app = FastAPI()
 
+# --- App Lifecycle ---
+@app.on_event("startup")
+async def startup_event():
+    automation.indicator.start()
+
+@app.on_event("shutdown")
+def shutdown_event():
+    automation.indicator.stop()
+
 # --- Pydantic Models for Request Bodies ---
 class ClickRequest(BaseModel):
     x: int
