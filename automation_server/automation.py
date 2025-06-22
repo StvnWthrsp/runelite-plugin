@@ -48,7 +48,10 @@ def get_game_window_hwnd():
 
 
 def background_click(hwnd, x, y):
-    """Sends a background left-click using SendInput for greater reliability."""
+    """Sends a background left-click using SendInput and restores the original cursor position."""
+    # --- Save original cursor position ---
+    orig_x, orig_y = win32gui.GetCursorPos()
+
     # --- Verification Step ---
     target_class = win32gui.GetClassName(hwnd)
     print(f"VERIFICATION: Sending click to HWND: {hwnd}, Class: '{target_class}'")
@@ -59,8 +62,13 @@ def background_click(hwnd, x, y):
     screen_width = win32api.GetSystemMetrics(win32con.SM_CXSCREEN)
     screen_height = win32api.GetSystemMetrics(win32con.SM_CYSCREEN)
     
-    nx = int(screen_x * 65535 / screen_width)
-    ny = int(screen_y * 65535 / screen_height)
+    # Target coordinates
+    target_nx = int(screen_x * 65535 / screen_width)
+    target_ny = int(screen_y * 65535 / screen_height)
+
+    # Original coordinates
+    orig_nx = int(orig_x * 65535 / screen_width)
+    orig_ny = int(orig_y * 65535 / screen_height)
 
     # --- Visual Debugger ---
     hdc = win32gui.GetDC(0)
@@ -72,27 +80,30 @@ def background_click(hwnd, x, y):
     win32gui.ReleaseDC(0, hdc)
     
     # --- SendInput Implementation ---
-    # We need to move the mouse to the coords and then click.
-    # MOUSEEVENTF_ABSOLUTE flag is required for SendInput to use absolute coords.
+    # Sequence of events: move to target, click down, click up, move back
     flags = win32con.MOUSEEVENTF_MOVE | win32con.MOUSEEVENTF_ABSOLUTE
     
-    # Move mouse
+    # Move to target
     move = INPUT(type=win32con.INPUT_MOUSE,
-                 ii=INPUT_I(mi=MOUSEINPUT(dx=nx, dy=ny, dwFlags=flags, mouseData=0, time=0, dwExtraInfo=None)))
+                 ii=INPUT_I(mi=MOUSEINPUT(dx=target_nx, dy=target_ny, dwFlags=flags, mouseData=0, time=0, dwExtraInfo=None)))
                  
     # Left button down
     down = INPUT(type=win32con.INPUT_MOUSE,
-                 ii=INPUT_I(mi=MOUSEINPUT(dx=nx, dy=ny, dwFlags=flags | win32con.MOUSEEVENTF_LEFTDOWN, mouseData=0, time=0, dwExtraInfo=None)))
+                 ii=INPUT_I(mi=MOUSEINPUT(dx=target_nx, dy=target_ny, dwFlags=flags | win32con.MOUSEEVENTF_LEFTDOWN, mouseData=0, time=0, dwExtraInfo=None)))
                  
     # Left button up
     up = INPUT(type=win32con.INPUT_MOUSE,
-               ii=INPUT_I(mi=MOUSEINPUT(dx=nx, dy=ny, dwFlags=flags | win32con.MOUSEEVENTF_LEFTUP, mouseData=0, time=0, dwExtraInfo=None)))
+               ii=INPUT_I(mi=MOUSEINPUT(dx=target_nx, dy=target_ny, dwFlags=flags | win32con.MOUSEEVENTF_LEFTUP, mouseData=0, time=0, dwExtraInfo=None)))
 
-    inputs = (INPUT * 3)(move, down, up)
-    ctypes.windll.user32.SendInput(3, ctypes.byref(inputs), ctypes.sizeof(INPUT))
+    # Move back to original position
+    restore = INPUT(type=win32con.INPUT_MOUSE,
+                    ii=INPUT_I(mi=MOUSEINPUT(dx=orig_nx, dy=orig_ny, dwFlags=flags, mouseData=0, time=0, dwExtraInfo=None)))
+
+    inputs = (INPUT * 4)(move, down, up, restore)
+    ctypes.windll.user32.SendInput(4, ctypes.byref(inputs), ctypes.sizeof(INPUT))
 
     # --- Cleanup Visual Debugger ---
-    time.sleep(0.1)
+    time.sleep(0.1) # Keep the dot visible briefly
     win32gui.InvalidateRect(0, rect, True) # type: ignore
 
 
