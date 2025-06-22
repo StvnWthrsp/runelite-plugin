@@ -19,13 +19,14 @@ def get_game_window_hwnd():
         
     return windows[0]
 
+
 def background_click(hwnd, x, y):
     """Sends a background left-click to the specified window coordinates."""
     lParam = win32api.MAKELONG(x, y)
-    win32gui.SendMessage(hwnd, win32con.WM_LBUTTONDOWN, win32con.MK_LBUTTON, lParam)
+    win32gui.PostMessage(hwnd, win32con.WM_LBUTTONDOWN, win32con.MK_LBUTTON, lParam)
     # Add a small, randomized delay to mimic human behavior
     time.sleep(random.uniform(0.03, 0.07))
-    win32gui.SendMessage(hwnd, win32con.WM_LBUTTONUP, 0, lParam)
+    win32gui.PostMessage(hwnd, win32con.WM_LBUTTONUP, 0, lParam)
 
 VIRTUAL_KEYS = {
     'shift': win32con.VK_SHIFT,
@@ -37,9 +38,9 @@ def background_key_press(hwnd, key):
     if not vk_code:
         raise ValueError(f"Unsupported key: {key}")
     
-    win32gui.SendMessage(hwnd, win32con.WM_KEYDOWN, vk_code, 0)
+    win32gui.PostMessage(hwnd, win32con.WM_KEYDOWN, vk_code, 0)
     time.sleep(random.uniform(0.02, 0.05))
-    win32gui.SendMessage(hwnd, win32con.WM_KEYUP, vk_code, 0)
+    win32gui.PostMessage(hwnd, win32con.WM_KEYUP, vk_code, 0)
 
 def background_key_hold(hwnd, key):
     """Sends a background key down message to the specified window."""
@@ -47,7 +48,7 @@ def background_key_hold(hwnd, key):
     if not vk_code:
         raise ValueError(f"Unsupported key: {key}")
     
-    win32gui.SendMessage(hwnd, win32con.WM_KEYDOWN, vk_code, 0)
+    win32gui.PostMessage(hwnd, win32con.WM_KEYDOWN, vk_code, 0)
 
 def background_key_release(hwnd, key):
     """Sends a background key up message to the specified window."""
@@ -55,4 +56,4 @@ def background_key_release(hwnd, key):
     if not vk_code:
         raise ValueError(f"Unsupported key: {key}")
     
-    win32gui.SendMessage(hwnd, win32con.WM_KEYUP, vk_code, 0) 
+    win32gui.PostMessage(hwnd, win32con.WM_KEYUP, vk_code, 0) 
