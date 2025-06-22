@@ -3,16 +3,40 @@ import win32api
 import win32con
 import time
 import random
+import ctypes
+from ctypes import wintypes
+
+# --- CTypes Structures for SendInput ---
+if ctypes.sizeof(ctypes.c_void_p) == 8: # 64-bit
+    ULONG_PTR = ctypes.c_ulonglong
+else: # 32-bit
+    ULONG_PTR = ctypes.c_ulong
+
+class MOUSEINPUT(ctypes.Structure):
+    _fields_ = (("dx",          wintypes.LONG),
+                ("dy",          wintypes.LONG),
+                ("mouseData",   wintypes.DWORD),
+                ("dwFlags",     wintypes.DWORD),
+                ("time",        wintypes.DWORD),
+                ("dwExtraInfo", ctypes.POINTER(ULONG_PTR)))
+
+class INPUT_I(ctypes.Union):
+    _fields_ = (("mi", MOUSEINPUT),)
+
+class INPUT(ctypes.Structure):
+    _fields_ = (("type", wintypes.DWORD),
+                ("ii",   INPUT_I))
 
 def get_game_window_hwnd():
     """Finds the window handle for a window whose title starts with 'RuneLite'."""
     
     def enum_windows_callback(hwnd, windows):
         if win32gui.IsWindowVisible(hwnd) and win32gui.GetWindowText(hwnd).startswith("RuneLite"):
-            print(f"Found window: {win32gui.GetWindowText(hwnd)}")
-            if win32gui.FindWindowEx(hwnd, None, "SunAwtCanvas", None) is not None:
-                print(f"Found canvas window: {win32gui.FindWindowEx(hwnd, None, "SunAwtCanvas", None)}")
-                windows.append(win32gui.FindWindowEx(hwnd, None, "SunAwtCanvas", None))
+            canvas_hwnd = win32gui.FindWindowEx(hwnd, None, "SunAwtCanvas", None)
+            if canvas_hwnd:
+                class_name = win32gui.GetClassName(canvas_hwnd)
+                print(f"VERIFICATION: Found canvas. HWND: {canvas_hwnd}, Class: '{class_name}'")
+                windows.append(canvas_hwnd)
 
     windows = []
     win32gui.EnumWindows(enum_windows_callback, windows)
@@ -24,35 +48,52 @@ def get_game_window_hwnd():
 
 
 def background_click(hwnd, x, y):
-    """Sends a background left-click to the specified window coordinates."""
-    # Convert client coordinates to screen coordinates
-    screen_x, screen_y = win32gui.ClientToScreen(hwnd, (x, y))
+    """Sends a background left-click using SendInput for greater reliability."""
+    # --- Verification Step ---
+    target_class = win32gui.GetClassName(hwnd)
+    print(f"VERIFICATION: Sending click to HWND: {hwnd}, Class: '{target_class}'")
 
-    # --- Visual Debugger: Draw a red dot at the click location ---
-    hdc = win32gui.GetDC(0)  # Get device context for the entire screen
+    # --- Coordinate Conversion for SendInput ---
+    screen_x, screen_y = win32gui.ClientToScreen(hwnd, (x, y))
+    
+    screen_width = win32api.GetSystemMetrics(win32con.SM_CXSCREEN)
+    screen_height = win32api.GetSystemMetrics(win32con.SM_CYSCREEN)
+    
+    nx = int(screen_x * 65535 / screen_width)
+    ny = int(screen_y * 65535 / screen_height)
+
+    # --- Visual Debugger ---
+    hdc = win32gui.GetDC(0)
     red = win32api.RGB(255, 0, 0)
     brush = win32gui.CreateSolidBrush(red)
-    
-    # Define a small 4x4 pixel rectangle for the dot
     rect = (screen_x - 2, screen_y - 2, screen_x + 2, screen_y + 2)
-    win32gui.FillRect(hdc, rect, brush)
-    
-    # Clean up GDI objects
+    win32gui.FillRect(hdc, rect, brush) # type: ignore
     win32gui.DeleteObject(brush)
     win32gui.ReleaseDC(0, hdc)
     
-    # The dot is drawn, now proceed with the click
-    lParam = win32api.MAKELONG(x, y)
-    win32gui.PostMessage(hwnd, win32con.WM_LBUTTONDOWN, win32con.MK_LBUTTON, lParam)
-    # Add a small, randomized delay to mimic human behavior
-    time.sleep(random.uniform(0.03, 0.07))
-    win32gui.PostMessage(hwnd, win32con.WM_LBUTTONUP, 0, lParam)
+    # --- SendInput Implementation ---
+    # We need to move the mouse to the coords and then click.
+    # MOUSEEVENTF_ABSOLUTE flag is required for SendInput to use absolute coords.
+    flags = win32con.MOUSEEVENTF_MOVE | win32con.MOUSEEVENTF_ABSOLUTE
     
-    # Give a moment for the dot to be visible before erasing it
+    # Move mouse
+    move = INPUT(type=win32con.INPUT_MOUSE,
+                 ii=INPUT_I(mi=MOUSEINPUT(dx=nx, dy=ny, dwFlags=flags, mouseData=0, time=0, dwExtraInfo=None)))
+                 
+    # Left button down
+    down = INPUT(type=win32con.INPUT_MOUSE,
+                 ii=INPUT_I(mi=MOUSEINPUT(dx=nx, dy=ny, dwFlags=flags | win32con.MOUSEEVENTF_LEFTDOWN, mouseData=0, time=0, dwExtraInfo=None)))
+                 
+    # Left button up
+    up = INPUT(type=win32con.INPUT_MOUSE,
+               ii=INPUT_I(mi=MOUSEINPUT(dx=nx, dy=ny, dwFlags=flags | win32con.MOUSEEVENTF_LEFTUP, mouseData=0, time=0, dwExtraInfo=None)))
+
+    inputs = (INPUT * 3)(move, down, up)
+    ctypes.windll.user32.SendInput(3, ctypes.byref(inputs), ctypes.sizeof(INPUT))
+
+    # --- Cleanup Visual Debugger ---
     time.sleep(0.1)
-    
-    # Erase the dot by telling the window manager to repaint that area
-    win32gui.InvalidateRect(0, rect, True)
+    win32gui.InvalidateRect(0, rect, True) # type: ignore
 
 
 VIRTUAL_KEYS = {
