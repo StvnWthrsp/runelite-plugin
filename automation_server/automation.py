@@ -5,35 +5,19 @@ import time
 import random
 
 def get_game_window_hwnd():
-    """Finds the handle for the 'SunAwtCanvas' child window within the main 'RuneLite' window."""
+    """Finds the window handle for a window whose title starts with 'RuneLite'."""
     
-    # First, find the main RuneLite window
-    main_hwnd = None
-    def enum_main_windows_callback(hwnd, windows):
+    def enum_windows_callback(hwnd, windows):
         if win32gui.IsWindowVisible(hwnd) and win32gui.GetWindowText(hwnd).startswith("RuneLite"):
             windows.append(hwnd)
+
+    windows = []
+    win32gui.EnumWindows(enum_windows_callback, windows)
     
-    main_windows = []
-    win32gui.EnumWindows(enum_main_windows_callback, main_windows)
-    
-    if not main_windows:
-        raise Exception("Main RuneLite window not found. Please ensure RuneLite is running.")
-    main_hwnd = main_windows[0]
-
-    # Now, find the 'SunAwtCanvas' child window within the main window
-    canvas_hwnd = None
-    def enum_child_windows_callback(hwnd, child_windows):
-        class_name = win32gui.GetClassName(hwnd)
-        if class_name == "SunAwtCanvas":
-            child_windows.append(hwnd)
-
-    child_windows = []
-    win32gui.EnumChildWindows(main_hwnd, enum_child_windows_callback, child_windows)
-
-    if not child_windows:
-        raise Exception("RuneLite game canvas ('SunAwtCanvas') not found within the main window.")
+    if not windows:
+        raise Exception("Game window not found. Please ensure RuneLite is running.")
         
-    return child_windows[0]
+    return windows[0]
 
 def background_click(hwnd, x, y):
     """Sends a background left-click to the specified window coordinates."""
