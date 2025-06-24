@@ -1,186 +1,146 @@
-import win32gui
-import win32api
-import win32con
+import remote_input
 import time
 import random
-import ctypes
-from ctypes import wintypes
-import threading
-import queue
-import tkinter as tk
+import win32con
 
-# --- CTypes Structures for SendInput ---
-if ctypes.sizeof(ctypes.c_void_p) == 8: # 64-bit
-    ULONG_PTR = ctypes.c_ulonglong
-else: # 32-bit
-    ULONG_PTR = ctypes.c_ulong
-
-class MOUSEINPUT(ctypes.Structure):
-    _fields_ = (("dx",          wintypes.LONG),
-                ("dy",          wintypes.LONG),
-                ("mouseData",   wintypes.DWORD),
-                ("dwFlags",     wintypes.DWORD),
-                ("time",        wintypes.DWORD),
-                ("dwExtraInfo", ctypes.POINTER(ULONG_PTR)))
-
-class KEYBDINPUT(ctypes.Structure):
-    _fields_ = (("wVk",         wintypes.WORD),
-                ("wScan",       wintypes.WORD),
-                ("dwFlags",     wintypes.DWORD),
-                ("time",        wintypes.DWORD),
-                ("dwExtraInfo", ctypes.POINTER(ULONG_PTR)))
-
-class INPUT_I(ctypes.Union):
-    _fields_ = (("mi", MOUSEINPUT),
-                ("ki", KEYBDINPUT))
-
-class INPUT(ctypes.Structure):
-    _fields_ = (("type", wintypes.DWORD),
-                ("ii",   INPUT_I))
-
-# --- Persistent Visual Indicator ---
-class IndicatorWindow:
-    def __init__(self):
-        self.root = None
-        self.pos_queue = queue.Queue()
-        self.current_pos = (0, 0)
-        self.thread = threading.Thread(target=self._run, daemon=True)
-
-    def _run(self):
-        self.root = tk.Tk()
-        self.root.overrideredirect(True)
-        self.root.geometry("5x5+0+0")
-        self.root.attributes("-topmost", True, "-alpha", 0.5)
-        self.root.configure(bg='red')
-        
-        self._check_queue()
-        self.root.mainloop()
-
-    def _check_queue(self):
-        try:
-            while True:
-                new_pos = self.pos_queue.get_nowait()
-                self.current_pos = new_pos
-                self.root.geometry(f"+{new_pos[0]}+{new_pos[1]}")
-        except queue.Empty:
-            pass
-        
-        if self.root:
-            self.root.after(5, self._check_queue)
-
-    def start(self):
-        self.thread.start()
-
-    def stop(self):
-        if self.root:
-            self.root.quit()
-    
-    def move(self, x, y):
-        self.pos_queue.put((x, y))
-
-indicator = IndicatorWindow()
-
-# --- Automation Functions ---
-
-def get_game_window_hwnd():
-    """Finds the window handle for a window whose title starts with 'RuneLite'."""
-    
-    def enum_windows_callback(hwnd, windows):
-        if win32gui.IsWindowVisible(hwnd) and win32gui.GetWindowText(hwnd).startswith("RuneLite"):
-            canvas_hwnd = win32gui.FindWindowEx(hwnd, None, "SunAwtCanvas", None)
-            if canvas_hwnd:
-                class_name = win32gui.GetClassName(canvas_hwnd)
-                print(f"VERIFICATION: Found canvas. HWND: {canvas_hwnd}, Class: '{class_name}'")
-                windows.append(canvas_hwnd)
-
-    windows = []
-    win32gui.EnumWindows(enum_windows_callback, windows)
-    
-    if not windows:
-        raise Exception("Game window not found. Please ensure RuneLite is running.")
-        
-    return windows[0]
-
-def background_click(hwnd, x, y):
-    """Moves mouse, sends a click using SendInput, and restores the original cursor position."""
-    # --- Save original cursor position ---
-    orig_x, orig_y = win32gui.GetCursorPos()
-
-    # --- Verification Step ---
-    target_class = win32gui.GetClassName(hwnd)
-    print(f"VERIFICATION: Sending click to HWND: {hwnd}, Class: '{target_class}'")
-
-    # --- Coordinate Conversion ---
-    screen_x, screen_y = win32gui.ClientToScreen(hwnd, (x, y))
-    screen_width = win32api.GetSystemMetrics(win32con.SM_CXSCREEN)
-    screen_height = win32api.GetSystemMetrics(win32con.SM_CYSCREEN)
-    
-    # --- Movement Simulation ---
-    start_x, start_y = indicator.current_pos
-    num_steps = 20
-    
-    for i in range(num_steps + 1):
-        t = i / num_steps
-        inter_x = int(start_x + t * (screen_x - start_x))
-        inter_y = int(start_y + t * (screen_y - start_y))
-        
-        nx = int(inter_x * 65535 / screen_width)
-        ny = int(inter_y * 65535 / screen_height)
-
-        move_flags = win32con.MOUSEEVENTF_MOVE | win32con.MOUSEEVENTF_ABSOLUTE
-        move = INPUT(type=win32con.INPUT_MOUSE, ii=INPUT_I(mi=MOUSEINPUT(dx=nx, dy=ny, dwFlags=move_flags)))
-        ctypes.windll.user32.SendInput(1, ctypes.byref(move), ctypes.sizeof(INPUT))
-        indicator.move(inter_x, inter_y)
-        time.sleep(0.01) # Controls movement speed
-
-    # --- SendInput Click ---
-    click_flags = win32con.MOUSEEVENTF_LEFTDOWN | win32con.MOUSEEVENTF_LEFTUP | win32con.MOUSEEVENTF_ABSOLUTE
-    target_nx = int(screen_x * 65535 / screen_width)
-    target_ny = int(screen_y * 65535 / screen_height)
-    click = INPUT(type=win32con.INPUT_MOUSE, ii=INPUT_I(mi=MOUSEINPUT(dx=target_nx, dy=target_ny, dwFlags=click_flags)))
-    ctypes.windll.user32.SendInput(1, ctypes.byref(click), ctypes.sizeof(INPUT))
-
-    # --- Restore original cursor position ---
-    orig_nx = int(orig_x * 65535 / screen_width)
-    orig_ny = int(orig_y * 65535 / screen_height)
-    restore = INPUT(type=win32con.INPUT_MOUSE, ii=INPUT_I(mi=MOUSEINPUT(dx=orig_nx, dy=orig_ny, dwFlags=win32con.MOUSEEVENTF_MOVE | win32con.MOUSEEVENTF_ABSOLUTE)))
-    ctypes.windll.user32.SendInput(1, ctypes.byref(restore), ctypes.sizeof(INPUT))
-
+# A selection of virtual-key codes from win32con
 VIRTUAL_KEYS = {
     'shift': win32con.VK_SHIFT,
+    'control': win32con.VK_CONTROL,
+    'alt': win32con.VK_MENU,
+    'esc': win32con.VK_ESCAPE,
+    'f1': win32con.VK_F1,
+    'f2': win32con.VK_F2,
+    'f3': win32con.VK_F3,
+    'f4': win32con.VK_F4,
+    'f5': win32con.VK_F5,
+    'f6': win32con.VK_F6,
+    'f7': win32con.VK_F7,
+    'f8': win32con.VK_F8,
+    'f9': win32con.VK_F9,
+    'f10': win32con.VK_F10,
+    'f11': win32con.VK_F11,
+    'f12': win32con.VK_F12,
 }
 
-def _send_key_input(vk_code, is_down):
-    flags = win32con.KEYEVENTF_SCANCODE
-    if not is_down:
-        flags |= win32con.KEYEVENTF_KEYUP
+class Automation:
+    """
+    Manages the RemoteInput client connection and provides methods for background automation.
+    This class is intended to be used as a singleton, managed by the FastAPI application.
+    """
+    def __init__(self):
+        self.client = None
+
+    def connect(self, process_name="java.exe"):
+        """
+        Injects into the target process and pairs with the client.
         
-    scan_code = win32api.MapVirtualKey(vk_code, 0)
-    key_input = INPUT(type=win32con.INPUT_KEYBOARD, ii=INPUT_I(ki=KEYBDINPUT(wVk=0, wScan=scan_code, dwFlags=flags)))
-    ctypes.windll.user32.SendInput(1, ctypes.byref(key_input), ctypes.sizeof(INPUT))
+        Args:
+            process_name: The name of the process to inject into. Defaults to "java.exe".
 
-def background_key_press(hwnd, key):
-    """Sends a background key press (down and up) using SendInput."""
-    vk_code = VIRTUAL_KEYS.get(key.lower())
-    if not vk_code:
-        raise ValueError(f"Unsupported key: {key}")
-    
-    _send_key_input(vk_code, is_down=True)
-    time.sleep(random.uniform(0.02, 0.05))
-    _send_key_input(vk_code, is_down=False)
+        Returns:
+            The paired client object if successful.
 
-def background_key_hold(hwnd, key):
-    """Sends a background key down message using SendInput."""
-    vk_code = VIRTUAL_KEYS.get(key.lower())
-    if not vk_code:
-        raise ValueError(f"Unsupported key: {key}")
-    
-    _send_key_input(vk_code, is_down=True)
+        Raises:
+            Exception: If injection or pairing fails.
+        """
+        if self.client:
+            print("Already connected to a client.")
+            return self.client
 
-def background_key_release(hwnd, key):
-    """Sends a background key up message using SendInput."""
-    vk_code = VIRTUAL_KEYS.get(key.lower())
-    if not vk_code:
-        raise ValueError(f"Unsupported key: {key}")
-    
-    _send_key_input(vk_code, is_down=False) 
+        print(f"Attempting to inject into '{process_name}'...")
+        remote_input.EIOS.inject(process_name)
+        time.sleep(3)  # Wait for injection to complete
+
+        client_pids = remote_input.EIOS.get_clients_pids(True)
+        if not client_pids:
+            raise Exception(f"Injection failed. No unpaired clients found for '{process_name}'. Is RuneLite running?")
+
+        pid = client_pids[0]
+        print(f"Found client PID: {pid}. Attempting to pair...")
+        
+        self.client = remote_input.EIOS.pair_client_pid(pid)
+        if not self.client:
+            raise Exception("Failed to pair with the client.")
+
+        print(f"Successfully paired with client PID: {pid}")
+        self.client.set_mouse_input_enabled(True)
+        self.client.set_keyboard_input_enabled(True)
+        print("Mouse and keyboard input enabled.")
+        return self.client
+
+    def disconnect(self):
+        """Kills the client connection."""
+        if self.client:
+            print("Disconnecting from client...")
+            self.client.kill_client()
+            self.client = None
+            print("Disconnected.")
+
+    def _ensure_connected(self):
+        if not self.client:
+            raise Exception("Not connected to a client. Please connect first.")
+
+    def click(self, x: int, y: int):
+        """
+        Moves the mouse to the specified coordinates and performs a left-click.
+
+        Args:
+            x: The x-coordinate (relative to the client window).
+            y: The y-coordinate (relative to the client window).
+        """
+        self._ensure_connected()
+        if self.client:
+            self.client.move_mouse(x, y)
+            time.sleep(random.uniform(0.02, 0.05))
+            self.client.hold_mouse(1) # 1 for left-click
+            time.sleep(random.uniform(0.03, 0.07))
+            self.client.release_mouse(1)
+
+    def _get_vk_code(self, key: str):
+        key_lower = key.lower()
+        vk_code = VIRTUAL_KEYS.get(key_lower)
+        if not vk_code:
+            raise ValueError(f"Unsupported key: '{key}'.")
+        return vk_code
+
+    def key_press(self, key: str):
+        """
+        Presses and releases a key.
+
+        Args:
+            key: The key to press (e.g., "shift").
+        """
+        self._ensure_connected()
+        vk_code = self._get_vk_code(key)
+        if self.client:
+            self.client.hold_key(vk_code)
+            time.sleep(random.uniform(0.02, 0.05))
+            self.client.release_key(vk_code)
+
+    def key_hold(self, key: str):
+        """
+        Holds down a key.
+
+        Args:
+            key: The key to hold (e.g., "shift").
+        """
+        self._ensure_connected()
+        vk_code = self._get_vk_code(key)
+        if self.client:
+            self.client.hold_key(vk_code)
+        
+    def key_release(self, key: str):
+        """
+        Releases a key.
+
+        Args:
+            key: The key to release (e.g., "shift").
+        """
+        self._ensure_connected()
+        vk_code = self._get_vk_code(key)
+        if self.client:
+            self.client.release_key(vk_code)
+
+# Create a single instance of the Automation class to be used by the app
+automation_manager = Automation() 

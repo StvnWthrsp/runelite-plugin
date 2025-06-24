@@ -1,17 +1,24 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-import automation
+from automation import automation_manager
+import logging
 
-app = FastAPI()
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger(__name__)
+
+app = FastAPI(
+    title="OSRS Automation Server",
+    description="A server to send background input to the OSRS client via RemoteInput.",
+    version="2.0.0"
+)
 
 # --- App Lifecycle ---
-@app.on_event("startup")
-async def startup_event():
-    automation.indicator.start()
-
 @app.on_event("shutdown")
 def shutdown_event():
-    automation.indicator.stop()
+    """On shutdown, ensure the client is disconnected."""
+    log.info("Server shutting down. Disconnecting client...")
+    automation_manager.disconnect()
 
 # --- Pydantic Models for Request Bodies ---
 class ClickRequest(BaseModel):
@@ -21,48 +28,62 @@ class ClickRequest(BaseModel):
 class KeyRequest(BaseModel):
     key: str
 
-# --- Helper Function ---
-def get_hwnd():
-    try:
-        return automation.get_game_window_hwnd()
-    except Exception as e:
-        raise HTTPException(status_code=404, detail=str(e))
-
 # --- API Endpoints ---
-@app.post("/click")
+@app.post("/connect", summary="Connect to RuneLite Client")
+def connect():
+    """
+    Injects into the RuneLite (java.exe) process and establishes a connection.
+    This must be called before any other automation endpoints.
+    """
+    try:
+        automation_manager.connect()
+        return {"status": "connection successful"}
+    except Exception as e:
+        log.error(f"Connection failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/click", summary="Send Mouse Click")
 def click(req: ClickRequest):
-    hwnd = get_hwnd()
-    automation.background_click(hwnd, req.x, req.y)
-    return {"status": "click sent"}
+    """Moves the mouse and performs a left-click at the given coordinates."""
+    try:
+        automation_manager.click(req.x, req.y)
+        return {"status": "click sent"}
+    except Exception as e:
+        log.error(f"Click failed: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
 
-@app.post("/key_press")
+@app.post("/key_press", summary="Press a Key")
 def key_press(req: KeyRequest):
-    hwnd = get_hwnd()
+    """Presses and releases a single key."""
     try:
-        automation.background_key_press(hwnd, req.key)
+        automation_manager.key_press(req.key)
         return {"status": f"key '{req.key}' pressed"}
-    except ValueError as e:
+    except Exception as e:
+        log.error(f"Key press failed: {e}")
         raise HTTPException(status_code=400, detail=str(e))
 
-@app.post("/key_hold")
+@app.post("/key_hold", summary="Hold a Key")
 def key_hold(req: KeyRequest):
-    hwnd = get_hwnd()
+    """Holds a key down (does not release)."""
     try:
-        automation.background_key_hold(hwnd, req.key)
+        automation_manager.key_hold(req.key)
         return {"status": f"key '{req.key}' held"}
-    except ValueError as e:
+    except Exception as e:
+        log.error(f"Key hold failed: {e}")
         raise HTTPException(status_code=400, detail=str(e))
 
-@app.post("/key_release")
+@app.post("/key_release", summary="Release a Key")
 def key_release(req: KeyRequest):
-    hwnd = get_hwnd()
+    """Releases a key."""
     try:
-        automation.background_key_release(hwnd, req.key)
+        automation_manager.key_release(req.key)
         return {"status": f"key '{req.key}' released"}
-    except ValueError as e:
+    except Exception as e:
+        log.error(f"Key release failed: {e}")
         raise HTTPException(status_code=400, detail=str(e))
 
-@app.post("/status")
+@app.post("/status", summary="Check API Status")
 def get_status():
-    print("Plugin connected")
+    """Endpoint for the Runelite plugin to verify the server is running."""
+    log.info("Status check received from plugin.")
     return {"status": "ok"} 

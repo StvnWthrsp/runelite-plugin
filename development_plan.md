@@ -34,36 +34,37 @@ This phase establishes the foundational code for both parts of the system.
 
 ### ---
 
-**Phase 2: The "Hands" \- Python Automation Server**
+**Phase 2: The "Hands" - Python Automation Server with RemoteInput**
 
-This phase focuses on building the low-level OS interaction capabilities.
+This phase focuses on building the low-level OS interaction capabilities using the `RemoteInput` library for true background input, replacing the previous `win32api` approach.
 
-* **Task 2.1: Implement Window Handle Discovery**  
-  * **Goal:** Create a function to find the OSRS game window.  
-  * **Action:** In a new automation.py file, write a function get\_game\_window\_hwnd() that uses win32gui.FindWindow(None, "Old School RuneScape") to find and return the window handle (hwnd). Include error handling for when the window is not found.  
-* **Task 2.2: Implement Background Mouse Click**  
-  * **Goal:** Create a function to send a background mouse click to the game window.  
-  * **Action:** In automation.py, create a function background\_click(hwnd, x, y).  
-    1. It must take the window handle, x, and y coordinates as input.  
-    2. Use win32api.MAKELONG(x, y) to pack coordinates into the lParam.  
-    3. Use win32gui.PostMessage to send WM\_LBUTTONDOWN and WM\_LBUTTONUP messages to the provided hwnd. Add a small, randomized delay (e.g., 30-70ms) between down and up messages.  
-* **Task 2.3: Implement Background Mouse Movement**  
-  * **Goal:** Create a function that simulates human-like mouse movement in the background.  
-  * **Action:** In automation.py, create a function background\_move(hwnd, x, y). This is a non-trivial task.  
-    1. It should accept the target x and y coordinates.  
-    2. The function should generate a series of intermediate points between the current (unknown) position and the target, following a non-linear path (e.g., a bezier curve).  
-    3. For each intermediate point, it will send a WM\_MOUSEMOVE message using win32gui.PostMessage.  
-    4. Introduce small, randomized delays between each WM\_MOUSEMOVE message to control the speed of the movement.  
-* **Task 2.4: Implement Background Key Press**  
-  * **Goal:** Create functions for pressing keyboard keys (specifically for dropping items).  
-  * **Action:** In automation.py, create background\_key\_press(hwnd, key) and background\_key\_hold(hwnd, key) / background\_key\_release(hwnd, key) functions. These will use win32gui.PostMessage to send WM\_KEYDOWN and WM\_KEYUP messages with the appropriate virtual key code (e.g., VK\_SHIFT).  
-* **Task 2.5: Create the Final API Endpoints**  
-  * **Goal:** Expose the automation functions through the FastAPI server.  
-  * **Action:** In main.py, create the following endpoints that call the functions from automation.py. Use Pydantic models for request body validation.  
-    * POST /click: Body { "x": int, "y": int }. Combines a move and a click for simplicity.  
-    * POST /key\_press: Body { "key": str } (e.g., "shift").  
-    * POST /key\_hold: Body { "key": str }.  
-    * POST /key\_release: Body { "key": str }.
+*   **Task 2.1: Implement Injection and Client Pairing**  
+    *   **Goal:** Find the OSRS game client, inject the `RemoteInput` library, and establish a persistent connection.  
+    *   **Action:** In a new `automation.py` file, create a class or singleton to manage the connection.
+        1.  On startup, this manager should find the correct `java.exe` process for RuneLite. An initial implementation can simply find the first one, but a more robust solution should be considered.
+        2.  Use `remote_input.EIOS.inject(process_name)` to inject the library.
+        3.  Use `remote_input.EIOS.get_clients_pids(True)` and `remote_input.EIOS.pair_client_pid(pid)` to get a `client` object.
+        4.  This `client` object must be stored and reused for all subsequent automation calls. It represents the stateful connection to the game.
+        5.  Enable mouse and keyboard input via `client.set_mouse_input_enabled(True)` and `client.set_keyboard_input_enabled(True)`.
+*   **Task 2.2: Implement Background Mouse Control**  
+    *   **Goal:** Create functions to send background mouse events to the game window via `RemoteInput`.  
+    *   **Action:** In `automation.py`, create functions that take the `client` object as an argument.
+        1.  Create a function `move_mouse(client, x, y)` that calls `client.move_mouse(x, y)`. The coordinates are relative to the game window, not the screen.
+        2.  Create a function `click(client, x, y)` that first calls `move_mouse`, then uses `client.hold_mouse(1)` followed by a short, randomized delay and `client.release_mouse(1)`. The button `1` represents a left-click.
+*   **Task 2.3: Implement Background Keyboard Control**  
+    *   **Goal:** Create functions for pressing and holding keyboard keys.  
+    *   **Action:** In `automation.py`, create the following functions:
+        1.  `key_press(client, key)`: This function will take a string like "shift", map it to the correct virtual key code, and call `client.hold_key(vk_code)` followed immediately by `client.release_key(vk_code)`.
+        2.  `key_hold(client, key)`: Maps the key and calls `client.hold_key(vk_code)`.
+        3.  `key_release(client, key)`: Maps the key and calls `client.release_key(vk_code)`.
+        4.  A mapping of common key strings ("shift", "escape", etc.) to their corresponding Windows Virtual-Key Codes will be required.
+*   **Task 2.4: Create the Final API Endpoints**  
+    *   **Goal:** Expose the `RemoteInput` automation functions through the FastAPI server.  
+    *   **Action:** In `main.py`, modify the endpoints to use the new `automation.py` functions.
+        1.  The FastAPI app must now manage the state of the `client` connection. A global `client` object or a dependency injection system should be initialized on server startup.
+        2.  Create an endpoint `POST /connect` that triggers the injection and pairing process from Task 2.1.
+        3.  Update `POST /click`: Body `{ "x": int, "y": int }`. This will now call the new `automation.click` function, passing the managed `client` object.
+        4.  Update the key-related endpoints (`/key_press`, `/key_hold`, `/key_release`) to call their new `automation.py` counterparts.
 
 ### ---
 

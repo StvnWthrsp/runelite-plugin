@@ -39,56 +39,30 @@ public class MiningBotPlugin extends Plugin
 	@Override
 	protected void startUp() throws Exception
 	{
-		log.info("Mining Bot started!");
+		log.info("Mining Bot started! Attempting to connect to the automation server...");
 
 		HttpRequest request = HttpRequest.newBuilder()
-			.uri(URI.create("http://127.0.0.1:8000/status"))
+			.uri(URI.create("http://127.0.0.1:8000/connect"))
 			.POST(HttpRequest.BodyPublishers.noBody())
-			.timeout(Duration.ofSeconds(5))
+			.timeout(Duration.ofSeconds(30)) // Give it a bit more time to connect
 			.build();
 
 		httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())
 			.thenAccept(response -> {
-				log.info("Status check response: {}", response.statusCode());
 				if (response.statusCode() == 200)
 				{
-					// Send a test click to the center of the screen
-					sendTestClick();
+					log.info("Successfully connected to the automation server.");
+					client.addChatMessage(ChatMessageType.GAMEMESSAGE, "", "Mining Bot: Connected.", null);
+				}
+				else
+				{
+					log.error("Failed to connect to automation server. Status code: {}", response.statusCode());
+					client.addChatMessage(ChatMessageType.GAMEMESSAGE, "", "Mining Bot: Connection FAILED.", null);
 				}
 			})
 			.exceptionally(e -> {
-				log.warn("Failed to connect to automation server: {}", e.getMessage());
-				return null;
-			});
-	}
-
-	private void sendTestClick()
-	{
-		int canvasWidth = client.getCanvas().getWidth();
-		int canvasHeight = client.getCanvas().getHeight();
-		int centerX = canvasWidth / 2;
-		int centerY = canvasHeight / 2;
-
-		// Create a simple map for the JSON payload
-		java.util.Map<String, Integer> payload = new java.util.HashMap<>();
-		payload.put("x", centerX);
-		payload.put("y", centerY);
-
-		String jsonPayload = gson.toJson(payload);
-
-		HttpRequest clickRequest = HttpRequest.newBuilder()
-			.uri(URI.create("http://127.0.0.1:8000/click"))
-			.header("Content-Type", "application/json")
-			.POST(HttpRequest.BodyPublishers.ofString(jsonPayload))
-			.timeout(Duration.ofSeconds(5))
-			.build();
-
-		httpClient.sendAsync(clickRequest, HttpResponse.BodyHandlers.ofString())
-			.thenAccept(response -> {
-				log.info("Test click response: {}", response.statusCode());
-			})
-			.exceptionally(e -> {
-				log.warn("Failed to send test click: {}", e.getMessage());
+				log.error("Failed to send connect request to automation server.", e);
+				client.addChatMessage(ChatMessageType.GAMEMESSAGE, "", "Mining Bot: Connection FAILED. Is the server running?", null);
 				return null;
 			});
 	}
