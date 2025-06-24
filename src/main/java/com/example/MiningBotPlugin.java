@@ -31,6 +31,7 @@ import java.util.Random;
 import java.awt.Point;
 import java.awt.Rectangle;
 import java.awt.Shape;
+import java.awt.Polygon;
 import net.runelite.api.Scene;
 import net.runelite.api.Tile;
 import java.util.ArrayList;
@@ -41,6 +42,7 @@ import net.runelite.client.util.ImageUtil;
 import java.awt.image.BufferedImage;
 import net.runelite.api.ItemContainer;
 import net.runelite.api.InventoryID;
+import net.runelite.client.ui.overlay.OverlayManager;
 
 @Slf4j
 @PluginDescriptor(
@@ -60,6 +62,9 @@ public class MiningBotPlugin extends Plugin
 	private boolean wasRunning = false;
 
 	@Inject
+	private MouseIndicatorOverlay mouseIndicatorOverlay;
+
+	@Inject
 	private Client client;
 
 	@Inject
@@ -73,6 +78,9 @@ public class MiningBotPlugin extends Plugin
 
 	@Inject
 	private ClientToolbar clientToolbar;
+
+	@Inject
+	private OverlayManager overlayManager;
 
 	@Override
 	protected void startUp() throws Exception
@@ -88,6 +96,7 @@ public class MiningBotPlugin extends Plugin
 			.panel(panel)
 			.build();
 		clientToolbar.addNavigation(navButton);
+		overlayManager.add(mouseIndicatorOverlay);
 
 		HttpRequest request = HttpRequest.newBuilder()
 			.uri(URI.create("http://127.0.0.1:8000/connect"))
@@ -120,6 +129,7 @@ public class MiningBotPlugin extends Plugin
 	{
 		log.info("Mining Bot stopped!");
 		clientToolbar.removeNavigation(navButton);
+		overlayManager.remove(mouseIndicatorOverlay);
 	}
 
 	@Subscribe
@@ -357,6 +367,46 @@ public class MiningBotPlugin extends Plugin
 		if (gameObject == null) {
 			return null;
 		}
+		// Use getConvexHull for a more accurate clickable polygon
+		Shape convexHull = gameObject.getConvexHull();
+		if (convexHull == null) {
+			// Fallback to the old method if convex hull is not available
+			return getRandomClickablePointFromClickbox(gameObject);
+		}
+
+		Rectangle bounds = convexHull.getBounds();
+		if (bounds.isEmpty()) {
+			return null;
+		}
+
+		// Center of the bounding box for the Gaussian distribution
+		double centerX = bounds.getCenterX();
+		double centerY = bounds.getCenterY();
+		// Standard deviation - smaller values mean tighter clusters around the center
+		double stdDevX = bounds.getWidth() / 4.0;
+		double stdDevY = bounds.getHeight() / 4.0;
+
+		// Try up to 15 times to find a point within the polygon using a Gaussian distribution
+		for (int i = 0; i < 15; i++) {
+			int x = (int) (centerX + random.nextGaussian() * stdDevX);
+			int y = (int) (centerY + random.nextGaussian() * stdDevY);
+			Point randomPoint = new Point(x, y);
+
+			// Ensure the point is within the actual polygon shape
+			if (convexHull.contains(randomPoint)) {
+				return randomPoint;
+			}
+		}
+
+		// If Gaussian fails, fall back to a uniformly random point within the hull
+		log.warn("Could not find Gaussian point in 15 attempts, falling back to uniform random.");
+		return getRandomClickablePointFromClickbox(gameObject);
+	}
+
+	private Point getRandomClickablePointFromClickbox(GameObject gameObject) {
+		if (gameObject == null) {
+			return null;
+		}
 		Shape clickbox = gameObject.getClickbox();
 		if (clickbox == null) {
 			return null;
@@ -367,15 +417,18 @@ public class MiningBotPlugin extends Plugin
 			return null;
 		}
 
+		// Try up to 10 times to find a random point in the clickbox
 		for (int i = 0; i < 10; i++) {
 			Point randomPoint = new Point(
-				bounds.x + (int) (bounds.width * Math.random()),
-				bounds.y + (int) (bounds.height * Math.random())
+				bounds.x + random.nextInt(bounds.width),
+				bounds.y + random.nextInt(bounds.height)
 			);
 			if (clickbox.contains(randomPoint)) {
 				return randomPoint;
 			}
 		}
+
+		// If all else fails, return the center
 		return new Point((int)bounds.getCenterX(), (int)bounds.getCenterY());
 	}
 

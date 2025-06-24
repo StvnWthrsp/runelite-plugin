@@ -2,6 +2,7 @@ import remote_input
 import time
 import random
 import win32con
+import math
 
 # A selection of virtual-key codes from win32con
 VIRTUAL_KEYS = {
@@ -30,6 +31,7 @@ class Automation:
     """
     def __init__(self):
         self.client = None
+        self.mouse_pos = (0, 0)
 
     def connect(self, process_name="java.exe"):
         """
@@ -67,6 +69,9 @@ class Automation:
         self.client.set_mouse_input_enabled(True)
         self.client.set_keyboard_input_enabled(True)
         print("Mouse and keyboard input enabled.")
+        # Initialize mouse position to a neutral corner
+        self.mouse_pos = (0, 0)
+        self.client.move_mouse(0, 0)
         return self.client
 
     def disconnect(self):
@@ -76,10 +81,25 @@ class Automation:
             self.client.kill_client()
             self.client = None
             print("Disconnected.")
+            self.mouse_pos = (0, 0)
 
     def _ensure_connected(self):
         if not self.client:
             raise Exception("Not connected to a client. Please connect first.")
+
+    def move_mouse(self, x: int, y: int):
+        """
+        Moves the mouse to the specified coordinates using a human-like algorithm (WindMouse).
+
+        Args:
+            x: The target x-coordinate.
+            y: The target y-coordinate.
+        """
+        self._ensure_connected()
+        if self.client:
+            start_x, start_y = self.mouse_pos
+            self._wind_mouse_move(start_x, start_y, x, y)
+            self.mouse_pos = (x, y)
 
     def click(self, x: int, y: int):
         """
@@ -91,7 +111,7 @@ class Automation:
         """
         self._ensure_connected()
         if self.client:
-            self.client.move_mouse(x, y)
+            self.move_mouse(x, y)
             time.sleep(random.uniform(0.02, 0.05))
             self.client.hold_mouse(1) # 1 for left-click
             time.sleep(random.uniform(0.03, 0.07))
@@ -141,6 +161,48 @@ class Automation:
         vk_code = self._get_vk_code(key)
         if self.client:
             self.client.release_key(vk_code)
+
+    def _wind_mouse_move(self, start_x, start_y, dest_x, dest_y, G_0=9.8, W_0=0.5, M_0=7, D_0=50):
+        """
+        Moves the mouse like a human.
+        Credit to https://github.com/BenLand100/WindMouse
+        G_0: gravity strength
+        W_0: wind strength
+        M_0: time steps
+        D_0: distance threshold
+        """
+        if not self.client:
+            return
+            
+        current_x, current_y = start_x, start_y
+        v_x = v_y = W_x = W_y = 0
+        dist = math.hypot(dest_x - start_x, dest_y - start_y)
+
+        while dist >= 1:
+            W_x = W_x / 2.0 + (random.random() * W_0 - W_0 / 2.0)
+            W_y = W_y / 2.0 + (random.random() * W_0 - W_0 / 2.0)
+            
+            F_x = G_0 * (dest_x - current_x) / dist
+            F_y = G_0 * (dest_y - current_y) / dist
+            
+            v_x += F_x + W_x
+            v_y += F_y + W_y
+            
+            v_mag = math.hypot(v_x, v_y)
+            if v_mag > M_0:
+                v_x = (v_x / v_mag) * M_0
+                v_y = (v_y / v_mag) * M_0
+            
+            current_x += v_x
+            current_y += v_y
+            
+            dist = math.hypot(dest_x - current_x, dest_y - current_y)
+            
+            self.client.move_mouse(int(current_x), int(current_y))
+            time.sleep(random.uniform(0.005, 0.01))
+
+        # Final move to ensure we are at the destination
+        self.client.move_mouse(dest_x, dest_y)
 
 # Create a single instance of the Automation class to be used by the app
 automation_manager = Automation() 
