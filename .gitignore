@@ -7,3 +7,6 @@ build
 nbactions.xml
 nb-configuration.xml
 nbproject/
+automation_server/__pycache__/
+automation_server/lib*
+automation_server/remote_input.pyd.bak
