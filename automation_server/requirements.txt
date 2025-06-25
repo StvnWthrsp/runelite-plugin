@@ -1,4 +1,2 @@
-fastapi
-uvicorn
 pywin32
 numpy

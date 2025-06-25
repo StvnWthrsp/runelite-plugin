@@ -1,11 +1,6 @@
 package com.example;
 
 import com.google.inject.Provides;
-import java.io.IOException;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.time.Instant;
 import javax.inject.Inject;
@@ -56,8 +51,8 @@ import net.runelite.client.ui.overlay.OverlayManager;
 public class MiningBotPlugin extends Plugin
 {
 	private static final int COPPER_ORE_ID = 436;
-	private final HttpClient httpClient = HttpClient.newHttpClient();
 	private final Deque<Runnable> actionQueue = new ArrayDeque<>();
+	private PipeService pipeService = null;
 	private final Random random = new Random();
 	private BotState currentState;
 	private int idleTicks = 0;
@@ -135,30 +130,8 @@ public class MiningBotPlugin extends Plugin
 			sessionStartTime = Instant.now();
 		}
 
-		HttpRequest request = HttpRequest.newBuilder()
-			.uri(URI.create("http://127.0.0.1:8000/connect"))
-			.POST(HttpRequest.BodyPublishers.noBody())
-			.timeout(Duration.ofSeconds(30)) // Give it a bit more time to connect
-			.build();
-
-		httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())
-			.thenAccept(response -> {
-				if (response.statusCode() == 200)
-				{
-					log.info("Successfully connected to the automation server.");
-					client.addChatMessage(ChatMessageType.GAMEMESSAGE, "", "Mining Bot: Connected.", null);
-				}
-				else
-				{
-					log.error("Failed to connect to automation server. Status code: {}", response.statusCode());
-					client.addChatMessage(ChatMessageType.GAMEMESSAGE, "", "Mining Bot: Connection FAILED.", null);
-				}
-			})
-			.exceptionally(e -> {
-				log.error("Failed to send connect request to automation server.", e);
-				client.addChatMessage(ChatMessageType.GAMEMESSAGE, "", "Mining Bot: Connection FAILED. Is the server running?", null);
-				return null;
-			});
+		// Don't initialize pipe service automatically - user must click Connect
+		log.info("Mining Bot initialized. Use the 'Connect' button to connect to the automation server.");
 	}
 
 	@Override
@@ -170,6 +143,12 @@ public class MiningBotPlugin extends Plugin
 		overlayManager.remove(rockOverlay);
 		overlayManager.remove(statusOverlay);
 		overlayManager.remove(inventoryOverlay);
+		
+		// Disconnect from pipe service
+		if (pipeService != null)
+		{
+			pipeService.disconnect();
+		}
 	}
 
 	@Subscribe
@@ -177,7 +156,7 @@ public class MiningBotPlugin extends Plugin
 	{
 		if (gameStateChanged.getGameState() == GameState.LOGGED_IN)
 		{
-			client.addChatMessage(ChatMessageType.GAMEMESSAGE, "", "Mining Bot plugin is running.", null);
+			log.info("Mining Bot plugin is running - player logged in.");
 			
 			// Initialize session tracking if not already done
 			if (sessionStartTime == null)
@@ -250,11 +229,18 @@ public class MiningBotPlugin extends Plugin
 		if (panel != null) {
 			panel.setStatus(currentState.toString());
 			panel.setButtonText(config.startBot() ? "Stop" : "Start");
+			panel.updateConnectionStatus();
 		}
 
 		boolean isRunning = config.startBot();
 
 		if (isRunning && !wasRunning) {
+			// Check if automation server is connected before starting bot
+			if (!isAutomationConnected()) {
+				log.warn("Cannot start bot: Automation server not connected. Please click 'Connect' first.");
+				configManager.setConfiguration("miningbot", "startBot", false);
+				return;
+			}
 			log.info("Bot starting...");
 			currentState = BotState.FINDING_ROCK;
 			wasRunning = true;
@@ -600,52 +586,40 @@ public class MiningBotPlugin extends Plugin
 	private void sendClickRequest(Point point) {
 		if (point == null) return;
 
-		java.util.Map<String, Integer> payload = new java.util.HashMap<>();
-		payload.put("x", point.x);
-		payload.put("y", point.y);
-		String jsonPayload = gson.toJson(payload);
-
-		HttpRequest request = HttpRequest.newBuilder()
-			.uri(URI.create("http://127.0.0.1:8000/click"))
-			.header("Content-Type", "application/json")
-			.POST(HttpRequest.BodyPublishers.ofString(jsonPayload))
-			.timeout(Duration.ofSeconds(2))
-			.build();
-
-		httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())
-			.thenAccept(response -> {
-				if (response.statusCode() != 200) {
-					log.warn("Click request failed with status: {}", response.statusCode());
-				}
-			})
-			.exceptionally(e -> {
-				log.error("Failed to send click request.", e);
-				return null;
-			});
+		if (pipeService != null && pipeService.isConnected()) {
+			if (!pipeService.sendClick(point.x, point.y)) {
+				log.warn("Failed to send click command via pipe");
+			}
+		} else {
+			log.warn("Cannot send click - pipe service not connected");
+		}
 	}
 
 	private void sendKeyRequest(String endpoint, String key) {
-		java.util.Map<String, String> payload = new java.util.HashMap<>();
-		payload.put("key", key);
-		String jsonPayload = gson.toJson(payload);
-
-		HttpRequest request = HttpRequest.newBuilder()
-			.uri(URI.create("http://127.0.0.1:8000/" + endpoint))
-			.header("Content-Type", "application/json")
-			.POST(HttpRequest.BodyPublishers.ofString(jsonPayload))
-			.timeout(Duration.ofSeconds(2))
-			.build();
-
-		httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())
-			.thenAccept(response -> {
-				if (response.statusCode() != 200) {
-					log.warn("Key request to {} failed with status: {}", endpoint, response.statusCode());
-				}
-			})
-			.exceptionally(e -> {
-				log.error("Failed to send key request to " + endpoint, e);
-				return null;
-			});
+		if (pipeService != null && pipeService.isConnected()) {
+			boolean success = false;
+			
+			switch (endpoint) {
+				case "key_press":
+					success = pipeService.sendKeyPress(key);
+					break;
+				case "key_hold":
+					success = pipeService.sendKeyHold(key);
+					break;
+				case "key_release":
+					success = pipeService.sendKeyRelease(key);
+					break;
+				default:
+					log.warn("Unknown key endpoint: {}", endpoint);
+					return;
+			}
+			
+			if (!success) {
+				log.warn("Failed to send key {} command via pipe", endpoint);
+			}
+		} else {
+			log.warn("Cannot send key command - pipe service not connected");
+		}
 	}
 
 	// Getter methods for debugging overlays
@@ -680,5 +654,76 @@ public class MiningBotPlugin extends Plugin
 			return Duration.ZERO;
 		}
 		return Duration.between(sessionStartTime, Instant.now());
+	}
+	
+	/**
+	 * Check if the automation server is connected.
+	 * @return true if connected via named pipe
+	 */
+	public boolean isAutomationConnected()
+	{
+		return pipeService != null && pipeService.isConnected();
+	}
+	
+	/**
+	 * Manually connect to the automation server (triggered by Connect button).
+	 * @return true if connection successful
+	 */
+	public boolean connectAutomation()
+	{
+		if (pipeService == null)
+		{
+			pipeService = new PipeService();
+		}
+		
+		if (pipeService.connect())
+		{
+			if (pipeService.sendConnect())
+			{
+				log.info("Successfully connected to automation server via Connect button.");
+				return true;
+			}
+			else
+			{
+				log.warn("Connected to pipe but failed to send connect command.");
+				return false;
+			}
+		}
+		else
+		{
+			log.error("Failed to connect to automation server. Make sure the Python server is running.");
+			return false;
+		}
+	}
+	
+	/**
+	 * Attempt to reconnect to the automation server.
+	 * @return true if reconnection successful
+	 */
+	public boolean reconnectAutomation()
+	{
+		if (pipeService == null)
+		{
+			pipeService = new PipeService();
+		}
+		
+		if (pipeService.connect())
+		{
+			if (pipeService.sendConnect())
+			{
+				log.info("Successfully reconnected to automation server.");
+				return true;
+			}
+			else
+			{
+				log.warn("Connected to pipe but failed to send connect command.");
+				return false;
+			}
+		}
+		else
+		{
+			log.error("Failed to reconnect to automation server.");
+			return false;
+		}
 	}
 } 
