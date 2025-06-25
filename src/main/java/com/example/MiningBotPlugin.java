@@ -7,6 +7,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.time.Instant;
 import javax.inject.Inject;
 import com.google.gson.Gson;
 import lombok.extern.slf4j.Slf4j;
@@ -14,6 +15,10 @@ import net.runelite.api.ChatMessageType;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
 import net.runelite.api.events.GameStateChanged;
+import net.runelite.api.events.AnimationChanged;
+import net.runelite.api.events.StatChanged;
+import net.runelite.api.Skill;
+import net.runelite.api.AnimationID;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.plugins.Plugin;
@@ -60,9 +65,29 @@ public class MiningBotPlugin extends Plugin
 	private MiningBotPanel panel;
 	private NavigationButton navButton;
 	private boolean wasRunning = false;
+	
+	// Mining completion detection variables
+	private long lastMiningXp = 0;
+	private long xpGainedThisMine = 0;
+	private boolean miningStarted = false;
+	
+	// Debugging and tracking variables
+	private GameObject targetRock = null;
+	private long sessionStartXp = 0;
+	private long totalXpGained = 0;
+	private Instant sessionStartTime = null;
 
 	@Inject
 	private MouseIndicatorOverlay mouseIndicatorOverlay;
+
+	@Inject
+	private MiningBotRockOverlay rockOverlay;
+
+	@Inject
+	private MiningBotStatusOverlay statusOverlay;
+
+	@Inject
+	private MiningBotInventoryOverlay inventoryOverlay;
 
 	@Inject
 	private Client client;
@@ -96,7 +121,19 @@ public class MiningBotPlugin extends Plugin
 			.panel(panel)
 			.build();
 		clientToolbar.addNavigation(navButton);
+		
+		// Register overlays
 		overlayManager.add(mouseIndicatorOverlay);
+		overlayManager.add(rockOverlay);
+		overlayManager.add(statusOverlay);
+		overlayManager.add(inventoryOverlay);
+
+		// Initialize session tracking
+		if (client.getLocalPlayer() != null)
+		{
+			sessionStartXp = client.getSkillExperience(Skill.MINING);
+			sessionStartTime = Instant.now();
+		}
 
 		HttpRequest request = HttpRequest.newBuilder()
 			.uri(URI.create("http://127.0.0.1:8000/connect"))
@@ -130,6 +167,9 @@ public class MiningBotPlugin extends Plugin
 		log.info("Mining Bot stopped!");
 		clientToolbar.removeNavigation(navButton);
 		overlayManager.remove(mouseIndicatorOverlay);
+		overlayManager.remove(rockOverlay);
+		overlayManager.remove(statusOverlay);
+		overlayManager.remove(inventoryOverlay);
 	}
 
 	@Subscribe
@@ -138,6 +178,61 @@ public class MiningBotPlugin extends Plugin
 		if (gameStateChanged.getGameState() == GameState.LOGGED_IN)
 		{
 			client.addChatMessage(ChatMessageType.GAMEMESSAGE, "", "Mining Bot plugin is running.", null);
+			
+			// Initialize session tracking if not already done
+			if (sessionStartTime == null)
+			{
+				sessionStartXp = client.getSkillExperience(Skill.MINING);
+				sessionStartTime = Instant.now();
+			}
+		}
+	}
+
+	@Subscribe
+	public void onAnimationChanged(AnimationChanged animationChanged) {
+		if (animationChanged.getActor() != client.getLocalPlayer()) {
+			return;
+		}
+		
+		// Only process animation changes if we're in WAIT_MINING state
+		if (currentState != BotState.WAIT_MINING) {
+			return;
+		}
+		
+		int newAnimation = client.getLocalPlayer().getAnimation();
+		
+		// Check if player stopped mining (went idle or changed to different animation)
+		if (newAnimation == AnimationID.IDLE || !isMiningAnimation(newAnimation)) {
+			log.info("Mining animation stopped. Animation: {}", newAnimation);
+			finishMining();
+		}
+	}
+	
+	@Subscribe
+	public void onStatChanged(StatChanged statChanged) {
+		// Only track mining XP
+		if (statChanged.getSkill() != Skill.MINING) {
+			return;
+		}
+		
+		long currentXp = statChanged.getXp();
+		
+		// If we're actively mining and gained XP, this is superior detection
+		if (currentState == BotState.WAIT_MINING && miningStarted) {
+			if (currentXp > lastMiningXp) {
+				long xpGained = currentXp - lastMiningXp;
+				xpGainedThisMine += xpGained;
+				lastMiningXp = currentXp;
+				log.info("Gained {} mining XP (total this mine: {})", xpGained, xpGainedThisMine);
+				
+				// XP gain means we successfully mined an ore
+				// We should wait a brief moment for animation to finish, then transition
+				setRandomDelay(1, 2);
+				actionQueue.add(() -> finishMining());
+			}
+		} else {
+			// Always keep track of current XP for reference
+			lastMiningXp = currentXp;
 		}
 	}
 
@@ -201,6 +296,9 @@ public class MiningBotPlugin extends Plugin
 			case MINING:
 				doMining();
 				break;
+			case WAIT_MINING:
+				doWaitMining();
+				break;
 			case CHECK_INVENTORY:
 				doCheckInventory();
 				break;
@@ -239,35 +337,94 @@ public class MiningBotPlugin extends Plugin
 
 		GameObject rock = findNearestGameObject(rockIds);
 		if (rock != null) {
+			targetRock = rock; // Store target rock for debugging
 			log.info("Found rock with ID {} at {}", rock.getId(), rock.getSceneMinLocation());
 			actionQueue.add(() -> sendClickRequest(getRandomClickablePoint(rock)));
 			currentState = BotState.MINING;
 			setRandomDelay(2, 5);
 		} else {
+			targetRock = null; // Clear target if no rock found
 			log.info("No rocks found. Waiting.");
 			setRandomDelay(5, 10);
 		}
 	}
 
-	// private void doMining() {
-	// 	if (isPlayerIdle()) {
-	// 		idleTicks++;
-	// 	} else {
-	// 		idleTicks = 0;
-	// 	}
-
-	// 	if (idleTicks > 3) {
-	// 		idleTicks = 0;
-	// 		currentState = BotState.CHECK_INVENTORY;
-	// 		setRandomDelay(1, 3);
-	// 	}
-	// }
-
 	private void doMining() {
+		// Initialize mining tracking
+		miningStarted = true;
+		xpGainedThisMine = 0;
+		if (client.getSkillExperience(Skill.MINING) > 0) {
+			lastMiningXp = client.getSkillExperience(Skill.MINING);
+		}
+		
+		log.info("Started mining, transitioning to WAIT_MINING state");
+		currentState = BotState.WAIT_MINING;
+		setRandomDelay(1, 2);
+	}
+	
+	private void doWaitMining() {
+		// This state is primarily handled by events (onAnimationChanged and onStatChanged)
+		// But we also include a fallback timeout mechanism
+		
+		if (!miningStarted) {
+			log.warn("WAIT_MINING state but mining not started. Transitioning to CHECK_INVENTORY.");
+			finishMining();
+			return;
+		}
+		
+		// Fallback: Check if player has been idle too long (backup detection)
+		if (isPlayerIdle()) {
+			idleTicks++;
+			if (idleTicks > 5) { // Player idle for more than 5 ticks (~3 seconds)
+				log.info("Player idle for {} ticks, mining likely finished", idleTicks);
+				finishMining();
+			}
+		} else {
+			idleTicks = 0; // Reset idle counter if player is active
+		}
+		
+		// Additional safety: Check if we've been waiting too long (e.g., rock depleted)
+		// This shouldn't normally trigger with event-based detection
+		if (System.currentTimeMillis() % 30000 < 600) { // Every 30 seconds check
+			if (xpGainedThisMine == 0) {
+				log.warn("Been waiting for mining completion for a while with no XP gain. Rock may be depleted.");
+				finishMining();
+			}
+		}
+	}
+	
+	private void finishMining() {
+		log.info("Mining completed. Gained {} XP this mine.", xpGainedThisMine);
+		totalXpGained += xpGainedThisMine;
+		miningStarted = false;
 		idleTicks = 0;
-		// currentState = BotState.CHECK_INVENTORY;
-		doCheckInventory();
+		xpGainedThisMine = 0;
+		targetRock = null; // Clear target rock when finished mining
+		currentState = BotState.CHECK_INVENTORY;
 		setRandomDelay(1, 3);
+	}
+	
+	/**
+	 * Check if the given animation ID represents a mining animation
+	 */
+	private boolean isMiningAnimation(int animationId) {
+		// Common mining animation IDs (you may need to add more based on your pickaxe types)
+		// These are approximate - you may need to verify the exact IDs in-game
+		switch (animationId) {
+			case 625:   // Bronze pickaxe
+			case 626:   // Iron pickaxe  
+			case 627:   // Steel pickaxe
+			case 628:   // Black pickaxe
+			case 629:   // Mithril pickaxe
+			case 630:   // Adamant pickaxe
+			case 631:   // Rune pickaxe
+			case 7139:  // Dragon pickaxe
+			case 8347:  // Infernal pickaxe
+			case 4481:  // Crystal pickaxe
+				return true;
+			default:
+				return false;
+		}
 	}
 
 	private void doCheckInventory() {
@@ -323,7 +480,7 @@ public class MiningBotPlugin extends Plugin
 		});
 	}
 
-	private boolean isInventoryFull() {
+	public boolean isInventoryFull() {
 		ItemContainer inventory = client.getItemContainer(InventoryID.INVENTORY);
 		if (inventory == null) {
 			return false;
@@ -489,5 +646,39 @@ public class MiningBotPlugin extends Plugin
 				log.error("Failed to send key request to " + endpoint, e);
 				return null;
 			});
+	}
+
+	// Getter methods for debugging overlays
+	public BotState getCurrentState()
+	{
+		return currentState;
+	}
+
+	public GameObject getTargetRock()
+	{
+		return targetRock;
+	}
+
+	public long getSessionXpGained()
+	{
+		if (sessionStartXp == 0)
+		{
+			return 0;
+		}
+		return client.getSkillExperience(Skill.MINING) - sessionStartXp;
+	}
+
+	public long getTotalXpGained()
+	{
+		return totalXpGained;
+	}
+
+	public Duration getSessionRuntime()
+	{
+		if (sessionStartTime == null)
+		{
+			return Duration.ZERO;
+		}
+		return Duration.between(sessionStartTime, Instant.now());
 	}
 } 
