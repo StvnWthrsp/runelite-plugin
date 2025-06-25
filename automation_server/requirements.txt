@@ -1,3 +1,4 @@
 fastapi
 uvicorn
-pywin32 
+pywin32
+numpy

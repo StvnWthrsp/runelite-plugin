@@ -220,7 +220,8 @@ public class MiningBotPlugin extends Plugin
 	}
 
 	private void setRandomDelay(int minTicks, int maxTicks) {
-		delayTicks = minTicks + random.nextInt(maxTicks - minTicks + 1);
+		// delayTicks = minTicks + random.nextInt(maxTicks - minTicks + 1);
+		delayTicks = 0;
 	}
 
 	private void doFindingRock() {
@@ -248,18 +249,25 @@ public class MiningBotPlugin extends Plugin
 		}
 	}
 
-	private void doMining() {
-		if (isPlayerIdle()) {
-			idleTicks++;
-		} else {
-			idleTicks = 0;
-		}
+	// private void doMining() {
+	// 	if (isPlayerIdle()) {
+	// 		idleTicks++;
+	// 	} else {
+	// 		idleTicks = 0;
+	// 	}
 
-		if (idleTicks > 3) {
-			idleTicks = 0;
-			currentState = BotState.CHECK_INVENTORY;
-			setRandomDelay(1, 3);
-		}
+	// 	if (idleTicks > 3) {
+	// 		idleTicks = 0;
+	// 		currentState = BotState.CHECK_INVENTORY;
+	// 		setRandomDelay(1, 3);
+	// 	}
+	// }
+
+	private void doMining() {
+		idleTicks = 0;
+		// currentState = BotState.CHECK_INVENTORY;
+		doCheckInventory();
+		setRandomDelay(1, 3);
 	}
 
 	private void doCheckInventory() {

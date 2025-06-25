@@ -3,6 +3,7 @@ import time
 import random
 import win32con
 import math
+import numpy as np
 
 # A selection of virtual-key codes from win32con
 VIRTUAL_KEYS = {
@@ -99,7 +100,6 @@ class Automation:
         if self.client:
             start_x, start_y = self.mouse_pos
             self._wind_mouse_move(start_x, start_y, x, y)
-            self.mouse_pos = (x, y)
 
     def click(self, x: int, y: int):
         """
@@ -162,47 +162,65 @@ class Automation:
         if self.client:
             self.client.release_key(vk_code)
 
-    def _wind_mouse_move(self, start_x, start_y, dest_x, dest_y, G_0=9.8, W_0=0.5, M_0=7, D_0=50):
-        """
-        Moves the mouse like a human.
-        Credit to https://github.com/BenLand100/WindMouse
-        G_0: gravity strength
-        W_0: wind strength
-        M_0: time steps
-        D_0: distance threshold
-        """
+    def _wind_mouse_move(self, start_x, start_y, dest_x, dest_y, G_0=9, W_0=3, M_0=15, D_0=12):
+        '''
+        WindMouse algorithm. Calls the move_mouse kwarg with each new step.
+        Released under the terms of the GPLv3 license.
+        G_0 - magnitude of the gravitational fornce
+        W_0 - magnitude of the wind force fluctuations
+        M_0 - maximum step size (velocity clip threshold)
+        D_0 - distance where wind behavior changes from random to damped
+        '''
         if not self.client:
             return
-            
+
+        def move_mouse_wrapper(x, y):
+            self.client.move_mouse(x, y)
+            time.sleep(random.uniform(0.005, 0.01))
+
+        sqrt3 = np.sqrt(3)
+        sqrt5 = np.sqrt(5)
+
         current_x, current_y = start_x, start_y
         v_x = v_y = W_x = W_y = 0
-        dist = math.hypot(dest_x - start_x, dest_y - start_y)
+        
+        loop_start_x, loop_start_y = start_x, start_y
 
-        while dist >= 1:
-            W_x = W_x / 2.0 + (random.random() * W_0 - W_0 / 2.0)
-            W_y = W_y / 2.0 + (random.random() * W_0 - W_0 / 2.0)
+        while (dist := np.hypot(dest_x - loop_start_x, dest_y - loop_start_y)) >= 1:
+            W_mag = min(W_0, dist)
+            if dist >= D_0:
+                W_x = W_x / sqrt3 + (2 * np.random.random() - 1) * W_mag / sqrt5
+                W_y = W_y / sqrt3 + (2 * np.random.random() - 1) * W_mag / sqrt5
+            else:
+                W_x /= sqrt3
+                W_y /= sqrt3
+                if M_0 < 3:
+                    M_0 = np.random.random() * 3 + 3
+                else:
+                    M_0 /= sqrt5
             
-            F_x = G_0 * (dest_x - current_x) / dist
-            F_y = G_0 * (dest_y - current_y) / dist
+            v_x += W_x + G_0 * (dest_x - loop_start_x) / dist
+            v_y += W_y + G_0 * (dest_y - loop_start_y) / dist
+            v_mag = np.hypot(v_x, v_y)
             
-            v_x += F_x + W_x
-            v_y += F_y + W_y
-            
-            v_mag = math.hypot(v_x, v_y)
             if v_mag > M_0:
-                v_x = (v_x / v_mag) * M_0
-                v_y = (v_y / v_mag) * M_0
+                v_clip = M_0 / 2 + np.random.random() * M_0 / 2
+                v_x = (v_x / v_mag) * v_clip
+                v_y = (v_y / v_mag) * v_clip
             
-            current_x += v_x
-            current_y += v_y
+            loop_start_x += v_x
+            loop_start_y += v_y
             
-            dist = math.hypot(dest_x - current_x, dest_y - current_y)
+            move_x = int(np.round(loop_start_x))
+            move_y = int(np.round(loop_start_y))
             
-            self.client.move_mouse(int(current_x), int(current_y))
-            time.sleep(random.uniform(0.005, 0.01))
+            if current_x != move_x or current_y != move_y:
+                move_mouse_wrapper(move_x, move_y)
+                current_x, current_y = move_x, move_y
 
         # Final move to ensure we are at the destination
         self.client.move_mouse(dest_x, dest_y)
+        self.mouse_pos = (dest_x, dest_y)
 
 # Create a single instance of the Automation class to be used by the app
 automation_manager = Automation() 
