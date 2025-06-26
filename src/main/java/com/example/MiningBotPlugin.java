@@ -47,6 +47,11 @@ import net.runelite.api.ItemContainer;
 import net.runelite.api.InventoryID;
 import net.runelite.client.ui.overlay.OverlayManager;
 import net.runelite.api.Constants;
+import shortestpath.ShortestPathConfig;
+import shortestpath.pathfinder.PathfinderConfig;
+import net.runelite.api.Perspective;
+import net.runelite.api.coords.LocalPoint;
+import net.runelite.api.coords.WorldPoint;
 
 @Slf4j
 @PluginDescriptor(
@@ -66,6 +71,8 @@ public class MiningBotPlugin extends Plugin
 	private boolean wasRunning = false;
 	private final TaskManager taskManager = new TaskManager();
 	
+	private PathfinderConfig pathfinderConfig;
+
 	// Mining completion detection variables
 	private long lastMiningXp = 0;
 	private long xpGainedThisMine = 0;
@@ -128,6 +135,12 @@ public class MiningBotPlugin extends Plugin
 		overlayManager.add(statusOverlay);
 		overlayManager.add(inventoryOverlay);
 
+		ShortestPathConfig shortestPathConfig = configManager.getConfig(ShortestPathConfig.class);
+		pathfinderConfig = new PathfinderConfig(client, shortestPathConfig);
+		if (client.getGameState() == GameState.LOGGED_IN) {
+			pathfinderConfig.refresh();
+		}
+
 		// Initialize session tracking
 		if (client.getLocalPlayer() != null)
 		{
@@ -164,6 +177,10 @@ public class MiningBotPlugin extends Plugin
 		{
 			log.info("Mining Bot plugin is running - player logged in.");
 			
+			if (pathfinderConfig != null) {
+				pathfinderConfig.refresh();
+			}
+
 			// Initialize session tracking if not already done
 			if (sessionStartTime == null)
 			{
@@ -215,7 +232,7 @@ public class MiningBotPlugin extends Plugin
 				return;
 			}
 			log.info("Bot starting...");
-			taskManager.pushTask(new MiningTask(this, config));
+			taskManager.pushTask(new MiningTask(this, config, taskManager, pathfinderConfig));
 			wasRunning = true;
 		}
 
@@ -233,6 +250,21 @@ public class MiningBotPlugin extends Plugin
 
 	public void stopBot() {
 		configManager.setConfiguration("miningbot", "startBot", false);
+	}
+
+	public void walkTo(WorldPoint worldPoint) {
+		LocalPoint localPoint = LocalPoint.fromWorld(client, worldPoint);
+		if (localPoint != null) {
+			net.runelite.api.Point minimapPoint = Perspective.localToMinimap(client, localPoint);
+			if (minimapPoint != null) {
+				log.info("Requesting walk to {} via minimap click at {}", worldPoint, minimapPoint);
+				sendClickRequest(new Point(minimapPoint.getX(), minimapPoint.getY()));
+			} else {
+				log.warn("Cannot walk to {}: not visible on minimap.", worldPoint);
+			}
+		} else {
+			log.warn("Cannot walk to {}: not in scene.", worldPoint);
+		}
 	}
 
 	// --- Public Helper Methods for Tasks ---
@@ -292,11 +324,13 @@ public class MiningBotPlugin extends Plugin
 	public boolean isInventoryFull()
 	{
 		ItemContainer inventory = client.getItemContainer(InventoryID.INVENTORY);
-		if (inventory != null)
-		{
-			return inventory.size() >= 28;
-		}
-		return false;
+		return inventory != null && inventory.count() >= 28;
+	}
+
+	public boolean isInventoryEmpty() {
+		ItemContainer inventory = client.getItemContainer(InventoryID.INVENTORY);
+		// We consider the inventory "empty" if it only contains a pickaxe (or is fully empty)
+		return inventory != null && inventory.count() <= 1;
 	}
 
 	public boolean isPlayerIdle() {
@@ -333,24 +367,42 @@ public class MiningBotPlugin extends Plugin
 	}
 
 	public Point getRandomClickablePoint(GameObject gameObject) {
-		if (gameObject == null) return new Point(-1, -1);
 		Shape clickbox = gameObject.getClickbox();
-		if (clickbox == null) return new Point(-1, -1);
-
+		if (clickbox == null)
+		{
+			return new Point(-1, -1);
+		}
 		Rectangle bounds = clickbox.getBounds();
-		if (bounds.isEmpty()) return new Point(-1, -1);
+		if (bounds.isEmpty())
+		{
+			return new Point(-1, -1);
+		}
 
-		for (int i = 0; i < 10; i++) { // Try 10 times to find a point
-			int x = bounds.x + random.nextInt(bounds.width);
-			int y = bounds.y + random.nextInt(bounds.height);
-			if (clickbox.contains(x, y)) {
-				return new Point(x, y);
+		// In a loop, generate a random x and y within the bounding rectangle.
+		for (int i = 0; i < 10; i++) {
+			Point randomPoint = new Point(
+				bounds.x + random.nextInt(bounds.width),
+				bounds.y + random.nextInt(bounds.height)
+			);
+
+			// Use shape.contains(x, y) to check if the random point is within the actual shape.
+			if (clickbox.contains(randomPoint)) {
+				return randomPoint;
 			}
 		}
-		// Fallback to center if random points fail
+		// Fallback to center if we fail to find a point
 		return new Point((int)bounds.getCenterX(), (int)bounds.getCenterY());
 	}
 
+	public Point getRandomPointInBounds(Rectangle bounds) {
+		if (bounds.isEmpty()) {
+			return new Point(-1, -1);
+		}
+		return new Point(
+				bounds.x + random.nextInt(bounds.width),
+				bounds.y + random.nextInt(bounds.height)
+		);
+	}
 
 	public void sendClickRequest(Point point) {
 		if (point == null || point.x == -1) {

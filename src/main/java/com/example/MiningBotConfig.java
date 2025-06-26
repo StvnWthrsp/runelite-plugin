@@ -8,11 +8,19 @@ import net.runelite.client.config.ConfigSection;
 @ConfigGroup("miningbot")
 public interface MiningBotConfig extends Config
 {
+	@ConfigSection(
+			name = "General",
+			description = "General settings",
+			position = 0
+	)
+	String generalSettings = "generalSettings";
+
 	@ConfigItem(
 			keyName = "startBot",
 			name = "Start Bot",
-			description = "Toggle to start/stop the mining bot",
-			position = 1
+			description = "Toggles the bot on and off",
+			position = 1,
+			section = generalSettings
 	)
 	default boolean startBot()
 	{
@@ -22,12 +30,13 @@ public interface MiningBotConfig extends Config
 	@ConfigItem(
 			keyName = "miningMode",
 			name = "Mining Mode",
-			description = "Sets the mining mode (power mine or bank)",
-			position = 2
+			description = "Choose between power mining and banking",
+			position = 2,
+			section = generalSettings
 	)
 	default MiningMode miningMode()
 	{
-		return MiningMode.POWER_MINE_DROP;
+		return MiningMode.POWER_MINE;
 	}
 
 	@ConfigItem(

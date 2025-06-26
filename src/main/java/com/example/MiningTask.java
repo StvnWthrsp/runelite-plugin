@@ -4,8 +4,10 @@ import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.AnimationID;
 import net.runelite.api.GameObject;
 import net.runelite.api.Skill;
+import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.events.AnimationChanged;
 import net.runelite.api.events.StatChanged;
+import shortestpath.pathfinder.PathfinderConfig;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
@@ -15,6 +17,8 @@ public class MiningTask implements BotTask {
 
     private final MiningBotPlugin plugin;
     private final MiningBotConfig config;
+    private final TaskManager taskManager;
+    private final PathfinderConfig pathfinderConfig;
 
     // Internal state for this task only
     private enum MiningState {
@@ -23,8 +27,15 @@ public class MiningTask implements BotTask {
         MINING,
         WAIT_MINING,
         CHECK_INVENTORY,
-        DROPPING
+        DROPPING,
+        WALKING_TO_BANK,
+        BANKING,
+        WALKING_TO_MINE,
+        WAITING_FOR_SUBTASK
     }
+
+    private static final WorldPoint VARROCK_EAST_MINE = new WorldPoint(3285, 3365, 0);
+    private static final WorldPoint VARROCK_EAST_BANK = new WorldPoint(3253, 3420, 0);
 
     private MiningState currentState;
     private final Deque<Runnable> actionQueue = new ArrayDeque<>();
@@ -37,9 +48,11 @@ public class MiningTask implements BotTask {
     private long xpGainedThisMine = 0;
     private boolean miningStarted = false;
 
-    public MiningTask(MiningBotPlugin plugin, MiningBotConfig config) {
+    public MiningTask(MiningBotPlugin plugin, MiningBotConfig config, TaskManager taskManager, PathfinderConfig pathfinderConfig) {
         this.plugin = plugin;
         this.config = config;
+        this.taskManager = taskManager;
+        this.pathfinderConfig = pathfinderConfig;
     }
 
     @Override
@@ -74,6 +87,19 @@ public class MiningTask implements BotTask {
             return;
         }
 
+        if (taskManager.getCurrentTask() != this) {
+            if (currentState != MiningState.WAITING_FOR_SUBTASK) {
+                log.info("Sub-task is running. Pausing MiningTask.");
+                currentState = MiningState.WAITING_FOR_SUBTASK;
+            }
+            return;
+        } else {
+            if (currentState == MiningState.WAITING_FOR_SUBTASK) {
+                log.info("Sub-task finished. Resuming MiningTask.");
+                currentState = MiningState.FINDING_ROCK; // Or whatever is appropriate
+            }
+        }
+
         if (!actionQueue.isEmpty()) {
             actionQueue.poll().run();
             return;
@@ -97,6 +123,9 @@ public class MiningTask implements BotTask {
                 break;
             case IDLE:
                 // Do nothing in idle state
+                break;
+            case WAITING_FOR_SUBTASK:
+                // Handled above, do nothing here
                 break;
         }
         plugin.setCurrentState(currentState.toString());
@@ -152,6 +181,7 @@ public class MiningTask implements BotTask {
 
         if (targetRock != null) {
             currentState = MiningState.MINING;
+            doMining();
         } else {
             log.info("No rocks found to mine.");
             setRandomDelay(10, 20); // Wait a while before searching again
@@ -191,6 +221,7 @@ public class MiningTask implements BotTask {
         plugin.setTargetRock(null);
         miningStarted = false;
         currentState = MiningState.CHECK_INVENTORY;
+        doCheckInventory();
     }
 
     private boolean isMiningAnimation(int animationId) {
@@ -212,13 +243,14 @@ public class MiningTask implements BotTask {
     private void doCheckInventory() {
         if (plugin.isInventoryFull()) {
             switch (config.miningMode()) {
-                case MINE_AND_BANK:
-                    log.info("Inventory full, banking not implemented yet. Stopping.");
-                    // In the future, this will push a banking task
-                    plugin.stopBot();
-                    currentState = MiningState.IDLE;
+                case BANK:
+                    log.info("Inventory full. Banking.");
+                    taskManager.pushTask(new WalkTask(plugin, pathfinderConfig, VARROCK_EAST_MINE));
+                    taskManager.pushTask(new BankTask(plugin));
+                    taskManager.pushTask(new WalkTask(plugin, pathfinderConfig, VARROCK_EAST_BANK));
+                    currentState = MiningState.WAITING_FOR_SUBTASK;
                     break;
-                case POWER_MINE_DROP:
+                case POWER_MINE:
                     currentState = MiningState.DROPPING;
                     break;
             }
