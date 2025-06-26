@@ -23,6 +23,7 @@ public class MiningBotRockOverlay extends Overlay
     private final Client client;
     private final MiningBotPlugin plugin;
     private final MiningBotConfig config;
+    private GameObject target;
 
     @Inject
     public MiningBotRockOverlay(Client client, MiningBotPlugin plugin, MiningBotConfig config)
@@ -35,43 +36,21 @@ public class MiningBotRockOverlay extends Overlay
         setLayer(OverlayLayer.ABOVE_SCENE);
     }
 
+    public void setTarget(GameObject target) {
+        this.target = target;
+    }
+
     @Override
     public Dimension render(Graphics2D graphics)
     {
-        if (!config.highlightTargetRock())
+        if (!config.highlightTargetRock() || target == null)
         {
             return null;
         }
 
-        GameObject targetRock = plugin.getTargetRock();
-        if (targetRock == null)
-        {
-            return null;
-        }
-
-        BotState currentState = plugin.getCurrentState();
-        Color highlightColor = getHighlightColor(currentState);
-        
-        if (highlightColor != null)
-        {
-            renderRockHighlight(graphics, targetRock, highlightColor);
-        }
+        renderRockHighlight(graphics, target, Color.GREEN);
 
         return null;
-    }
-
-    private Color getHighlightColor(BotState state)
-    {
-        switch (state)
-        {
-            case FINDING_ROCK:
-            case MINING:
-                return Color.GREEN; // Rock detected/targeted
-            case WAIT_MINING:
-                return Color.YELLOW; // Currently mining
-            default:
-                return null; // No highlighting needed
-        }
     }
 
     private void renderRockHighlight(Graphics2D graphics, GameObject gameObject, Color color)

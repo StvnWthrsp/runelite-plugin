@@ -47,16 +47,14 @@ public class MiningBotStatusOverlay extends OverlayPanel
                 .build());
 
         // Current state
-        BotState currentState = plugin.getCurrentState();
-        Color stateColor = getStateColor(currentState);
+        String currentState = plugin.getCurrentState();
         panelComponent.getChildren().add(LineComponent.builder()
                 .left("State:")
-                .right(currentState.toString())
-                .rightColor(stateColor)
+                .right(currentState)
+                .rightColor(Color.WHITE)
                 .build());
 
         // Mining statistics
-        long totalXpGained = plugin.getTotalXpGained();
         long sessionXpGained = plugin.getSessionXpGained();
         
         panelComponent.getChildren().add(LineComponent.builder()
@@ -66,9 +64,9 @@ public class MiningBotStatusOverlay extends OverlayPanel
                 .build());
 
         panelComponent.getChildren().add(LineComponent.builder()
-                .left("Total XP Gained:")
-                .right(String.valueOf(totalXpGained))
-                .rightColor(Color.LIGHT_GRAY)
+                .left("XP/Hour:")
+                .right(plugin.getXpPerHour())
+                .rightColor(Color.YELLOW)
                 .build());
 
         // Current mining level
@@ -89,17 +87,6 @@ public class MiningBotStatusOverlay extends OverlayPanel
                     .right(runtimeStr)
                     .rightColor(Color.WHITE)
                     .build());
-
-            // XP per hour calculation
-            if (runtime.toMinutes() > 0)
-            {
-                long xpPerHour = (sessionXpGained * 60) / runtime.toMinutes();
-                panelComponent.getChildren().add(LineComponent.builder()
-                        .left("XP/Hour:")
-                        .right(String.valueOf(xpPerHour))
-                        .rightColor(Color.YELLOW)
-                        .build());
-            }
         }
 
         // Target rock info
@@ -122,30 +109,6 @@ public class MiningBotStatusOverlay extends OverlayPanel
                 .build());
 
         return super.render(graphics);
-    }
-
-    private Color getStateColor(BotState state)
-    {
-        switch (state)
-        {
-            case IDLE:
-                return Color.GRAY;
-            case FINDING_ROCK:
-                return Color.ORANGE;
-            case MINING:
-                return Color.GREEN;
-            case WAIT_MINING:
-                return Color.YELLOW;
-            case CHECK_INVENTORY:
-                return Color.BLUE;
-            case DROPPING:
-                return Color.RED;
-            case WALKING_TO_BANK:
-            case BANKING:
-                return Color.MAGENTA;
-            default:
-                return Color.WHITE;
-        }
     }
 
     private String formatDuration(Duration duration)

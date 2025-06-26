@@ -36,13 +36,17 @@ import net.runelite.api.Scene;
 import net.runelite.api.Tile;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import net.runelite.client.ui.ClientToolbar;
 import net.runelite.client.ui.NavigationButton;
 import net.runelite.client.util.ImageUtil;
 import java.awt.image.BufferedImage;
+import net.runelite.api.Item;
 import net.runelite.api.ItemContainer;
 import net.runelite.api.InventoryID;
 import net.runelite.client.ui.overlay.OverlayManager;
+import net.runelite.api.Constants;
 
 @Slf4j
 @PluginDescriptor(
@@ -54,12 +58,13 @@ public class MiningBotPlugin extends Plugin
 	private final Deque<Runnable> actionQueue = new ArrayDeque<>();
 	private PipeService pipeService = null;
 	private final Random random = new Random();
-	private BotState currentState;
+	private String currentState = "IDLE";
 	private int idleTicks = 0;
 	private int delayTicks = 0;
 	private MiningBotPanel panel;
 	private NavigationButton navButton;
 	private boolean wasRunning = false;
+	private final TaskManager taskManager = new TaskManager();
 	
 	// Mining completion detection variables
 	private long lastMiningXp = 0;
@@ -106,7 +111,7 @@ public class MiningBotPlugin extends Plugin
 	protected void startUp() throws Exception
 	{
 		log.info("Mining Bot started! Attempting to connect to the automation server...");
-		this.currentState = BotState.IDLE;
+		this.currentState = "IDLE";
 		panel = new MiningBotPanel(this, config, configManager);
 		final BufferedImage icon = ImageUtil.loadImageResource(getClass(), "/images/icon.png");
 		navButton = NavigationButton.builder()
@@ -143,6 +148,7 @@ public class MiningBotPlugin extends Plugin
 		overlayManager.remove(rockOverlay);
 		overlayManager.remove(statusOverlay);
 		overlayManager.remove(inventoryOverlay);
+		taskManager.clearTasks();
 		
 		// Disconnect from pipe service
 		if (pipeService != null)
@@ -169,49 +175,17 @@ public class MiningBotPlugin extends Plugin
 
 	@Subscribe
 	public void onAnimationChanged(AnimationChanged animationChanged) {
-		if (animationChanged.getActor() != client.getLocalPlayer()) {
-			return;
-		}
-		
-		// Only process animation changes if we're in WAIT_MINING state
-		if (currentState != BotState.WAIT_MINING) {
-			return;
-		}
-		
-		int newAnimation = client.getLocalPlayer().getAnimation();
-		
-		// Check if player stopped mining (went idle or changed to different animation)
-		if (newAnimation == AnimationID.IDLE || !isMiningAnimation(newAnimation)) {
-			log.info("Mining animation stopped. Animation: {}", newAnimation);
-			finishMining();
+		BotTask currentTask = taskManager.getCurrentTask();
+		if (currentTask instanceof MiningTask) {
+			((MiningTask) currentTask).onAnimationChanged(animationChanged);
 		}
 	}
 	
 	@Subscribe
 	public void onStatChanged(StatChanged statChanged) {
-		// Only track mining XP
-		if (statChanged.getSkill() != Skill.MINING) {
-			return;
-		}
-		
-		long currentXp = statChanged.getXp();
-		
-		// If we're actively mining and gained XP, this is superior detection
-		if (currentState == BotState.WAIT_MINING && miningStarted) {
-			if (currentXp > lastMiningXp) {
-				long xpGained = currentXp - lastMiningXp;
-				xpGainedThisMine += xpGained;
-				lastMiningXp = currentXp;
-				log.info("Gained {} mining XP (total this mine: {})", xpGained, xpGainedThisMine);
-				
-				// XP gain means we successfully mined an ore
-				// We should wait a brief moment for animation to finish, then transition
-				setRandomDelay(1, 2);
-				actionQueue.add(() -> finishMining());
-			}
-		} else {
-			// Always keep track of current XP for reference
-			lastMiningXp = currentXp;
+		BotTask currentTask = taskManager.getCurrentTask();
+		if (currentTask instanceof MiningTask) {
+			((MiningTask) currentTask).onStatChanged(statChanged);
 		}
 	}
 
@@ -225,9 +199,9 @@ public class MiningBotPlugin extends Plugin
 		period = 600,
 		unit = ChronoUnit.MILLIS
 	)
-	public void runFsm() {
+	public void onGameTick() {
 		if (panel != null) {
-			panel.setStatus(currentState.toString());
+			panel.setStatus(currentState);
 			panel.setButtonText(config.startBot() ? "Stop" : "Start");
 			panel.updateConnectionStatus();
 		}
@@ -235,262 +209,109 @@ public class MiningBotPlugin extends Plugin
 		boolean isRunning = config.startBot();
 
 		if (isRunning && !wasRunning) {
-			// Check if automation server is connected before starting bot
 			if (!isAutomationConnected()) {
 				log.warn("Cannot start bot: Automation server not connected. Please click 'Connect' first.");
-				configManager.setConfiguration("miningbot", "startBot", false);
+				stopBot();
 				return;
 			}
 			log.info("Bot starting...");
-			currentState = BotState.FINDING_ROCK;
+			taskManager.pushTask(new MiningTask(this, config));
 			wasRunning = true;
 		}
 
 		if (!isRunning && wasRunning) {
 			log.info("Bot stopping...");
-			currentState = BotState.IDLE;
-			actionQueue.clear();
-			delayTicks = 0;
-			idleTicks = 0;
+			taskManager.clearTasks();
+			currentState = "IDLE";
 			wasRunning = false;
-			return;
 		}
 
-		if (!isRunning) {
-			return;
-		}
-
-		if (delayTicks > 0) {
-			delayTicks--;
-			return;
-		}
-
-		if (!actionQueue.isEmpty()) {
-			actionQueue.poll().run();
-			setRandomDelay(1, 3);
-			return;
-		}
-
-		switch (currentState) {
-			case IDLE:
-				log.info("State: IDLE. Bot is running but in IDLE state. Transitioning to FINDING_ROCK.");
-				currentState = BotState.FINDING_ROCK;
-				break;
-			case FINDING_ROCK:
-				doFindingRock();
-				break;
-			case MINING:
-				doMining();
-				break;
-			case WAIT_MINING:
-				doWaitMining();
-				break;
-			case CHECK_INVENTORY:
-				doCheckInventory();
-				break;
-			case DROPPING:
-				doDropping();
-				break;
-			case WALKING_TO_BANK:
-			case BANKING:
-				log.info("State: Banking (not implemented)");
-				configManager.setConfiguration("miningbot", "startBot", false);
-				break;
-			default:
-				log.warn("Unhandled bot state: {}", currentState);
-				configManager.setConfiguration("miningbot", "startBot", false);
-				break;
+		if (isRunning) {
+			taskManager.onLoop();
 		}
 	}
 
-	private void setRandomDelay(int minTicks, int maxTicks) {
-		// delayTicks = minTicks + random.nextInt(maxTicks - minTicks + 1);
-		delayTicks = 0;
+	public void stopBot() {
+		configManager.setConfiguration("miningbot", "startBot", false);
 	}
 
-	private void doFindingRock() {
-		int[] rockIds = Arrays.stream(config.rockIds().split(","))
+	// --- Public Helper Methods for Tasks ---
+
+	public Client getClient() {
+		return client;
+	}
+
+	public Random getRandom() {
+		return random;
+	}
+
+	public int[] getRockIds() {
+		String[] idsStr = config.rockIds().split(",");
+		return Arrays.stream(idsStr)
 				.map(String::trim)
 				.filter(s -> !s.isEmpty())
 				.mapToInt(Integer::parseInt)
 				.toArray();
-
-		if (rockIds.length == 0) {
-			log.warn("No rock IDs configured. Please set them in the config panel.");
-			configManager.setConfiguration("miningbot", "startBot", false);
-			return;
-		}
-
-		GameObject rock = findNearestGameObject(rockIds);
-		if (rock != null) {
-			targetRock = rock; // Store target rock for debugging
-			log.info("Found rock with ID {} at {}", rock.getId(), rock.getSceneMinLocation());
-			actionQueue.add(() -> sendClickRequest(getRandomClickablePoint(rock)));
-			currentState = BotState.MINING;
-			setRandomDelay(2, 5);
-		} else {
-			targetRock = null; // Clear target if no rock found
-			log.info("No rocks found. Waiting.");
-			setRandomDelay(5, 10);
-		}
 	}
 
-	private void doMining() {
-		// Initialize mining tracking
-		miningStarted = true;
-		xpGainedThisMine = 0;
-		if (client.getSkillExperience(Skill.MINING) > 0) {
-			lastMiningXp = client.getSkillExperience(Skill.MINING);
-		}
-		
-		log.info("Started mining, transitioning to WAIT_MINING state");
-		currentState = BotState.WAIT_MINING;
-		setRandomDelay(1, 2);
+	public int[] getOreIds() {
+		// A simple map from rock ID to ore ID. This could be improved.
+		return Arrays.stream(getRockIds())
+				.map(rockId -> RockOres.getOreForRock(rockId))
+				.filter(oreId -> oreId != -1)
+				.toArray();
 	}
-	
-	private void doWaitMining() {
-		// This state is primarily handled by events (onAnimationChanged and onStatChanged)
-		// But we also include a fallback timeout mechanism
-		
-		if (!miningStarted) {
-			log.warn("WAIT_MINING state but mining not started. Transitioning to CHECK_INVENTORY.");
-			finishMining();
-			return;
-		}
-		
-		// Fallback: Check if player has been idle too long (backup detection)
-		if (isPlayerIdle()) {
-			idleTicks++;
-			if (idleTicks > 5) { // Player idle for more than 5 ticks (~3 seconds)
-				log.info("Player idle for {} ticks, mining likely finished", idleTicks);
-				finishMining();
-			}
-		} else {
-			idleTicks = 0; // Reset idle counter if player is active
-		}
-		
-		// Additional safety: Check if we've been waiting too long (e.g., rock depleted)
-		// This shouldn't normally trigger with event-based detection
-		if (System.currentTimeMillis() % 30000 < 600) { // Every 30 seconds check
-			if (xpGainedThisMine == 0) {
-				log.warn("Been waiting for mining completion for a while with no XP gain. Rock may be depleted.");
-				finishMining();
-			}
-		}
-	}
-	
-	private void finishMining() {
-		log.info("Mining completed. Gained {} XP this mine.", xpGainedThisMine);
-		totalXpGained += xpGainedThisMine;
-		miningStarted = false;
-		idleTicks = 0;
-		xpGainedThisMine = 0;
-		targetRock = null; // Clear target rock when finished mining
-		currentState = BotState.CHECK_INVENTORY;
-		setRandomDelay(1, 3);
-	}
-	
-	/**
-	 * Check if the given animation ID represents a mining animation
-	 */
-	private boolean isMiningAnimation(int animationId) {
-		// Common mining animation IDs (you may need to add more based on your pickaxe types)
-		// These are approximate - you may need to verify the exact IDs in-game
-		switch (animationId) {
-			case 625:   // Bronze pickaxe
-			case 626:   // Iron pickaxe  
-			case 627:   // Steel pickaxe
-			case 628:   // Black pickaxe
-			case 629:   // Mithril pickaxe
-			case 630:   // Adamant pickaxe
-			case 631:   // Rune pickaxe
-			case 7139:  // Dragon pickaxe
-			case 8347:  // Infernal pickaxe
-			case 4481:  // Crystal pickaxe
+
+	public boolean isItemInList(int itemId, int[] list) {
+		for (int id : list) {
+			if (itemId == id) {
 				return true;
-			default:
-				return false;
-		}
-	}
-
-	private void doCheckInventory() {
-		if (isInventoryFull()) {
-			if (config.miningMode() == MiningMode.POWER_MINE_DROP) {
-				currentState = BotState.DROPPING;
-			} else {
-				currentState = BotState.WALKING_TO_BANK;
-			}
-		} else {
-			currentState = BotState.FINDING_ROCK;
-		}
-		setRandomDelay(1, 3);
-	}
-
-	private void doDropping() {
-		actionQueue.add(() -> sendKeyRequest("key_hold", "shift"));
-
-		Widget inventoryWidget = client.getWidget(WidgetInfo.INVENTORY);
-		if (inventoryWidget != null) {
-			ItemContainer inventory = client.getItemContainer(InventoryID.INVENTORY);
-			if (inventory == null) return;
-
-			int[] oreIds = Arrays.stream(config.oreIds().split(","))
-					.map(String::trim)
-					.filter(s -> !s.isEmpty())
-					.mapToInt(Integer::parseInt)
-					.toArray();
-
-			if (oreIds.length == 0) {
-				log.warn("No ore IDs configured for dropping. Please set them in the config panel.");
-				// We don't stop the bot here, just log a warning.
-				// The bot will proceed to find the next rock.
-			}
-
-			for (Widget item : inventoryWidget.getDynamicChildren()) {
-				if (item != null && !item.isHidden() && Arrays.stream(oreIds).anyMatch(id -> id == item.getItemId())) {
-					actionQueue.add(() -> {
-						Point clickPoint = new Point(
-								item.getCanvasLocation().getX() + (item.getWidth() / 2) + random.nextInt(4) - 2,
-								item.getCanvasLocation().getY() + (item.getHeight() / 2) + random.nextInt(4) - 2
-						);
-						sendClickRequest(clickPoint);
-					});
-				}
 			}
 		}
-
-		actionQueue.add(() -> sendKeyRequest("key_release", "shift"));
-		actionQueue.add(() -> {
-			currentState = BotState.FINDING_ROCK;
-			log.info("Finished dropping. Back to mining.");
-		});
+		return false;
 	}
 
-	public boolean isInventoryFull() {
+	public int getInventoryItemId(int slot) {
 		ItemContainer inventory = client.getItemContainer(InventoryID.INVENTORY);
-		if (inventory == null) {
-			return false;
-		}
-		return inventory.count() >= 28;
+		if (inventory == null) return -1;
+		Item item = inventory.getItem(slot);
+		return item != null ? item.getId() : -1;
 	}
 
-	private boolean isPlayerIdle() {
-		return client.getLocalPlayer() != null && client.getLocalPlayer().getAnimation() == -1;
+	public Point getInventoryItemPoint(int slot) {
+		Widget inventoryWidget = client.getWidget(WidgetInfo.INVENTORY);
+		if (inventoryWidget == null) return new Point(-1, -1);
+		Widget itemWidget = inventoryWidget.getChild(slot);
+		if (itemWidget == null) return new Point(-1, -1);
+		Rectangle bounds = itemWidget.getBounds();
+		int x = (int) bounds.getCenterX() + random.nextInt(4) - 2;
+		int y = (int) bounds.getCenterY() + random.nextInt(4) - 2;
+		return new Point(x, y);
 	}
 
-	private GameObject findNearestGameObject(int... ids) {
-		if (client.getLocalPlayer() == null)
+	public boolean isInventoryFull()
+	{
+		ItemContainer inventory = client.getItemContainer(InventoryID.INVENTORY);
+		if (inventory != null)
 		{
-			return null;
+			return inventory.size() >= 28;
 		}
+		return false;
+	}
 
-		List<GameObject> result = new ArrayList<>();
+	public boolean isPlayerIdle() {
+		return client.getLocalPlayer().getAnimation() == -1;
+	}
+
+	public GameObject findNearestGameObject(int... ids) {
 		Scene scene = client.getScene();
-		Tile[][] tiles = scene.getTiles()[client.getPlane()];
+		Tile[][][] tiles = scene.getTiles();
+		int z = client.getPlane();
+		List<GameObject> matchingObjects = new ArrayList<>();
 
-		for (int x = 0; x < scene.getTiles()[0].length; x++) {
-			for (int y = 0; y < scene.getTiles()[0][0].length; y++) {
-				Tile tile = tiles[x][y];
+		for (int x = 0; x < Constants.SCENE_SIZE; x++) {
+			for (int y = 0; y < Constants.SCENE_SIZE; y++) {
+				Tile tile = tiles[z][x][y];
 				if (tile == null) {
 					continue;
 				}
@@ -498,7 +319,7 @@ public class MiningBotPlugin extends Plugin
 					if (gameObject != null) {
 						for (int id : ids) {
 							if (gameObject.getId() == id) {
-								result.add(gameObject);
+								matchingObjects.add(gameObject);
 							}
 						}
 					}
@@ -506,126 +327,87 @@ public class MiningBotPlugin extends Plugin
 			}
 		}
 
-		if (result.isEmpty()) {
-			return null;
-		}
-
-		result.sort(Comparator.comparingInt(a -> a.getLocalLocation().distanceTo(client.getLocalPlayer().getLocalLocation())));
-		return result.get(0);
+		return matchingObjects.stream()
+				.min(Comparator.comparingInt(obj -> obj.getWorldLocation().distanceTo(client.getLocalPlayer().getWorldLocation())))
+				.orElse(null);
 	}
 
-	private Point getRandomClickablePoint(GameObject gameObject) {
-		if (gameObject == null) {
-			return null;
-		}
-		// Use getConvexHull for a more accurate clickable polygon
-		Shape convexHull = gameObject.getConvexHull();
-		if (convexHull == null) {
-			// Fallback to the old method if convex hull is not available
-			return getRandomClickablePointFromClickbox(gameObject);
-		}
-
-		Rectangle bounds = convexHull.getBounds();
-		if (bounds.isEmpty()) {
-			return null;
-		}
-
-		// Center of the bounding box for the Gaussian distribution
-		double centerX = bounds.getCenterX();
-		double centerY = bounds.getCenterY();
-		// Standard deviation - smaller values mean tighter clusters around the center
-		double stdDevX = bounds.getWidth() / 4.0;
-		double stdDevY = bounds.getHeight() / 4.0;
-
-		// Try up to 15 times to find a point within the polygon using a Gaussian distribution
-		for (int i = 0; i < 15; i++) {
-			int x = (int) (centerX + random.nextGaussian() * stdDevX);
-			int y = (int) (centerY + random.nextGaussian() * stdDevY);
-			Point randomPoint = new Point(x, y);
-
-			// Ensure the point is within the actual polygon shape
-			if (convexHull.contains(randomPoint)) {
-				return randomPoint;
-			}
-		}
-
-		// If Gaussian fails, fall back to a uniformly random point within the hull
-		log.warn("Could not find Gaussian point in 15 attempts, falling back to uniform random.");
-		return getRandomClickablePointFromClickbox(gameObject);
-	}
-
-	private Point getRandomClickablePointFromClickbox(GameObject gameObject) {
-		if (gameObject == null) {
-			return null;
-		}
+	public Point getRandomClickablePoint(GameObject gameObject) {
+		if (gameObject == null) return new Point(-1, -1);
 		Shape clickbox = gameObject.getClickbox();
-		if (clickbox == null) {
-			return null;
-		}
+		if (clickbox == null) return new Point(-1, -1);
 
 		Rectangle bounds = clickbox.getBounds();
-		if (bounds.isEmpty()) {
-			return null;
-		}
+		if (bounds.isEmpty()) return new Point(-1, -1);
 
-		// Try up to 10 times to find a random point in the clickbox
-		for (int i = 0; i < 10; i++) {
-			Point randomPoint = new Point(
-				bounds.x + random.nextInt(bounds.width),
-				bounds.y + random.nextInt(bounds.height)
-			);
-			if (clickbox.contains(randomPoint)) {
-				return randomPoint;
+		for (int i = 0; i < 10; i++) { // Try 10 times to find a point
+			int x = bounds.x + random.nextInt(bounds.width);
+			int y = bounds.y + random.nextInt(bounds.height);
+			if (clickbox.contains(x, y)) {
+				return new Point(x, y);
 			}
 		}
-
-		// If all else fails, return the center
+		// Fallback to center if random points fail
 		return new Point((int)bounds.getCenterX(), (int)bounds.getCenterY());
 	}
 
-	private void sendClickRequest(Point point) {
-		if (point == null) return;
 
+	public void sendClickRequest(Point point) {
+		if (point == null || point.x == -1) {
+			log.warn("Invalid point provided to sendClickRequest.");
+			return;
+		}
 		if (pipeService != null && pipeService.isConnected()) {
 			if (!pipeService.sendClick(point.x, point.y)) {
 				log.warn("Failed to send click command via pipe");
+				stopBot();
 			}
 		} else {
-			log.warn("Cannot send click - pipe service not connected");
+			log.warn("Cannot send click request: Pipe service not connected.");
+			stopBot();
 		}
 	}
 
-	private void sendKeyRequest(String endpoint, String key) {
-		if (pipeService != null && pipeService.isConnected()) {
-			boolean success = false;
-			
-			switch (endpoint) {
-				case "key_press":
-					success = pipeService.sendKeyPress(key);
-					break;
-				case "key_hold":
-					success = pipeService.sendKeyHold(key);
-					break;
-				case "key_release":
-					success = pipeService.sendKeyRelease(key);
-					break;
-				default:
-					log.warn("Unknown key endpoint: {}", endpoint);
-					return;
-			}
-			
-			if (!success) {
-				log.warn("Failed to send key {} command via pipe", endpoint);
-			}
-		} else {
-			log.warn("Cannot send key command - pipe service not connected");
+	public void sendKeyRequest(String endpoint, String key) {
+		if (pipeService == null || !pipeService.isConnected()) {
+			log.warn("Cannot send key request: Pipe service not connected.");
+			stopBot();
+			return;
+		}
+
+		boolean success = false;
+		switch (endpoint) {
+			case "/key_hold":
+				success = pipeService.sendKeyHold(key);
+				break;
+			case "/key_release":
+				success = pipeService.sendKeyRelease(key);
+				break;
+			default:
+				log.warn("Unknown key endpoint: {}", endpoint);
+				return;
+		}
+
+		if (!success) {
+			log.warn("Failed to send key {} command via pipe", endpoint);
+			stopBot();
 		}
 	}
 
-	// Getter methods for debugging overlays
-	public BotState getCurrentState()
+	// --- Public Getters/Setters for Panel and Overlays ---
+
+	public void setCurrentState(String state) {
+		this.currentState = state;
+	}
+	
+	public String getCurrentState()
 	{
-		return currentState;
+		return this.currentState;
+	}
+
+	public void setTargetRock(GameObject rock) {
+		this.targetRock = rock;
+		rockOverlay.setTarget(rock);
 	}
 
 	public GameObject getTargetRock()
@@ -635,95 +417,74 @@ public class MiningBotPlugin extends Plugin
 
 	public long getSessionXpGained()
 	{
-		if (sessionStartXp == 0)
-		{
-			return 0;
-		}
+		if (sessionStartTime == null) return 0;
 		return client.getSkillExperience(Skill.MINING) - sessionStartXp;
-	}
-
-	public long getTotalXpGained()
-	{
-		return totalXpGained;
 	}
 
 	public Duration getSessionRuntime()
 	{
-		if (sessionStartTime == null)
-		{
-			return Duration.ZERO;
-		}
+		if (sessionStartTime == null) return Duration.ZERO;
 		return Duration.between(sessionStartTime, Instant.now());
 	}
-	
-	/**
-	 * Check if the automation server is connected.
-	 * @return true if connected via named pipe
-	 */
+
+	public String getXpPerHour() {
+		Duration runtime = getSessionRuntime();
+		long xpGained = getSessionXpGained();
+		if (runtime.isZero() || xpGained == 0) {
+			return "0";
+		}
+		long seconds = runtime.getSeconds();
+		double xpPerSecond = (double) xpGained / seconds;
+		long xpPerHour = (long) (xpPerSecond * 3600);
+		return String.format("%,d", xpPerHour);
+	}
+
+
 	public boolean isAutomationConnected()
 	{
 		return pipeService != null && pipeService.isConnected();
 	}
-	
-	/**
-	 * Manually connect to the automation server (triggered by Connect button).
-	 * @return true if connection successful
-	 */
+
 	public boolean connectAutomation()
 	{
-		if (pipeService == null)
-		{
-			pipeService = new PipeService();
-		}
-		
-		if (pipeService.connect())
-		{
-			if (pipeService.sendConnect())
-			{
-				log.info("Successfully connected to automation server via Connect button.");
-				return true;
+		try {
+			if (pipeService == null) {
+				pipeService = new PipeService();
 			}
-			else
-			{
-				log.warn("Connected to pipe but failed to send connect command.");
+			if (pipeService.connect()) {
+				// After connecting, send a "connect" command to the Python server
+				// to initialize the RemoteInput client.
+				if (pipeService.sendConnect()) {
+					log.info("Successfully connected and initialized automation server.");
+					panel.updateConnectionStatus();
+					return true;
+				} else {
+					log.error("Connected to pipe, but failed to send connect command.");
+					pipeService.disconnect();
+					panel.updateConnectionStatus();
+					return false;
+				}
+			} else {
+				log.error("Failed to establish connection with automation server.");
+				panel.updateConnectionStatus();
 				return false;
 			}
-		}
-		else
-		{
-			log.error("Failed to connect to automation server. Make sure the Python server is running.");
+		} catch (Exception e) {
+			log.error("Error connecting to automation server: {}", e.getMessage(), e);
+			if (pipeService != null) {
+				pipeService.disconnect();
+			}
+			panel.updateConnectionStatus();
 			return false;
 		}
 	}
-	
-	/**
-	 * Attempt to reconnect to the automation server.
-	 * @return true if reconnection successful
-	 */
+
 	public boolean reconnectAutomation()
 	{
-		if (pipeService == null)
-		{
-			pipeService = new PipeService();
+		log.info("Attempting to reconnect to the automation server...");
+		if (pipeService != null) {
+			pipeService.disconnect();
 		}
-		
-		if (pipeService.connect())
-		{
-			if (pipeService.sendConnect())
-			{
-				log.info("Successfully reconnected to automation server.");
-				return true;
-			}
-			else
-			{
-				log.warn("Connected to pipe but failed to send connect command.");
-				return false;
-			}
-		}
-		else
-		{
-			log.error("Failed to reconnect to automation server.");
-			return false;
-		}
+		return connectAutomation();
 	}
 } 

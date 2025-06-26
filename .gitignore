@@ -8,8 +8,7 @@ nbactions.xml
 nb-configuration.xml
 nbproject/
 automation_server/__pycache__/
-automation_server/lib*
-automation_server/remote_input.pyd.bak
 development_plan_old.md
 RemoteInput/
 runelite-plugin_backup/
+**.bak
