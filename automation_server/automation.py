@@ -191,8 +191,9 @@ class Automation:
             return
 
         def move_mouse_wrapper(x, y):
-            self.client.move_mouse(x, y)
-            time.sleep(random.uniform(0.005, 0.01))
+            if self.client:
+                self.client.move_mouse(x, y)
+                time.sleep(random.uniform(0.005, 0.01))
 
         sqrt3 = np.sqrt(3)
         sqrt5 = np.sqrt(5)

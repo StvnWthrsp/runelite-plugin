@@ -9,7 +9,6 @@ import net.runelite.api.Point;
 import net.runelite.client.ui.overlay.Overlay;
 import net.runelite.client.ui.overlay.OverlayLayer;
 import net.runelite.client.ui.overlay.OverlayPosition;
-import net.runelite.client.ui.overlay.OverlayPriority;
 
 public class MouseIndicatorOverlay extends Overlay {
     private final Client client;
@@ -19,7 +18,7 @@ public class MouseIndicatorOverlay extends Overlay {
         this.client = client;
         setPosition(OverlayPosition.DYNAMIC);
         setLayer(OverlayLayer.ALWAYS_ON_TOP);
-        setPriority(OverlayPriority.HIGH);
+        setPriority(0.75f);
     }
 
     @Override

@@ -3,9 +3,8 @@ package com.example;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.api.GameObject;
-import net.runelite.api.ObjectID;
+import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.widgets.Widget;
-import net.runelite.api.widgets.WidgetInfo;
 
 import javax.inject.Inject;
 
@@ -53,6 +52,8 @@ public class BankTask implements BotTask {
             case WAITING_FOR_DEPOSIT:
                 waitForDeposit();
                 break;
+            default:
+                break;
         }
     }
 
@@ -69,7 +70,7 @@ public class BankTask implements BotTask {
     }
 
     private void waitForBankWidget() {
-        Widget bankWidget = client.getWidget(WidgetInfo.BANK_CONTAINER);
+        Widget bankWidget = client.getWidget(InterfaceID.Bankmain.ITEMS_CONTAINER);
         if (bankWidget != null && !bankWidget.isHidden()) {
             log.info("Bank is open.");
             state = BankState.DEPOSITING;
@@ -78,7 +79,7 @@ public class BankTask implements BotTask {
     }
 
     private void depositItems() {
-        Widget depositInventoryButton = client.getWidget(WidgetInfo.BANK_DEPOSIT_INVENTORY);
+        Widget depositInventoryButton = client.getWidget(InterfaceID.Bankmain.DEPOSITINV);
         if (depositInventoryButton != null && !depositInventoryButton.isHidden()) {
             log.info("Depositing inventory.");
             plugin.sendClickRequest(plugin.getRandomPointInBounds(depositInventoryButton.getBounds()), true);
@@ -109,9 +110,5 @@ public class BankTask implements BotTask {
     @Override
     public String getTaskName() {
         return "Banking";
-    }
-
-    private GameObject findNearestGameObject(int... objectIds) {
-        return plugin.findNearestGameObject(objectIds);
     }
 } 

@@ -2,13 +2,12 @@ package com.example;
 
 import net.runelite.api.Client;
 import net.runelite.api.ItemContainer;
-import net.runelite.api.InventoryID;
+import net.runelite.api.gameval.InterfaceID;
+import net.runelite.api.gameval.InventoryID;
 import net.runelite.api.widgets.Widget;
-import net.runelite.api.widgets.WidgetInfo;
 import net.runelite.client.ui.overlay.Overlay;
 import net.runelite.client.ui.overlay.OverlayLayer;
 import net.runelite.client.ui.overlay.OverlayPosition;
-import net.runelite.client.ui.overlay.OverlayPriority;
 
 import javax.inject.Inject;
 import java.awt.BasicStroke;
@@ -30,7 +29,7 @@ public class MiningBotInventoryOverlay extends Overlay
         this.client = client;
         this.config = config;
         setPosition(OverlayPosition.DYNAMIC);
-        setPriority(OverlayPriority.LOW);
+        setPriority(0.25f);
         setLayer(OverlayLayer.ABOVE_WIDGETS);
     }
 
@@ -42,13 +41,13 @@ public class MiningBotInventoryOverlay extends Overlay
             return null;
         }
 
-        Widget inventoryWidget = client.getWidget(WidgetInfo.INVENTORY);
+        Widget inventoryWidget = client.getWidget(InterfaceID.Inventory.ITEMS);
         if (inventoryWidget == null || inventoryWidget.isHidden())
         {
             return null;
         }
 
-        ItemContainer inventory = client.getItemContainer(InventoryID.INVENTORY);
+        ItemContainer inventory = client.getItemContainer(InventoryID.INV);
         if (inventory == null)
         {
             return null;

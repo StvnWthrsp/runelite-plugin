@@ -5,11 +5,11 @@ import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.api.coords.WorldPoint;
+import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.Perspective;
 import net.runelite.api.Point;
 import net.runelite.api.coords.LocalPoint;
 import net.runelite.api.widgets.Widget;
-import net.runelite.api.widgets.WidgetInfo;
 import shortestpath.WorldPointUtil;
 import shortestpath.pathfinder.Pathfinder;
 import shortestpath.pathfinder.PathfinderConfig;
@@ -71,6 +71,8 @@ public class WalkTask implements BotTask {
                 break;
             case WALKING:
                 handleWalking();
+                break;
+            default:
                 break;
         }
     }
@@ -150,7 +152,7 @@ public class WalkTask implements BotTask {
     }
 
     private boolean isPointOnMinimap(WorldPoint point) {
-        LocalPoint localPoint = LocalPoint.fromWorld(client, point);
+        LocalPoint localPoint = LocalPoint.fromWorld(client.getWorldView(-1), point);
         if (localPoint == null) {
             return false;
         }
@@ -180,11 +182,11 @@ public class WalkTask implements BotTask {
 
     private Widget getMinimapDrawWidget() {
         if (client.isResized()) {
-            if (client.getWidget(WidgetInfo.RESIZABLE_MINIMAP_DRAW_AREA) != null) {
-                return client.getWidget(WidgetInfo.RESIZABLE_MINIMAP_DRAW_AREA);
+            if (client.getWidget(InterfaceID.ToplevelPreEoc.MINIMAP) != null) {
+                return client.getWidget(InterfaceID.ToplevelPreEoc.MINIMAP);
             }
         }
-        return client.getWidget(WidgetInfo.FIXED_VIEWPORT_MINIMAP_DRAW_AREA);
+        return client.getWidget(InterfaceID.Toplevel.MINIMAP);
     }
 
     @Override

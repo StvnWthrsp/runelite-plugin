@@ -1,7 +1,8 @@
 package com.example;
 
 import lombok.extern.slf4j.Slf4j;
-import net.runelite.api.AnimationID;
+// import net.runelite.api.AnimationID;
+import net.runelite.api.gameval.AnimationID;
 import net.runelite.api.GameObject;
 import net.runelite.api.Skill;
 import net.runelite.api.coords.WorldPoint;
@@ -129,6 +130,8 @@ public class MiningTask implements BotTask {
             case WAITING_FOR_SUBTASK:
                 // Handled above, do nothing here
                 break;
+            default:
+                break;
         }
         plugin.setCurrentState(currentState.toString());
     }
@@ -142,7 +145,7 @@ public class MiningTask implements BotTask {
             return;
         }
         int newAnimation = plugin.getClient().getLocalPlayer().getAnimation();
-        if (newAnimation == AnimationID.IDLE || !isMiningAnimation(newAnimation)) {
+        if (newAnimation == -1 || !isMiningAnimation(newAnimation)) {
             log.info("Mining animation stopped. Animation: {}", newAnimation);
             finishMining();
         }
@@ -170,6 +173,7 @@ public class MiningTask implements BotTask {
     // --- FSM LOGIC ---
     private void setRandomDelay(int minTicks, int maxTicks) {
         delayTicks = plugin.getRandom().nextInt(maxTicks - minTicks + 1) + minTicks;
+        delayTicks = 0;
     }
 
     private void doFindingRock() {
@@ -232,19 +236,19 @@ public class MiningTask implements BotTask {
     }
 
     private boolean isMiningAnimation(int animationId) {
-        return animationId == AnimationID.MINING_BRONZE_PICKAXE ||
-                animationId == AnimationID.MINING_IRON_PICKAXE ||
-                animationId == AnimationID.MINING_STEEL_PICKAXE ||
-                animationId == AnimationID.MINING_BLACK_PICKAXE ||
-                animationId == AnimationID.MINING_MITHRIL_PICKAXE ||
-                animationId == AnimationID.MINING_ADAMANT_PICKAXE ||
-                animationId == AnimationID.MINING_RUNE_PICKAXE ||
-                animationId == AnimationID.MINING_DRAGON_PICKAXE ||
-                animationId == AnimationID.MINING_DRAGON_PICKAXE_OR ||
-                animationId == AnimationID.MINING_INFERNAL_PICKAXE ||
-                animationId == AnimationID.MINING_3A_PICKAXE ||
-                animationId == AnimationID.MINING_CRYSTAL_PICKAXE ||
-                animationId == AnimationID.MINING_TRAILBLAZER_PICKAXE;
+        return animationId == AnimationID.HUMAN_MINING_BRONZE_PICKAXE ||
+                animationId == AnimationID.HUMAN_MINING_IRON_PICKAXE ||
+                animationId == AnimationID.HUMAN_MINING_STEEL_PICKAXE ||
+                animationId == AnimationID.HUMAN_MINING_BLACK_PICKAXE ||
+                animationId == AnimationID.HUMAN_MINING_MITHRIL_PICKAXE ||
+                animationId == AnimationID.HUMAN_MINING_ADAMANT_PICKAXE ||
+                animationId == AnimationID.HUMAN_MINING_RUNE_PICKAXE ||
+                animationId == AnimationID.HUMAN_MINING_DRAGON_PICKAXE ||
+                animationId == AnimationID.HUMAN_MINING_DRAGON_PICKAXE_PRETTY ||
+                animationId == AnimationID.HUMAN_MINING_INFERNAL_PICKAXE ||
+                animationId == AnimationID.HUMAN_MINING_3A_PICKAXE ||
+                animationId == AnimationID.HUMAN_MINING_CRYSTAL_PICKAXE ||
+                animationId == AnimationID.HUMAN_MINING_TRAILBLAZER_PICKAXE;
     }
 
     private void doCheckInventory() {
@@ -313,5 +317,14 @@ public class MiningTask implements BotTask {
 
         // Perform the verification
         return action.equalsIgnoreCase(expectedAction) && target.equalsIgnoreCase(expectedTarget);
+    }
+
+    // Expects that the mouse is already over the target
+    public boolean verifyAndClick(String expectedAction, String expectedTarget) {
+        if (verifyHoverAction(expectedAction, expectedTarget)) {
+            plugin.sendClickRequest(plugin.getRandomClickablePoint(targetRock), false);
+            return true;
+        }
+        return false;
     }
 } 

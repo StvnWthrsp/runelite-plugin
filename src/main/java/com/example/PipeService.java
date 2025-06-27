@@ -164,11 +164,12 @@ public class PipeService {
     }
     
     // Command classes for JSON serialization
-    
+    @SuppressWarnings("unused")
     private static class ConnectCommand {
         public final String action = "connect";
     }
     
+    @SuppressWarnings("unused")
     private static class ClickCommand {
         public final String action = "click";
         public final int x;
@@ -182,6 +183,7 @@ public class PipeService {
         }
     }
 
+    @SuppressWarnings("unused")
     private static class MouseMoveCommand {
         public final String action = "move";
         public final int x;
@@ -193,6 +195,7 @@ public class PipeService {
         }
     }
     
+    @SuppressWarnings("unused")
     private static class KeyCommand {
         public final String action;
         public final String key;

@@ -4,47 +4,39 @@ import com.google.inject.Provides;
 import java.time.Duration;
 import java.time.Instant;
 import javax.inject.Inject;
-import com.google.gson.Gson;
 import lombok.extern.slf4j.Slf4j;
-import net.runelite.api.ChatMessageType;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.AnimationChanged;
 import net.runelite.api.events.StatChanged;
 import net.runelite.api.Skill;
-import net.runelite.api.AnimationID;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
-import java.util.ArrayDeque;
 import java.util.Arrays;
-import java.util.Deque;
 import net.runelite.client.task.Schedule;
 import java.time.temporal.ChronoUnit;
 import net.runelite.api.GameObject;
 import net.runelite.api.widgets.Widget;
-import net.runelite.api.widgets.WidgetInfo;
 import java.util.List;
 import java.util.Random;
 import java.awt.Point;
 import java.awt.Rectangle;
 import java.awt.Shape;
-import java.awt.Polygon;
 import net.runelite.api.Scene;
 import net.runelite.api.Tile;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 import net.runelite.client.ui.ClientToolbar;
 import net.runelite.client.ui.NavigationButton;
 import net.runelite.client.util.ImageUtil;
 import java.awt.image.BufferedImage;
 import net.runelite.api.Item;
 import net.runelite.api.ItemContainer;
-import net.runelite.api.InventoryID;
+import net.runelite.api.gameval.InterfaceID;
+import net.runelite.api.gameval.InventoryID;
 import net.runelite.client.ui.overlay.OverlayManager;
 import net.runelite.api.Constants;
 import shortestpath.ShortestPathConfig;
@@ -59,29 +51,19 @@ import net.runelite.api.coords.WorldPoint;
 )
 public class MiningBotPlugin extends Plugin
 {
-	private static final int COPPER_ORE_ID = 436;
-	private final Deque<Runnable> actionQueue = new ArrayDeque<>();
 	private PipeService pipeService = null;
 	private final Random random = new Random();
 	private String currentState = "IDLE";
-	private int idleTicks = 0;
-	private int delayTicks = 0;
 	private MiningBotPanel panel;
 	private NavigationButton navButton;
 	private boolean wasRunning = false;
 	private final TaskManager taskManager = new TaskManager();
 	
 	private PathfinderConfig pathfinderConfig;
-
-	// Mining completion detection variables
-	private long lastMiningXp = 0;
-	private long xpGainedThisMine = 0;
-	private boolean miningStarted = false;
 	
 	// Debugging and tracking variables
 	private GameObject targetRock = null;
 	private long sessionStartXp = 0;
-	private long totalXpGained = 0;
 	private Instant sessionStartTime = null;
 
 	@Inject
@@ -104,9 +86,6 @@ public class MiningBotPlugin extends Plugin
 
 	@Inject
 	private ConfigManager configManager;
-
-	@Inject
-	private Gson gson;
 
 	@Inject
 	private ClientToolbar clientToolbar;
@@ -253,7 +232,7 @@ public class MiningBotPlugin extends Plugin
 	}
 
 	public void walkTo(WorldPoint worldPoint) {
-		LocalPoint localPoint = LocalPoint.fromWorld(client, worldPoint);
+		LocalPoint localPoint = LocalPoint.fromWorld(client.getWorldView(-1), worldPoint);
 		if (localPoint != null) {
 			net.runelite.api.Point minimapPoint = Perspective.localToMinimap(client, localPoint);
 			if (minimapPoint != null) {
@@ -304,14 +283,14 @@ public class MiningBotPlugin extends Plugin
 	}
 
 	public int getInventoryItemId(int slot) {
-		ItemContainer inventory = client.getItemContainer(InventoryID.INVENTORY);
+		ItemContainer inventory = client.getItemContainer(InventoryID.INV);
 		if (inventory == null) return -1;
 		Item item = inventory.getItem(slot);
 		return item != null ? item.getId() : -1;
 	}
 
 	public Point getInventoryItemPoint(int slot) {
-		Widget inventoryWidget = client.getWidget(WidgetInfo.INVENTORY);
+		Widget inventoryWidget = client.getWidget(InterfaceID.Inventory.ITEMS);
 		if (inventoryWidget == null) return new Point(-1, -1);
 		Widget itemWidget = inventoryWidget.getChild(slot);
 		if (itemWidget == null) return new Point(-1, -1);
@@ -323,12 +302,12 @@ public class MiningBotPlugin extends Plugin
 
 	public boolean isInventoryFull()
 	{
-		ItemContainer inventory = client.getItemContainer(InventoryID.INVENTORY);
+		ItemContainer inventory = client.getItemContainer(InventoryID.INV);
 		return inventory != null && inventory.count() >= 28;
 	}
 
 	public boolean isInventoryEmpty() {
-		ItemContainer inventory = client.getItemContainer(InventoryID.INVENTORY);
+		ItemContainer inventory = client.getItemContainer(InventoryID.INV);
 		// We consider the inventory "empty" if it only contains a pickaxe (or is fully empty)
 		return inventory != null && inventory.count() <= 1;
 	}
@@ -338,9 +317,9 @@ public class MiningBotPlugin extends Plugin
 	}
 
 	public GameObject findNearestGameObject(int... ids) {
-		Scene scene = client.getScene();
+		Scene scene = client.getWorldView(-1).getScene();
 		Tile[][][] tiles = scene.getTiles();
-		int z = client.getPlane();
+		int z = client.getWorldView(-1).getPlane();
 		List<GameObject> matchingObjects = new ArrayList<>();
 
 		for (int x = 0; x < Constants.SCENE_SIZE; x++) {
