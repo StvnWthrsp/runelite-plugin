@@ -127,6 +127,8 @@ class PipeServer:
                 self._handle_connect()
             elif action == 'click':
                 self._handle_click(command)
+            elif action == 'move':
+                self._handle_move(command)
             elif action == 'key_press':
                 self._handle_key_press(command)
             elif action == 'key_hold':
@@ -154,16 +156,36 @@ class PipeServer:
         try:
             x = command.get('x')
             y = command.get('y')
+            move = command.get('move')
             
             if x is None or y is None:
                 log.warning(f"Click command missing coordinates: {command}")
                 return
             
-            automation_manager.click(x, y)
+            if move:
+                automation_manager.move_and_click(x, y)
+            else:
+                automation_manager.click(x, y)
             log.debug(f"Click executed at ({x}, {y})")
             
         except Exception as e:
             log.error(f"Click command failed: {e}")
+    
+    def _handle_move(self, command):
+        """Handle move command."""
+        try:
+            x = command.get('x')
+            y = command.get('y')
+            if x is None or y is None:
+                log.warning(f"Move command missing coordinates: {command}")
+                return
+            
+            automation_manager.move_mouse(x, y)
+            log.debug(f"Move executed at ({x}, {y})")
+            
+        except Exception as e:
+            log.error(f"Move command failed: {e}")
+
     
     def _handle_key_press(self, command):
         """Handle key_press command."""

@@ -60,7 +60,7 @@ public class BankTask implements BotTask {
         GameObject bankBooth = plugin.findNearestGameObject(10583, 10355);
         if (bankBooth != null) {
             log.info("Found bank booth. Clicking it.");
-            plugin.sendClickRequest(plugin.getRandomClickablePoint(bankBooth));
+            plugin.sendClickRequest(plugin.getRandomClickablePoint(bankBooth), true);
             state = BankState.OPENING_BANK;
         } else {
             log.warn("No bank booth found. Cannot proceed with banking.");
@@ -81,7 +81,7 @@ public class BankTask implements BotTask {
         Widget depositInventoryButton = client.getWidget(WidgetInfo.BANK_DEPOSIT_INVENTORY);
         if (depositInventoryButton != null && !depositInventoryButton.isHidden()) {
             log.info("Depositing inventory.");
-            plugin.sendClickRequest(plugin.getRandomPointInBounds(depositInventoryButton.getBounds()));
+            plugin.sendClickRequest(plugin.getRandomPointInBounds(depositInventoryButton.getBounds()), true);
             state = BankState.WAITING_FOR_DEPOSIT;
         }
         // TODO: Wait for inventory to be empty.

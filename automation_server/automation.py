@@ -101,7 +101,8 @@ class Automation:
             start_x, start_y = self.mouse_pos
             self._wind_mouse_move(start_x, start_y, x, y)
 
-    def click(self, x: int, y: int):
+    def move_and_click(self, x: int, y: int):
+
         """
         Moves the mouse to the specified coordinates and performs a left-click.
 
@@ -112,6 +113,21 @@ class Automation:
         self._ensure_connected()
         if self.client:
             self.move_mouse(x, y)
+            time.sleep(random.uniform(0.02, 0.05))
+            self.client.hold_mouse(1) # 1 for left-click
+            time.sleep(random.uniform(0.03, 0.07))
+            self.client.release_mouse(1)
+
+    def click(self, x: int, y: int):
+        """
+        Moves the mouse to the specified coordinates and performs a left-click.
+
+        Args:
+            x: The x-coordinate (relative to the client window).
+            y: The y-coordinate (relative to the client window).
+        """
+        self._ensure_connected()
+        if self.client:
             time.sleep(random.uniform(0.02, 0.05))
             self.client.hold_mouse(1) # 1 for left-click
             time.sleep(random.uniform(0.03, 0.07))

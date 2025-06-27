@@ -258,7 +258,7 @@ public class MiningBotPlugin extends Plugin
 			net.runelite.api.Point minimapPoint = Perspective.localToMinimap(client, localPoint);
 			if (minimapPoint != null) {
 				log.info("Requesting walk to {} via minimap click at {}", worldPoint, minimapPoint);
-				sendClickRequest(new Point(minimapPoint.getX(), minimapPoint.getY()));
+				sendClickRequest(new Point(minimapPoint.getX(), minimapPoint.getY()), true);
 			} else {
 				log.warn("Cannot walk to {}: not visible on minimap.", worldPoint);
 			}
@@ -404,18 +404,34 @@ public class MiningBotPlugin extends Plugin
 		);
 	}
 
-	public void sendClickRequest(Point point) {
+	public void sendClickRequest(Point point, boolean move) {
 		if (point == null || point.x == -1) {
 			log.warn("Invalid point provided to sendClickRequest.");
 			return;
 		}
 		if (pipeService != null && pipeService.isConnected()) {
-			if (!pipeService.sendClick(point.x, point.y)) {
+			if (!pipeService.sendClick(point.x, point.y, move)) {
 				log.warn("Failed to send click command via pipe");
 				stopBot();
 			}
 		} else {
 			log.warn("Cannot send click request: Pipe service not connected.");
+			stopBot();
+		}
+	}
+
+	public void sendMouseMoveRequest(Point point) {
+		if (point == null || point.x == -1) {
+			log.warn("Invalid point provided to sendMouseMoveRequest.");
+			return;
+		}
+		if (pipeService != null && pipeService.isConnected()) {
+			if (!pipeService.sendMouseMove(point.x, point.y)) {
+				log.warn("Failed to send mouse move command via pipe");
+				stopBot();
+			}
+		} else {
+			log.warn("Cannot send mouse move request: Pipe service not connected.");
 			stopBot();
 		}
 	}

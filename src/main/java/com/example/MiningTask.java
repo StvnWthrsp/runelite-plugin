@@ -7,6 +7,8 @@ import net.runelite.api.Skill;
 import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.events.AnimationChanged;
 import net.runelite.api.events.StatChanged;
+import net.runelite.api.MenuEntry;
+import net.runelite.client.util.Text;
 import shortestpath.pathfinder.PathfinderConfig;
 
 import java.util.ArrayDeque;
@@ -181,7 +183,7 @@ public class MiningTask implements BotTask {
 
         if (targetRock != null) {
             currentState = MiningState.MINING;
-            doMining();
+            plugin.sendMouseMoveRequest(plugin.getRandomClickablePoint(targetRock));
         } else {
             log.info("No rocks found to mine.");
             setRandomDelay(10, 20); // Wait a while before searching again
@@ -193,7 +195,12 @@ public class MiningTask implements BotTask {
             currentState = MiningState.FINDING_ROCK;
             return;
         }
-        plugin.sendClickRequest(plugin.getRandomClickablePoint(targetRock));
+        if (!verifyHoverAction("Mine", "Copper rocks")) {
+            log.info("Click targeted wrong action. Did not execute click.");
+            currentState = MiningState.FINDING_ROCK;
+            return;
+        }
+        plugin.sendClickRequest(plugin.getRandomClickablePoint(targetRock), false);
         miningStarted = false;
         xpGainedThisMine = 0;
         idleTicks = 0;
@@ -271,7 +278,7 @@ public class MiningTask implements BotTask {
                 if (plugin.isItemInList(itemId, oreIds)) {
                     final int finalI = i;
                     actionQueue.add(() -> {
-                        plugin.sendClickRequest(plugin.getInventoryItemPoint(finalI));
+                        plugin.sendClickRequest(plugin.getInventoryItemPoint(finalI), true);
                         setRandomDelay(1, 2);
                     });
                 }
@@ -282,5 +289,29 @@ public class MiningTask implements BotTask {
                 actionQueue.add(() -> currentState = MiningState.FINDING_ROCK);
             });
         });
+    }
+
+    public boolean verifyHoverAction(String expectedAction, String expectedTarget) {
+        // Get the menu entries that are present on hover
+        MenuEntry[] menuEntries = plugin.getClient().getMenu().getMenuEntries();
+
+        // Check if there are any menu entries at all
+        if (menuEntries.length == 0) {
+            return false;
+        }
+
+        // The default action is the last entry in the array.
+        // The array is ordered from the bottom of the right-click menu to the top.
+        MenuEntry topEntry = menuEntries[menuEntries.length - 1];
+
+        String action = topEntry.getOption();
+        log.info("Left-click action: {}", action);
+        // The target name might have color tags (e.g., <col=ff9040>Goblin</col>)
+        // It's a good practice to clean this up for reliable comparison.
+        String target = Text.removeTags(topEntry.getTarget());
+        log.info("Left-click target: {}", target);
+
+        // Perform the verification
+        return action.equalsIgnoreCase(expectedAction) && target.equalsIgnoreCase(expectedTarget);
     }
 } 
