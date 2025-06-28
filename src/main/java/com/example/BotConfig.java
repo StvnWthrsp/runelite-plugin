@@ -71,7 +71,52 @@ public interface BotConfig extends Config
 		return "436"; // Default copper ore ID
 	}
 
-	// Debugging section
+	// Combat Bot specific settings
+	@ConfigItem(
+			keyName = "combatNpcNames",
+			name = "Combat NPC Names",
+			description = "Comma-separated list of NPC names to attack (e.g., Goblin,Cow)",
+			position = 20,
+			hidden = true
+	)
+	default String combatNpcNames()
+	{
+		return "Goblin"; // Default target
+	}
+
+	@ConfigItem(
+			keyName = "combatEatAtHealthPercent",
+			name = "Eat at Health Percent",
+			description = "Health percentage threshold at which to eat food (1-99)",
+			position = 21,
+			hidden = true
+	)
+	default int combatEatAtHealthPercent()
+	{
+		return 50; // Default to 50% health
+	}
+
+	// Combat Bot debugging section
+	@ConfigSection(
+			name = "Combat Bot - Debugging",
+			description = "Visual debugging options for combat bot",
+			position = 30
+	)
+	String combatDebugSection = "combatDebugging";
+
+	@ConfigItem(
+			keyName = "highlightTargetNpc",
+			name = "Highlight Target NPC",
+			description = "Visually highlight the targeted NPC (Green: targeting, Red: attacking, Yellow: other)",
+			position = 0,
+			section = combatDebugSection
+	)
+	default boolean highlightTargetNpc()
+	{
+		return false;
+	}
+
+	// Mining Bot debugging section
 	@ConfigSection(
 			name = "Mining Bot - Debugging",
 			description = "Visual debugging options for mining bot",

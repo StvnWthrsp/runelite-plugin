@@ -127,11 +127,9 @@ public class BotPanel extends PluginPanel {
                 currentBotPanel = createEmptyPanel();
                 break;
         }
-        
-        if (currentBotPanel != null) {
-            contentPanel.add(currentBotPanel, BorderLayout.CENTER);
-        }
-        
+
+        contentPanel.add(currentBotPanel, BorderLayout.CENTER);
+
         // Refresh the panel
         revalidate();
         repaint();
@@ -140,21 +138,12 @@ public class BotPanel extends PluginPanel {
     private JPanel createMiningBotPanel() {
         // Create the mining-specific panel - we can pass the BotConfig directly now
         // since BotConfig contains all the methods that MiningBotPanel needs
-        MiningBotPanel miningPanel = new MiningBotPanel(plugin, config, configManager);
-        return miningPanel;
+        return new MiningBotPanel(plugin, config, configManager);
     }
     
     private JPanel createCombatBotPanel() {
-        // Placeholder for Combat bot - no functionality yet
-        JPanel combatPanel = new JPanel(new BorderLayout());
-        combatPanel.setBorder(BorderFactory.createTitledBorder("Combat Bot"));
-        
-        JLabel placeholderLabel = new JLabel("<html><center>Combat bot functionality<br/>coming soon!</center></html>");
-        placeholderLabel.setHorizontalAlignment(SwingConstants.CENTER);
-        placeholderLabel.setForeground(Color.GRAY);
-        
-        combatPanel.add(placeholderLabel, BorderLayout.CENTER);
-        return combatPanel;
+        // Create the combat-specific panel
+        return new CombatBotPanel(plugin, config, configManager);
     }
     
     private JPanel createEmptyPanel() {

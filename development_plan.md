@@ -186,25 +186,40 @@ This phase brings the two components together and adds user-facing controls.
 
 ### ---
 
-**Phase 7: Modular Activity: Birdhouse Runs**
+**Phase 7: Modular Activity: Combat Bot**
 
-**Rationale:** This feature demonstrates the full power and modularity of the Task System by implementing a completely separate, complex activity that can be run independently or interleaved with other tasks.
+**Rationale:** This feature will implement a fully functional combat bot, demonstrating the modularity of the Task System. It will target specific NPCs, engage in combat, and manage player health by consuming food, providing a robust example of a common automated activity.
 
-*   **Task 7.1: Create the Master Birdhouse Run Task**
-    *   **Goal:** Create the main task that manages a full birdhouse run.
-    *   **Action:** Create `BirdhouseRunTask implements BotTask`.
-        1.  This task will have its own complex internal FSM (e.g., `TELEPORTING_TO_VERDANT_VALLEY`, `WALKING_TO_FIRST_HOUSE`, `SERVICING_HOUSE`, `WALKING_TO_SECOND_HOUSE`, etc.).
-        2.  When started, it will push a sequence of sub-tasks onto the `TaskManager`, such as `WalkTask`, `TeleportTask`, and a new `InteractWithObjectTask`.
-*   **Task 7.2: Implement Required Sub-Tasks**
-    *   **Goal:** Build the smaller, reusable actions needed for the run.
+*   **Task 7.1: Create the Master Combat Task**
+    *   **Goal:** Create the main task that manages the entire combat loop.
+    *   **Action:** Create a `CombatTask.java` class that `implements BotTask`.
+        1.  This task will have its own internal FSM (e.g., `FINDING_NPC`, `ATTACKING`, `EATING`).
+        2.  It will be the primary task pushed to the `TaskManager` when the user selects "Combat" mode from the panel.
+*   **Task 7.2: Implement NPC Targeting Logic**
+    *   **Goal:** Find and select appropriate NPCs to attack.
     *   **Action:**
-        1.  Create an `InteractWithObjectTask` that takes an object ID and an interaction string ("Build", "Harvest", etc.).
-        2.  Create an `InventoryCheckTask` to ensure the player has the required items (seeds, logs, clockwork) before starting.
-*   **Task 7.3: Add UI Triggers**
-    *   **Goal:** Allow the user to start a birdhouse run.
-    *   **Action:** In the `MiningBotPanel`, add:
-        1.  A button "Start Birdhouse Run Now". This will push a `BirdhouseRunTask` onto the manager stack.
-        2.  A configuration toggle and timer to automatically run it every ~50 minutes. The main plugin class will check this timer and push the task when appropriate.
+        1.  In `CombatTask`, implement a `findNearestNpc()` method. This will use RuneLite's `NpcQuery` to find NPCs.
+        2.  The query should filter NPCs by name (from the config) and ensure they are not already in combat with another player (`getInteracting()` on the NPC is null or is the local player).
+        3.  The method should return the closest, valid, non-dead (`getHealthRatio() != 0`) NPC.
+*   **Task 7.3: Implement Combat Engagement Logic**
+    *   **Goal:** Initiate and monitor combat with a target NPC.
+    *   **Action:**
+        1.  The `FINDING_NPC` state will call `findNearestNpc()`, get its clickbox using the existing `getRandomClickablePoint()` helper, send a `/click` command, and transition to `ATTACKING`.
+        2.  The `ATTACKING` state will monitor the player. If `client.getLocalPlayer().getInteracting()` is null, it means combat has ended. The bot should wait a few ticks (to allow for loot to drop) and then transition back to `FINDING_NPC`.
+*   **Task 7.4: Implement Health Management (Eating)**
+    *   **Goal:** Create logic to automatically eat food when health is low.
+    *   **Action:**
+        1.  This can be a state within `CombatTask`'s FSM or a separate `EatFoodTask`. For simplicity, we'll start with it as a state.
+        2.  In the `CombatTask`'s main `onLoop()`, the very first check should be the player's current HP vs the max HP (`client.getBoostedSkillLevel(Skill.HITPOINTS)` and `client.getRealSkillLevel(Skill.HITPOINTS)`).
+        3.  If health is below the configured percentage, transition to an `EATING` state.
+        4.  The `EATING` state will find a food item in the inventory (a predefined list of item IDs), send a `/click` command, and then transition back to `FINDING_NPC` or `ATTACKING` as appropriate.
+*   **Task 7.5: Add UI Configuration**
+    *   **Goal:** Allow the user to configure and control the combat bot.
+    *   **Action:** In `BotConfig.java` and the `BotPanel`:
+        1.  Ensure a `BotType` enum value exists for `COMBAT`.
+        2.  Add a `@ConfigItem` for a `String` where the user can enter a comma-separated list of NPC names to target (e.g., "Goblin,Cow").
+        3.  Add a `@ConfigItem` for an integer (`@Range(max = 99)`) for the health percentage threshold at which to eat food.
+        4.  The main plugin's "start" button, when `COMBAT` mode is selected, will `taskManager.pushTask(new CombatTask(client, config, taskManager))`.
 
 ### ---
 

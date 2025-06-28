@@ -13,6 +13,7 @@ import net.runelite.api.GameState;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.AnimationChanged;
 import net.runelite.api.events.StatChanged;
+import net.runelite.api.events.InteractingChanged;
 import net.runelite.api.Skill;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
@@ -22,6 +23,7 @@ import java.util.Arrays;
 import net.runelite.client.task.Schedule;
 import java.time.temporal.ChronoUnit;
 import net.runelite.api.GameObject;
+import net.runelite.api.NPC;
 import net.runelite.api.widgets.Widget;
 import java.util.List;
 import java.util.Random;
@@ -70,6 +72,8 @@ public class MiningBotPlugin extends Plugin
 	// Debugging and tracking variables
 	@Getter
     private GameObject targetRock = null;
+	@Getter
+    private NPC targetNpc = null;
 	private long sessionStartXp = 0;
 	private Instant sessionStartTime = null;
 
@@ -84,6 +88,9 @@ public class MiningBotPlugin extends Plugin
 
 	@Inject
 	private MiningBotInventoryOverlay inventoryOverlay;
+
+	@Inject
+	private CombatBotNpcOverlay combatNpcOverlay;
 
 	@Getter
     @Inject
@@ -121,6 +128,7 @@ public class MiningBotPlugin extends Plugin
 		overlayManager.add(rockOverlay);
 		overlayManager.add(statusOverlay);
 		overlayManager.add(inventoryOverlay);
+		overlayManager.add(combatNpcOverlay);
 
 		ShortestPathConfig shortestPathConfig = configManager.getConfig(ShortestPathConfig.class);
 		pathfinderConfig = new PathfinderConfig(client, shortestPathConfig);
@@ -148,6 +156,7 @@ public class MiningBotPlugin extends Plugin
 		overlayManager.remove(rockOverlay);
 		overlayManager.remove(statusOverlay);
 		overlayManager.remove(inventoryOverlay);
+		overlayManager.remove(combatNpcOverlay);
 		taskManager.clearTasks();
 		
 		// Disconnect from pipe service
@@ -193,6 +202,14 @@ public class MiningBotPlugin extends Plugin
 		}
 	}
 
+	@Subscribe
+	public void onInteractingChanged(InteractingChanged interactingChanged) {
+		BotTask currentTask = taskManager.getCurrentTask();
+		if (currentTask instanceof CombatTask) {
+			((CombatTask) currentTask).onInteractingChanged(interactingChanged);
+		}
+	}
+
 	@Provides
 	BotConfig provideConfig(ConfigManager configManager)
 	{
@@ -219,7 +236,22 @@ public class MiningBotPlugin extends Plugin
 				return;
 			}
 			log.info("Bot starting...");
-			taskManager.pushTask(new MiningTask(this, config, taskManager, pathfinderConfig));
+			
+			// Start the appropriate task based on bot type
+			BotType botType = config.botType();
+			switch (botType) {
+				case MINING_BOT:
+					taskManager.pushTask(new MiningTask(this, config, taskManager, pathfinderConfig));
+					break;
+				case COMBAT_BOT:
+					taskManager.pushTask(new CombatTask(this, config, taskManager));
+					break;
+				default:
+					log.warn("Unknown bot type: {}", botType);
+					stopBot();
+					return;
+			}
+			
 			wasRunning = true;
 		}
 
@@ -446,6 +478,10 @@ public class MiningBotPlugin extends Plugin
     public void setTargetRock(GameObject rock) {
 		this.targetRock = rock;
 		rockOverlay.setTarget(rock);
+	}
+
+    public void setTargetNpc(NPC npc) {
+		this.targetNpc = npc;
 	}
 
     public long getSessionXpGained()
