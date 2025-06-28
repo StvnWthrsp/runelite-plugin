@@ -17,10 +17,10 @@ public class MiningBotStatusOverlay extends OverlayPanel
 {
     private final Client client;
     private final MiningBotPlugin plugin;
-    private final MiningBotConfig config;
+    private final BotConfig config;
 
     @Inject
-    public MiningBotStatusOverlay(Client client, MiningBotPlugin plugin, MiningBotConfig config)
+    public MiningBotStatusOverlay(Client client, MiningBotPlugin plugin, BotConfig config)
     {
         this.client = client;
         this.plugin = plugin;

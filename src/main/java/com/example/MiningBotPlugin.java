@@ -50,7 +50,7 @@ import net.runelite.api.coords.WorldPoint;
 
 @Slf4j
 @PluginDescriptor(
-	name = "Mining Bot"
+	name = "General Bot"
 )
 public class MiningBotPlugin extends Plugin
 {
@@ -60,7 +60,7 @@ public class MiningBotPlugin extends Plugin
 	@Getter
     @Setter
     private String currentState = "IDLE";
-	private MiningBotPanel panel;
+	private BotPanel panel;
 	private NavigationButton navButton;
 	private boolean wasRunning = false;
 	private final TaskManager taskManager = new TaskManager();
@@ -90,7 +90,7 @@ public class MiningBotPlugin extends Plugin
 	private Client client;
 
 	@Inject
-	private MiningBotConfig config;
+	private BotConfig config;
 
 	@Inject
 	private ConfigManager configManager;
@@ -104,12 +104,12 @@ public class MiningBotPlugin extends Plugin
 	@Override
 	protected void startUp() throws Exception
 	{
-		log.info("Mining Bot started! Attempting to connect to the automation server...");
+		log.info("General Bot started! Attempting to connect to the automation server...");
 		this.currentState = "IDLE";
-		panel = new MiningBotPanel(this, config, configManager);
+		panel = new BotPanel(this, config, configManager);
 		final BufferedImage icon = ImageUtil.loadImageResource(getClass(), "/images/icon.png");
 		navButton = NavigationButton.builder()
-			.tooltip("Mining Bot")
+			.tooltip("General Bot")
 			.icon(icon)
 			.priority(1)
 			.panel(panel)
@@ -136,13 +136,13 @@ public class MiningBotPlugin extends Plugin
 		}
 
 		// Don't initialize pipe service automatically - user must click Connect
-		log.info("Mining Bot initialized. Use the 'Connect' button to connect to the automation server.");
+		log.info("General Bot initialized. Use the 'Connect' button to connect to the automation server.");
 	}
 
 	@Override
 	protected void shutDown() throws Exception
 	{
-		log.info("Mining Bot stopped!");
+		log.info("General Bot stopped!");
 		clientToolbar.removeNavigation(navButton);
 		overlayManager.remove(mouseIndicatorOverlay);
 		overlayManager.remove(rockOverlay);
@@ -162,7 +162,7 @@ public class MiningBotPlugin extends Plugin
 	{
 		if (gameStateChanged.getGameState() == GameState.LOGGED_IN)
 		{
-			log.info("Mining Bot plugin is running - player logged in.");
+			log.info("General Bot plugin is running - player logged in.");
 			
 			if (pathfinderConfig != null) {
 				pathfinderConfig.refresh();
@@ -194,9 +194,9 @@ public class MiningBotPlugin extends Plugin
 	}
 
 	@Provides
-	MiningBotConfig provideConfig(ConfigManager configManager)
+	BotConfig provideConfig(ConfigManager configManager)
 	{
-		return configManager.getConfig(MiningBotConfig.class);
+		return configManager.getConfig(BotConfig.class);
 	}
 
 	@Schedule(

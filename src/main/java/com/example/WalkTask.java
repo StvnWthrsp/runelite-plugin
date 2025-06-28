@@ -181,12 +181,16 @@ public class WalkTask implements BotTask {
     }
 
     private Widget getMinimapDrawWidget() {
-        if (client.isResized()) {
-            if (client.getWidget(InterfaceID.ToplevelPreEoc.MINIMAP) != null) {
-                return client.getWidget(InterfaceID.ToplevelPreEoc.MINIMAP);
-            }
+        Widget minimapWidget = client.getWidget(InterfaceID.ToplevelOsrsStretch.MINIMAP);
+        if (minimapWidget == null)
+        {
+            minimapWidget = client.getWidget(InterfaceID.ToplevelPreEoc.MINIMAP);
         }
-        return client.getWidget(InterfaceID.Toplevel.MINIMAP);
+        if (minimapWidget == null)
+        {
+            minimapWidget = client.getWidget(InterfaceID.Toplevel.MINIMAP);
+        }
+        return minimapWidget;
     }
 
     @Override

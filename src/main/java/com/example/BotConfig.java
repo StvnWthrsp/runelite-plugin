@@ -1,0 +1,117 @@
+package com.example;
+
+import net.runelite.client.config.Config;
+import net.runelite.client.config.ConfigGroup;
+import net.runelite.client.config.ConfigItem;
+import net.runelite.client.config.ConfigSection;
+
+@ConfigGroup("generalbot")
+public interface BotConfig extends Config
+{
+	// Bot type selection for internal use (not shown in config panel)
+	@ConfigItem(
+			keyName = "botType",
+			name = "Bot Type",
+			description = "Internal bot type selection",
+			position = 0,
+			hidden = true
+	)
+	default BotType botType()
+	{
+		return BotType.MINING_BOT;
+	}
+
+	// Start bot toggle for internal use (not shown in config panel)
+	@ConfigItem(
+			keyName = "startBot",
+			name = "Start Bot",
+			description = "Internal bot start/stop toggle",
+			position = 1,
+			hidden = true
+	)
+	default boolean startBot()
+	{
+		return false;
+	}
+
+	// Mining Bot specific settings (now hidden since they're in the main panel)
+	@ConfigItem(
+			keyName = "miningMode",
+			name = "Mining Mode",
+			description = "Choose between power mining and banking",
+			position = 10,
+			hidden = true
+	)
+	default MiningMode miningMode()
+	{
+		return MiningMode.POWER_MINE;
+	}
+
+	@ConfigItem(
+			keyName = "rockIds",
+			name = "Rock IDs",
+			description = "Comma-separated list of rock object IDs to mine (e.g., 11161,10943 for copper)",
+			position = 11,
+			hidden = true
+	)
+	default String rockIds()
+	{
+		return "11161,10943"; // Default copper rock IDs
+	}
+
+	@ConfigItem(
+			keyName = "oreIds",
+			name = "Ore IDs",
+			description = "Comma-separated list of ore item IDs to drop (e.g., 436 for copper ore)",
+			position = 12,
+			hidden = true
+	)
+	default String oreIds()
+	{
+		return "436"; // Default copper ore ID
+	}
+
+	// Debugging section
+	@ConfigSection(
+			name = "Mining Bot - Debugging",
+			description = "Visual debugging options for mining bot",
+			position = 20
+	)
+	String debugSection = "debugging";
+
+	@ConfigItem(
+			keyName = "highlightTargetRock",
+			name = "Highlight Target Rock",
+			description = "Visually highlight the targeted rock (Green: detected, Yellow: mining)",
+			position = 0,
+			section = debugSection
+	)
+	default boolean highlightTargetRock()
+	{
+		return false;
+	}
+
+	@ConfigItem(
+			keyName = "showBotStatus",
+			name = "Show Bot Status Overlay",
+			description = "Display current bot state and mining statistics on screen",
+			position = 1,
+			section = debugSection
+	)
+	default boolean showBotStatus()
+	{
+		return false;
+	}
+
+	@ConfigItem(
+			keyName = "highlightInventoryItems",
+			name = "Highlight Inventory Items",
+			description = "Highlight ore items in inventory with colored borders",
+			position = 2,
+			section = debugSection
+	)
+	default boolean highlightInventoryItems()
+	{
+		return false;
+	}
+} 

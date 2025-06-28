@@ -21,7 +21,7 @@ import java.util.concurrent.TimeUnit;
 public class MiningTask implements BotTask {
 
     private final MiningBotPlugin plugin;
-    private final MiningBotConfig config;
+    private final BotConfig config;
     private final TaskManager taskManager;
     private final PathfinderConfig pathfinderConfig;
     private ScheduledExecutorService scheduler;
@@ -55,7 +55,7 @@ public class MiningTask implements BotTask {
     private long xpGainedThisMine = 0;
     private boolean miningStarted = false;
 
-    public MiningTask(MiningBotPlugin plugin, MiningBotConfig config, TaskManager taskManager, PathfinderConfig pathfinderConfig) {
+    public MiningTask(MiningBotPlugin plugin, BotConfig config, TaskManager taskManager, PathfinderConfig pathfinderConfig) {
         this.plugin = plugin;
         this.config = config;
         this.taskManager = taskManager;
@@ -162,8 +162,6 @@ public class MiningTask implements BotTask {
         int newAnimation = plugin.getClient().getLocalPlayer().getAnimation();
         if (isMiningAnimation(newAnimation)) {
             log.info("Mining animation started. Animation: {}", newAnimation);
-            locateRock();
-            plugin.sendMouseMoveRequest(plugin.getRandomClickablePoint(targetRock));
         }
     }
 
@@ -196,20 +194,16 @@ public class MiningTask implements BotTask {
             currentState = MiningState.CHECK_INVENTORY;
             return;
         }
-        if (!verifyHoverAction("Mine", "Copper rocks")) {
-            locateRock();
-            if (targetRock != null) {
-                currentState = MiningState.MINING;
-                plugin.sendMouseMoveRequest(plugin.getRandomClickablePoint(targetRock));
-                return;
-            } else {
-                log.info("No rocks found to mine.");
-                setRandomDelay(10, 20); // Wait a while before searching again
-                return;
-            }
+        int[] rockIds = plugin.getRockIds();
+        targetRock = plugin.findNearestGameObject(rockIds);
+        plugin.setTargetRock(targetRock);
+
+        if (targetRock != null) {
+            currentState = MiningState.MINING;
+            plugin.sendMouseMoveRequest(plugin.getRandomClickablePoint(targetRock));
+        } else {
+            log.info("No rocks found to mine.");
         }
-        currentState = MiningState.MINING;
-        plugin.sendClickRequest(plugin.getRandomClickablePoint(targetRock), false);
     }
 
     private void doMining() {
@@ -338,20 +332,5 @@ public class MiningTask implements BotTask {
 
         // Perform the verification
         return action.equalsIgnoreCase(expectedAction) && target.equalsIgnoreCase(expectedTarget);
-    }
-
-    // Expects that the mouse is already over the target
-    public boolean verifyAndClick(String expectedAction, String expectedTarget) {
-        if (verifyHoverAction(expectedAction, expectedTarget)) {
-            plugin.sendClickRequest(plugin.getRandomClickablePoint(targetRock), false);
-            return true;
-        }
-        return false;
-    }
-
-    private void locateRock() {
-        int[] rockIds = plugin.getRockIds();
-        targetRock = plugin.findNearestGameObject(rockIds);
-        plugin.setTargetRock(targetRock);
     }
 } 

@@ -21,10 +21,10 @@ import java.util.Arrays;
 public class MiningBotInventoryOverlay extends Overlay
 {
     private final Client client;
-    private final MiningBotConfig config;
+    private final BotConfig config;
 
     @Inject
-    public MiningBotInventoryOverlay(Client client, MiningBotConfig config)
+    public MiningBotInventoryOverlay(Client client, BotConfig config)
     {
         this.client = client;
         this.config = config;
