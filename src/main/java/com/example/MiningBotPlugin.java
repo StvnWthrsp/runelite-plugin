@@ -4,6 +4,9 @@ import com.google.inject.Provides;
 import java.time.Duration;
 import java.time.Instant;
 import javax.inject.Inject;
+
+import lombok.Getter;
+import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
@@ -52,17 +55,21 @@ import net.runelite.api.coords.WorldPoint;
 public class MiningBotPlugin extends Plugin
 {
 	private PipeService pipeService = null;
-	private final Random random = new Random();
-	private String currentState = "IDLE";
+	@Getter
+    private final Random random = new Random();
+	@Getter
+    @Setter
+    private String currentState = "IDLE";
 	private MiningBotPanel panel;
 	private NavigationButton navButton;
 	private boolean wasRunning = false;
 	private final TaskManager taskManager = new TaskManager();
-	
 	private PathfinderConfig pathfinderConfig;
+
 	
 	// Debugging and tracking variables
-	private GameObject targetRock = null;
+	@Getter
+    private GameObject targetRock = null;
 	private long sessionStartXp = 0;
 	private Instant sessionStartTime = null;
 
@@ -78,7 +85,8 @@ public class MiningBotPlugin extends Plugin
 	@Inject
 	private MiningBotInventoryOverlay inventoryOverlay;
 
-	@Inject
+	@Getter
+    @Inject
 	private Client client;
 
 	@Inject
@@ -248,15 +256,7 @@ public class MiningBotPlugin extends Plugin
 
 	// --- Public Helper Methods for Tasks ---
 
-	public Client getClient() {
-		return client;
-	}
-
-	public Random getRandom() {
-		return random;
-	}
-
-	public int[] getRockIds() {
+    public int[] getRockIds() {
 		String[] idsStr = config.rockIds().split(",");
 		return Arrays.stream(idsStr)
 				.map(String::trim)
@@ -268,7 +268,7 @@ public class MiningBotPlugin extends Plugin
 	public int[] getOreIds() {
 		// A simple map from rock ID to ore ID. This could be improved.
 		return Arrays.stream(getRockIds())
-				.map(rockId -> RockOres.getOreForRock(rockId))
+				.map(RockOres::getOreForRock)
 				.filter(oreId -> oreId != -1)
 				.toArray();
 	}
@@ -443,26 +443,12 @@ public class MiningBotPlugin extends Plugin
 
 	// --- Public Getters/Setters for Panel and Overlays ---
 
-	public void setCurrentState(String state) {
-		this.currentState = state;
-	}
-	
-	public String getCurrentState()
-	{
-		return this.currentState;
-	}
-
-	public void setTargetRock(GameObject rock) {
+    public void setTargetRock(GameObject rock) {
 		this.targetRock = rock;
 		rockOverlay.setTarget(rock);
 	}
 
-	public GameObject getTargetRock()
-	{
-		return targetRock;
-	}
-
-	public long getSessionXpGained()
+    public long getSessionXpGained()
 	{
 		if (sessionStartTime == null) return 0;
 		return client.getSkillExperience(Skill.MINING) - sessionStartXp;

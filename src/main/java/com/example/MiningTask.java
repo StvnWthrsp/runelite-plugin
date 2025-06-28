@@ -1,7 +1,6 @@
 package com.example;
 
 import lombok.extern.slf4j.Slf4j;
-// import net.runelite.api.AnimationID;
 import net.runelite.api.gameval.AnimationID;
 import net.runelite.api.GameObject;
 import net.runelite.api.Skill;
@@ -14,6 +13,9 @@ import shortestpath.pathfinder.PathfinderConfig;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 @Slf4j
 public class MiningTask implements BotTask {
@@ -22,6 +24,7 @@ public class MiningTask implements BotTask {
     private final MiningBotConfig config;
     private final TaskManager taskManager;
     private final PathfinderConfig pathfinderConfig;
+    private ScheduledExecutorService scheduler;
 
     // Internal state for this task only
     private enum MiningState {
@@ -45,6 +48,7 @@ public class MiningTask implements BotTask {
     private int idleTicks = 0;
     private int delayTicks = 0;
     private GameObject targetRock = null;
+    private volatile boolean droppingFinished = false;
 
     // Mining completion detection variables
     private long lastMiningXp = 0;
@@ -63,6 +67,9 @@ public class MiningTask implements BotTask {
         log.info("Starting Mining Task.");
         this.currentState = MiningState.FINDING_ROCK;
         this.lastMiningXp = plugin.getClient().getSkillExperience(Skill.MINING);
+        if (this.scheduler == null || this.scheduler.isShutdown()) {
+            this.scheduler = Executors.newSingleThreadScheduledExecutor();
+        }
     }
 
     @Override
@@ -70,6 +77,9 @@ public class MiningTask implements BotTask {
         log.info("Stopping Mining Task.");
         this.targetRock = null;
         plugin.setTargetRock(null); // Clear overlay
+        if (this.scheduler != null && !this.scheduler.isShutdown()) {
+            this.scheduler.shutdownNow();
+        }
     }
 
     @Override
@@ -85,6 +95,11 @@ public class MiningTask implements BotTask {
 
     @Override
     public void onLoop() {
+        if (droppingFinished) {
+            droppingFinished = false;
+            currentState = MiningState.FINDING_ROCK;
+        }
+
         if (delayTicks > 0) {
             delayTicks--;
             return;
@@ -145,9 +160,10 @@ public class MiningTask implements BotTask {
             return;
         }
         int newAnimation = plugin.getClient().getLocalPlayer().getAnimation();
-        if (newAnimation == -1 || !isMiningAnimation(newAnimation)) {
-            log.info("Mining animation stopped. Animation: {}", newAnimation);
-            finishMining();
+        if (isMiningAnimation(newAnimation)) {
+            log.info("Mining animation started. Animation: {}", newAnimation);
+            locateRock();
+            plugin.sendMouseMoveRequest(plugin.getRandomClickablePoint(targetRock));
         }
     }
 
@@ -162,7 +178,6 @@ public class MiningTask implements BotTask {
                 xpGainedThisMine += xpGained;
                 lastMiningXp = currentXp;
                 log.info("Gained {} mining XP (total this mine: {})", xpGained, xpGainedThisMine);
-                setRandomDelay(1, 2);
                 actionQueue.add(this::finishMining);
             }
         } else {
@@ -181,17 +196,20 @@ public class MiningTask implements BotTask {
             currentState = MiningState.CHECK_INVENTORY;
             return;
         }
-        int[] rockIds = plugin.getRockIds();
-        targetRock = plugin.findNearestGameObject(rockIds);
-        plugin.setTargetRock(targetRock);
-
-        if (targetRock != null) {
-            currentState = MiningState.MINING;
-            plugin.sendMouseMoveRequest(plugin.getRandomClickablePoint(targetRock));
-        } else {
-            log.info("No rocks found to mine.");
-            setRandomDelay(10, 20); // Wait a while before searching again
+        if (!verifyHoverAction("Mine", "Copper rocks")) {
+            locateRock();
+            if (targetRock != null) {
+                currentState = MiningState.MINING;
+                plugin.sendMouseMoveRequest(plugin.getRandomClickablePoint(targetRock));
+                return;
+            } else {
+                log.info("No rocks found to mine.");
+                setRandomDelay(10, 20); // Wait a while before searching again
+                return;
+            }
         }
+        currentState = MiningState.MINING;
+        plugin.sendClickRequest(plugin.getRandomClickablePoint(targetRock), false);
     }
 
     private void doMining() {
@@ -272,27 +290,30 @@ public class MiningTask implements BotTask {
 
     private void doDropping() {
         log.info("Starting to drop inventory.");
-        plugin.sendKeyRequest("/key_hold", "shift");
-        setRandomDelay(1, 2);
+        currentState = MiningState.IDLE; // Prevent other actions while dropping
 
-        actionQueue.add(() -> {
-            int[] oreIds = plugin.getOreIds();
-            for (int i = 0; i < 28; i++) {
-                int itemId = plugin.getInventoryItemId(i);
-                if (plugin.isItemInList(itemId, oreIds)) {
-                    final int finalI = i;
-                    actionQueue.add(() -> {
-                        plugin.sendClickRequest(plugin.getInventoryItemPoint(finalI), true);
-                        setRandomDelay(1, 2);
-                    });
-                }
+        plugin.sendKeyRequest("/key_hold", "shift");
+
+        long delay = (long) (Math.random() * (250 - 350)) + 350; // Initial delay before first click
+        int[] oreIds = plugin.getOreIds();
+
+        for (int i = 0; i < 28; i++) {
+            int itemId = plugin.getInventoryItemId(i);
+            if (plugin.isItemInList(itemId, oreIds)) {
+                final int finalI = i;
+                scheduler.schedule(() -> {
+                    plugin.sendClickRequest(plugin.getInventoryItemPoint(finalI), true);
+                }, delay, TimeUnit.MILLISECONDS);
+                delay += (long) (Math.random() * (250 - 350)) + 350;; // Stagger subsequent clicks
             }
-            actionQueue.add(() -> {
-                plugin.sendKeyRequest("/key_release", "shift");
-                setRandomDelay(1, 2);
-                actionQueue.add(() -> currentState = MiningState.FINDING_ROCK);
-            });
-        });
+        }
+
+        // Schedule the final actions after all drops are scheduled
+        scheduler.schedule(() -> {
+            plugin.sendKeyRequest("/key_release", "shift");
+            log.info("Finished dropping inventory.");
+            droppingFinished = true; // Signal to the main loop
+        }, delay, TimeUnit.MILLISECONDS);
     }
 
     public boolean verifyHoverAction(String expectedAction, String expectedTarget) {
@@ -326,5 +347,11 @@ public class MiningTask implements BotTask {
             return true;
         }
         return false;
+    }
+
+    private void locateRock() {
+        int[] rockIds = plugin.getRockIds();
+        targetRock = plugin.findNearestGameObject(rockIds);
+        plugin.setTargetRock(targetRock);
     }
 } 

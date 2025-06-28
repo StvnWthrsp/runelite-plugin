@@ -1,9 +1,8 @@
 package com.example;
 
+import lombok.Setter;
 import net.runelite.api.Client;
 import net.runelite.api.GameObject;
-import net.runelite.api.Perspective;
-import net.runelite.api.coords.LocalPoint;
 import net.runelite.client.ui.overlay.Overlay;
 import net.runelite.client.ui.overlay.OverlayLayer;
 import net.runelite.client.ui.overlay.OverlayPosition;
@@ -13,15 +12,19 @@ import java.awt.BasicStroke;
 import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.Graphics2D;
-import java.awt.Polygon;
 import java.awt.Shape;
 import java.awt.Stroke;
+import lombok.extern.slf4j.Slf4j;
 
+@Slf4j
 public class MiningBotRockOverlay extends Overlay
 {
+    @SuppressWarnings("unused")
     private final Client client;
+    @SuppressWarnings("unused")
     private final MiningBotPlugin plugin;
     private final MiningBotConfig config;
+    @Setter
     private GameObject target;
 
     @Inject
@@ -31,12 +34,8 @@ public class MiningBotRockOverlay extends Overlay
         this.plugin = plugin;
         this.config = config;
         setPosition(OverlayPosition.DYNAMIC);
-        setPriority(0.25f);
+        setPriority(Overlay.PRIORITY_LOW);
         setLayer(OverlayLayer.ABOVE_SCENE);
-    }
-
-    public void setTarget(GameObject target) {
-        this.target = target;
     }
 
     @Override
@@ -57,9 +56,9 @@ public class MiningBotRockOverlay extends Overlay
         Shape objectClickbox = gameObject.getClickbox();
         if (objectClickbox != null)
         {
-            // Draw thick colored outline
+            // Draw colored outline
             Stroke originalStroke = graphics.getStroke();
-            graphics.setStroke(new BasicStroke(3.0f));
+            graphics.setStroke(new BasicStroke(2.0f));
             graphics.setColor(color);
             graphics.draw(objectClickbox);
             graphics.setStroke(originalStroke);
@@ -75,23 +74,6 @@ public class MiningBotRockOverlay extends Overlay
                 graphics.setColor(color);
                 graphics.draw(convexHull);
                 graphics.setStroke(originalStroke);
-            }
-        }
-
-        // Draw a small colored dot at the center for better visibility
-        LocalPoint localPoint = gameObject.getLocalLocation();
-        if (localPoint != null)
-        {
-            Polygon canvasTilePoly = Perspective.getCanvasTilePoly(client, localPoint);
-            if (canvasTilePoly != null)
-            {
-                int centerX = (int) canvasTilePoly.getBounds().getCenterX();
-                int centerY = (int) canvasTilePoly.getBounds().getCenterY();
-                
-                graphics.setColor(color);
-                graphics.fillOval(centerX - 4, centerY - 4, 8, 8);
-                graphics.setColor(Color.BLACK);
-                graphics.drawOval(centerX - 4, centerY - 4, 8, 8);
             }
         }
     }
