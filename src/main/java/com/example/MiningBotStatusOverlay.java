@@ -16,11 +16,11 @@ import java.time.Duration;
 public class MiningBotStatusOverlay extends OverlayPanel
 {
     private final Client client;
-    private final MiningBotPlugin plugin;
+    private final AndromedaPlugin plugin;
     private final BotConfig config;
 
     @Inject
-    public MiningBotStatusOverlay(Client client, MiningBotPlugin plugin, BotConfig config)
+    public MiningBotStatusOverlay(Client client, AndromedaPlugin plugin, BotConfig config)
     {
         this.client = client;
         this.plugin = plugin;

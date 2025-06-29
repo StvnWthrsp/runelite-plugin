@@ -10,11 +10,11 @@ import java.awt.*;
 public class CombatBotNpcOverlay extends Overlay {
     private final Client client;
     private final BotConfig config;
-    private final MiningBotPlugin plugin;
+    private final AndromedaPlugin plugin;
     private final ModelOutlineRenderer modelOutlineRenderer;
 
     @Inject
-    private CombatBotNpcOverlay(Client client, BotConfig config, MiningBotPlugin plugin, ModelOutlineRenderer modelOutlineRenderer) {
+    private CombatBotNpcOverlay(Client client, BotConfig config, AndromedaPlugin plugin, ModelOutlineRenderer modelOutlineRenderer) {
         this.client = client;
         this.config = config;
         this.plugin = plugin;

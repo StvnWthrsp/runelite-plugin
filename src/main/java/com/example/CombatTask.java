@@ -4,21 +4,18 @@ import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.*;
 import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.events.AnimationChanged;
-import net.runelite.api.events.StatChanged;
 import net.runelite.api.events.InteractingChanged;
-import net.runelite.client.game.ItemManager;
 
 import java.awt.Point;
 import java.awt.Rectangle;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.Arrays;
-import java.util.List;
 
 @Slf4j
 public class CombatTask implements BotTask {
 
-    private final MiningBotPlugin plugin;
+    private final AndromedaPlugin plugin;
     private final BotConfig config;
     private final TaskManager taskManager;
     private ScheduledExecutorService scheduler;
@@ -27,6 +24,7 @@ public class CombatTask implements BotTask {
     private enum CombatState {
         IDLE,
         FINDING_NPC,
+        VERIFY_ATTACK,
         ATTACKING,
         EATING,
         LOOTING,
@@ -39,6 +37,7 @@ public class CombatTask implements BotTask {
     private int delayTicks = 0;
     private int combatStartTicks = 0;
     private int lastHealthCheck = 0;
+    private int waitToVerifyTicks = 0;
     
     // Food item IDs (common foods)
     private static final int[] FOOD_IDS = {
@@ -51,7 +50,7 @@ public class CombatTask implements BotTask {
         329   // Salmon
     };
 
-    public CombatTask(MiningBotPlugin plugin, BotConfig config, TaskManager taskManager) {
+    public CombatTask(AndromedaPlugin plugin, BotConfig config, TaskManager taskManager) {
         this.plugin = plugin;
         this.config = config;
         this.taskManager = taskManager;
@@ -107,6 +106,9 @@ public class CombatTask implements BotTask {
         switch (currentState) {
             case FINDING_NPC:
                 doFindingNpc();
+                break;
+            case VERIFY_ATTACK:
+                doVerifyAttack();
                 break;
             case ATTACKING:
                 doAttacking();
@@ -166,11 +168,10 @@ public class CombatTask implements BotTask {
         
         if (targetNpc == null) {
             log.debug("No valid NPCs found, waiting...");
-            setRandomDelay(3, 6);
             return;
         }
 
-        log.info("Found target NPC: {} at {}", targetNpc.getName(), targetNpc.getWorldLocation());
+        log.debug("Found target NPC: {} at {}", targetNpc.getName(), targetNpc.getWorldLocation());
         
         // Set target NPC for overlay debugging
         plugin.setTargetNpc(targetNpc);
@@ -179,12 +180,26 @@ public class CombatTask implements BotTask {
         Point clickPoint = getRandomClickablePoint(targetNpc);
         if (clickPoint != null) {
             plugin.sendClickRequest(clickPoint, true);
-            currentState = CombatState.ATTACKING;
+            currentState = CombatState.VERIFY_ATTACK;
+            waitToVerifyTicks = 5;
             combatStartTicks = 0;
-            setRandomDelay(2, 4);
         } else {
-            log.warn("Could not get clickable point for NPC");
-            setRandomDelay(2, 4);
+            log.warn("Found {} at {} but could not get clickable point for NPC.", targetNpc.getName(), targetNpc.getWorldLocation());
+        }
+    }
+
+    private void doVerifyAttack() {
+        waitToVerifyTicks--;
+
+        if (plugin.getClient().getLocalPlayer().getInteracting() != null) {
+            currentState = CombatState.ATTACKING;
+            waitToVerifyTicks = 0;
+            return;
+        }
+        if (waitToVerifyTicks <= 0) {
+            log.warn("Attacking did not start after 5 ticks. Finding new target.");
+            currentState = CombatState.FINDING_NPC;
+            waitToVerifyTicks = 0;
         }
     }
 

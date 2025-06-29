@@ -6,7 +6,7 @@ import javax.swing.*;
 import java.awt.*;
 
 public class CombatBotPanel extends PluginPanel {
-    private final MiningBotPlugin plugin;
+    private final AndromedaPlugin plugin;
     private final BotConfig config;
     private final ConfigManager configManager;
     
@@ -17,7 +17,7 @@ public class CombatBotPanel extends PluginPanel {
     
     private boolean isRunning = false;
 
-    public CombatBotPanel(MiningBotPlugin plugin, BotConfig config, ConfigManager configManager) {
+    public CombatBotPanel(AndromedaPlugin plugin, BotConfig config, ConfigManager configManager) {
         super();
         this.plugin = plugin;
         this.config = config;

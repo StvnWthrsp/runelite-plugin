@@ -20,7 +20,7 @@ import java.util.concurrent.TimeUnit;
 @Slf4j
 public class MiningTask implements BotTask {
 
-    private final MiningBotPlugin plugin;
+    private final AndromedaPlugin plugin;
     private final BotConfig config;
     private final TaskManager taskManager;
     private final PathfinderConfig pathfinderConfig;
@@ -55,7 +55,7 @@ public class MiningTask implements BotTask {
     private long xpGainedThisMine = 0;
     private boolean miningStarted = false;
 
-    public MiningTask(MiningBotPlugin plugin, BotConfig config, TaskManager taskManager, PathfinderConfig pathfinderConfig) {
+    public MiningTask(AndromedaPlugin plugin, BotConfig config, TaskManager taskManager, PathfinderConfig pathfinderConfig) {
         this.plugin = plugin;
         this.config = config;
         this.taskManager = taskManager;
@@ -200,7 +200,7 @@ public class MiningTask implements BotTask {
 
         if (targetRock != null) {
             currentState = MiningState.MINING;
-            plugin.sendMouseMoveRequest(plugin.getRandomClickablePoint(targetRock));
+            doMining();
         } else {
             log.info("No rocks found to mine.");
         }
@@ -211,12 +211,7 @@ public class MiningTask implements BotTask {
             currentState = MiningState.FINDING_ROCK;
             return;
         }
-        if (!verifyHoverAction("Mine", "Copper rocks")) {
-            log.info("Click targeted wrong action. Did not execute click.");
-            currentState = MiningState.FINDING_ROCK;
-            return;
-        }
-        plugin.sendClickRequest(plugin.getRandomClickablePoint(targetRock), false);
+        plugin.sendClickRequest(plugin.getRandomClickablePoint(targetRock), true);
         miningStarted = false;
         xpGainedThisMine = 0;
         idleTicks = 0;
@@ -232,7 +227,7 @@ public class MiningTask implements BotTask {
             miningStarted = true;
             idleTicks = 0; // Reset idle counter if we see a mining animation
         }
-        if (idleTicks > 10) { // 10 ticks = 6 seconds
+        if (idleTicks > 5) { // 5 ticks = 3 seconds
             log.warn("Mining seems to have failed or rock depleted (idle for 6s). Finishing.");
             finishMining();
         }
@@ -298,7 +293,7 @@ public class MiningTask implements BotTask {
                 scheduler.schedule(() -> {
                     plugin.sendClickRequest(plugin.getInventoryItemPoint(finalI), true);
                 }, delay, TimeUnit.MILLISECONDS);
-                delay += (long) (Math.random() * (250 - 350)) + 350;; // Stagger subsequent clicks
+                delay += (long) (Math.random() * (250 - 350)) + 350; // Stagger subsequent clicks
             }
         }
 
@@ -308,29 +303,5 @@ public class MiningTask implements BotTask {
             log.info("Finished dropping inventory.");
             droppingFinished = true; // Signal to the main loop
         }, delay, TimeUnit.MILLISECONDS);
-    }
-
-    public boolean verifyHoverAction(String expectedAction, String expectedTarget) {
-        // Get the menu entries that are present on hover
-        MenuEntry[] menuEntries = plugin.getClient().getMenu().getMenuEntries();
-
-        // Check if there are any menu entries at all
-        if (menuEntries.length == 0) {
-            return false;
-        }
-
-        // The default action is the last entry in the array.
-        // The array is ordered from the bottom of the right-click menu to the top.
-        MenuEntry topEntry = menuEntries[menuEntries.length - 1];
-
-        String action = topEntry.getOption();
-        log.info("Left-click action: {}", action);
-        // The target name might have color tags (e.g., <col=ff9040>Goblin</col>)
-        // It's a good practice to clean this up for reliable comparison.
-        String target = Text.removeTags(topEntry.getTarget());
-        log.info("Left-click target: {}", target);
-
-        // Perform the verification
-        return action.equalsIgnoreCase(expectedAction) && target.equalsIgnoreCase(expectedTarget);
     }
 } 

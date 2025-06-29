@@ -2,12 +2,20 @@ package com.example;
 
 import java.util.Stack;
 
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+
+import lombok.extern.slf4j.Slf4j;
+
 /**
  * Manages the execution of BotTasks in a stack-based manner.
  * This allows for sequential and nested task execution, enabling complex behaviors.
  */
+@Slf4j
 public class TaskManager {
     private final Stack<BotTask> tasks = new Stack<>();
+    private ScheduledExecutorService scheduler;
 
     /**
      * The main loop for the task manager, called on every game tick.
@@ -17,6 +25,16 @@ public class TaskManager {
         if (tasks.isEmpty()) {
             return;
         }
+
+        if (this.scheduler == null || this.scheduler.isShutdown()) {
+            this.scheduler = Executors.newSingleThreadScheduledExecutor();
+        }
+
+        long delay = (long) (Math.random() * (100 - 200)) + 200;
+
+        scheduler.schedule(() -> {
+            log.debug("TaskManager: onLoop waiting for {}ms", delay);
+        }, delay, TimeUnit.MILLISECONDS);
 
         BotTask currentTask = tasks.peek();
 
@@ -55,6 +73,9 @@ public class TaskManager {
         if (!tasks.isEmpty()) {
             tasks.peek().onStop();
             tasks.clear();
+        }
+        if (this.scheduler != null && !this.scheduler.isShutdown()) {
+            this.scheduler.shutdownNow();
         }
     }
 

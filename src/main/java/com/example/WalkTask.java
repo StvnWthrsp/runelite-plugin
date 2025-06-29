@@ -35,7 +35,7 @@ public class WalkTask implements BotTask {
 
     @Getter
     private final WorldPoint destination;
-    private final MiningBotPlugin plugin;
+    private final AndromedaPlugin plugin;
     private final Client client;
     private final PathfinderConfig pathfinderConfig;
 
@@ -45,7 +45,7 @@ public class WalkTask implements BotTask {
     private Future<?> pathfinderFuture;
     private final ExecutorService pathfinderExecutor;
 
-    public WalkTask(MiningBotPlugin plugin, PathfinderConfig pathfinderConfig, WorldPoint destination) {
+    public WalkTask(AndromedaPlugin plugin, PathfinderConfig pathfinderConfig, WorldPoint destination) {
         this.plugin = plugin;
         this.client = plugin.getClient();
         this.pathfinderConfig = pathfinderConfig;

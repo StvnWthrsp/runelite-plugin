@@ -16,7 +16,7 @@ import java.awt.Insets;
 public class MiningBotPanel extends PluginPanel {
     private final JLabel statusLabel = new JLabel("Status: IDLE");
     private final JButton toggleButton = new JButton("Start");
-    private final MiningBotPlugin plugin;
+    private final AndromedaPlugin plugin;
     private final BotConfig config;
     private final ConfigManager configManager;
     
@@ -25,7 +25,7 @@ public class MiningBotPanel extends PluginPanel {
     private final JTextField rockIdsField;
     private final JTextField oreIdsField;
 
-    public MiningBotPanel(MiningBotPlugin plugin, BotConfig config, ConfigManager configManager) {
+    public MiningBotPanel(AndromedaPlugin plugin, BotConfig config, ConfigManager configManager) {
         super();
         this.plugin = plugin;
         this.config = config;

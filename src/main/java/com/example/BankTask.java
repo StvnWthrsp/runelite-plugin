@@ -20,13 +20,13 @@ public class BankTask implements BotTask {
         FAILED
     }
 
-    private final MiningBotPlugin plugin;
+    private final AndromedaPlugin plugin;
     private final Client client;
 
     private BankState state = BankState.FIND_BANK;
 
     @Inject
-    public BankTask(MiningBotPlugin plugin) {
+    public BankTask(AndromedaPlugin plugin) {
         this.plugin = plugin;
         this.client = plugin.getClient();
     }

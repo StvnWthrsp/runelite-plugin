@@ -37,9 +37,12 @@ import java.util.Comparator;
 import net.runelite.client.ui.ClientToolbar;
 import net.runelite.client.ui.NavigationButton;
 import net.runelite.client.util.ImageUtil;
+import net.runelite.client.util.Text;
+
 import java.awt.image.BufferedImage;
 import net.runelite.api.Item;
 import net.runelite.api.ItemContainer;
+import net.runelite.api.MenuEntry;
 import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.gameval.InventoryID;
 import net.runelite.client.ui.overlay.OverlayManager;
@@ -52,9 +55,9 @@ import net.runelite.api.coords.WorldPoint;
 
 @Slf4j
 @PluginDescriptor(
-	name = "General Bot"
+	name = "Andromeda"
 )
-public class MiningBotPlugin extends Plugin
+public class AndromedaPlugin extends Plugin
 {
 	private PipeService pipeService = null;
 	@Getter
@@ -507,6 +510,30 @@ public class MiningBotPlugin extends Plugin
 		long xpPerHour = (long) (xpPerSecond * 3600);
 		return String.format("%,d", xpPerHour);
 	}
+
+	public boolean verifyHoverAction(String expectedAction, String expectedTarget) {
+        // Get the menu entries that are present on hover
+        MenuEntry[] menuEntries = getClient().getMenu().getMenuEntries();
+
+        // Check if there are any menu entries at all
+        if (menuEntries.length == 0) {
+            return false;
+        }
+
+        // The default action is the last entry in the array.
+        // The array is ordered from the bottom of the right-click menu to the top.
+        MenuEntry topEntry = menuEntries[menuEntries.length - 1];
+
+        String action = topEntry.getOption();
+        log.debug("Left-click action: {}", action);
+        // The target name might have color tags (e.g., <col=ff9040>Goblin</col>)
+        // It's a good practice to clean this up for reliable comparison.
+        String target = Text.removeTags(topEntry.getTarget());
+        log.debug("Left-click target: {}", target);
+
+        // Perform the verification
+        return action.equalsIgnoreCase(expectedAction);
+    }
 
 
 	public boolean isAutomationConnected()

@@ -22,13 +22,13 @@ public class MiningBotRockOverlay extends Overlay
     @SuppressWarnings("unused")
     private final Client client;
     @SuppressWarnings("unused")
-    private final MiningBotPlugin plugin;
+    private final AndromedaPlugin plugin;
     private final BotConfig config;
     @Setter
     private GameObject target;
 
     @Inject
-    public MiningBotRockOverlay(Client client, MiningBotPlugin plugin, BotConfig config)
+    public MiningBotRockOverlay(Client client, AndromedaPlugin plugin, BotConfig config)
     {
         this.client = client;
         this.plugin = plugin;
