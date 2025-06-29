@@ -291,13 +291,35 @@ public class AndromedaPlugin extends Plugin
 
 	// --- Public Helper Methods for Tasks ---
 
-    public int[] getRockIds() {
-		String[] idsStr = config.rockIds().split(",");
-		return Arrays.stream(idsStr)
-				.map(String::trim)
-				.filter(s -> !s.isEmpty())
-				.mapToInt(Integer::parseInt)
-				.toArray();
+	public int[] getRockIds() {
+		String[] rockTypes = config.rockTypes().split(",");
+		List<Integer> idList = new ArrayList<>();
+		for (String rockType : rockTypes) {
+			switch (rockType) {
+				case "Copper":
+					idList.addAll(RockOres.COPPER.getRockIds());
+					break;
+				case "Tin":
+					idList.addAll(RockOres.TIN.getRockIds());
+					break;
+				case "Iron":
+					idList.addAll(RockOres.IRON.getRockIds());
+					break;
+				case "Coal":
+					idList.addAll(RockOres.COAL.getRockIds());
+					break;
+				case "Mithril":
+					idList.addAll(RockOres.MITHRIL.getRockIds());
+					break;
+				case "Adamantite":
+					idList.addAll(RockOres.ADAMANTITE.getRockIds());
+					break;
+				case "Runite":
+					idList.addAll(RockOres.RUNITE.getRockIds());
+					break;
+			}
+		}
+		return idList.stream().mapToInt(Integer::intValue).toArray();
 	}
 
 	public int[] getOreIds() {

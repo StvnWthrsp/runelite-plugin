@@ -22,7 +22,7 @@ public class MiningBotPanel extends PluginPanel {
     
     // Configuration controls
     private final JComboBox<MiningMode> miningModeComboBox;
-    private final JTextField rockIdsField;
+    private final JTextField rockTypesField;
     private final JTextField oreIdsField;
 
     public MiningBotPanel(AndromedaPlugin plugin, BotConfig config, ConfigManager configManager) {
@@ -33,11 +33,11 @@ public class MiningBotPanel extends PluginPanel {
         
         // Initialize configuration controls
         this.miningModeComboBox = new JComboBox<>(MiningMode.values());
-        this.rockIdsField = new JTextField(20);
+        this.rockTypesField = new JTextField(20);
         this.oreIdsField = new JTextField(20);
         
         // Add tooltips to help users
-        this.rockIdsField.setToolTipText("Comma-separated rock object IDs (e.g., 11161,10943 for copper)");
+        this.rockTypesField.setToolTipText("Comma-separated rock object IDs (e.g., 11161,10943 for copper)");
         this.oreIdsField.setToolTipText("Comma-separated ore item IDs (e.g., 436 for copper ore)");
         
         setLayout(new BorderLayout());
@@ -83,15 +83,15 @@ public class MiningBotPanel extends PluginPanel {
         
         // Rock IDs
         gbc.gridx = 0; gbc.gridy = 1; gbc.fill = GridBagConstraints.NONE;
-        configPanel.add(new JLabel("Rock IDs:"), gbc);
+        configPanel.add(new JLabel("Rock Types:"), gbc);
         gbc.gridx = 1; gbc.fill = GridBagConstraints.HORIZONTAL;
-        configPanel.add(rockIdsField, gbc);
+        configPanel.add(rockTypesField, gbc);
         
         // Ore IDs
-        gbc.gridx = 0; gbc.gridy = 2; gbc.fill = GridBagConstraints.NONE;
-        configPanel.add(new JLabel("Ore IDs:"), gbc);
-        gbc.gridx = 1; gbc.fill = GridBagConstraints.HORIZONTAL;
-        configPanel.add(oreIdsField, gbc);
+        // gbc.gridx = 0; gbc.gridy = 2; gbc.fill = GridBagConstraints.NONE;
+        // configPanel.add(new JLabel("Ore IDs:"), gbc);
+        // gbc.gridx = 1; gbc.fill = GridBagConstraints.HORIZONTAL;
+        // configPanel.add(oreIdsField, gbc);
         
         // Add event listeners to save changes
         miningModeComboBox.addActionListener(e -> {
@@ -102,13 +102,13 @@ public class MiningBotPanel extends PluginPanel {
         });
         
         // Save changes when user presses Enter or when field loses focus
-        rockIdsField.addActionListener(e -> {
-            configManager.setConfiguration("generalbot", "rockIds", rockIdsField.getText());
+        rockTypesField.addActionListener(e -> {
+            configManager.setConfiguration("generalbot", "rockIds", rockTypesField.getText());
         });
-        rockIdsField.addFocusListener(new java.awt.event.FocusAdapter() {
+        rockTypesField.addFocusListener(new java.awt.event.FocusAdapter() {
             @Override
             public void focusLost(java.awt.event.FocusEvent e) {
-                configManager.setConfiguration("generalbot", "rockIds", rockIdsField.getText());
+                configManager.setConfiguration("generalbot", "rockIds", rockTypesField.getText());
             }
         });
         
@@ -127,8 +127,8 @@ public class MiningBotPanel extends PluginPanel {
     
     private void loadConfigurationValues() {
         miningModeComboBox.setSelectedItem(config.miningMode());
-        rockIdsField.setText(config.rockIds());
-        oreIdsField.setText(config.oreIds());
+        rockTypesField.setText(config.rockTypes());
+//        oreIdsField.setText(config.oreIds());
     }
 
     public void setStatus(String status) {

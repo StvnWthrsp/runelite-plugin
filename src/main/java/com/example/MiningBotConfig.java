@@ -40,26 +40,26 @@ public interface MiningBotConfig extends Config
 	}
 
 	@ConfigItem(
-			keyName = "rockIds",
-			name = "Rock IDs",
-			description = "Comma-separated list of rock object IDs to mine (e.g., 11161,10943 for copper)",
+			keyName = "rockTypes",
+			name = "Rock Types",
+			description = "Comma-separated list of rock types to mine (e.g., Copper)",
 			position = 3
 	)
-	default String rockIds()
+	default String rockTypes()
 	{
-		return "11161,10943"; // Default copper rock IDs
+		return "Copper"; // Default copper rock
 	}
 
-	@ConfigItem(
-			keyName = "oreIds",
-			name = "Ore IDs",
-			description = "Comma-separated list of ore item IDs to drop (e.g., 436 for copper ore)",
-			position = 4
-	)
-	default String oreIds()
-	{
-		return "436"; // Default copper ore ID
-	}
+	// @ConfigItem(
+	// 		keyName = "oreIds",
+	// 		name = "Ore IDs",
+	// 		description = "Comma-separated list of ore item IDs to drop (e.g., 436 for copper ore)",
+	// 		position = 4
+	// )
+	// default String oreIds()
+	// {
+	// 	return "436"; // Default copper ore ID
+	// }
 
 	@ConfigSection(
 			name = "Debugging",

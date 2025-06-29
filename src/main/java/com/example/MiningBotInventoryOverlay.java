@@ -22,12 +22,14 @@ public class MiningBotInventoryOverlay extends Overlay
 {
     private final Client client;
     private final BotConfig config;
+    private final AndromedaPlugin plugin;
 
     @Inject
-    public MiningBotInventoryOverlay(Client client, BotConfig config)
+    public MiningBotInventoryOverlay(Client client, AndromedaPlugin plugin, BotConfig config)
     {
         this.client = client;
         this.config = config;
+        this.plugin = plugin;
         setPosition(OverlayPosition.DYNAMIC);
         setPriority(0.25f);
         setLayer(OverlayLayer.ABOVE_WIDGETS);
@@ -54,11 +56,8 @@ public class MiningBotInventoryOverlay extends Overlay
         }
 
         // Get configured ore IDs
-        int[] oreIds = Arrays.stream(config.oreIds().split(","))
-                .map(String::trim)
-                .filter(s -> !s.isEmpty())
-                .mapToInt(Integer::parseInt)
-                .toArray();
+        int[] oreIds = plugin.getOreIds();
+
 
         if (oreIds.length == 0)
         {

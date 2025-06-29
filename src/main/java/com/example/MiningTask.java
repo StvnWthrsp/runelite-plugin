@@ -263,7 +263,8 @@ public class MiningTask implements BotTask {
             switch (config.miningMode()) {
                 case BANK:
                     log.info("Inventory full. Banking.");
-                    taskManager.pushTask(new WalkTask(plugin, pathfinderConfig, VARROCK_EAST_MINE));
+                    // Order is reversed because we push to the top of the stack
+                    taskManager.pushTask(new WalkTask(plugin, pathfinderConfig, plugin.getClient().getLocalPlayer().getWorldLocation()));
                     taskManager.pushTask(new BankTask(plugin));
                     taskManager.pushTask(new WalkTask(plugin, pathfinderConfig, VARROCK_EAST_BANK));
                     currentState = MiningState.WAITING_FOR_SUBTASK;
