@@ -7,15 +7,12 @@ import net.runelite.api.Skill;
 import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.events.AnimationChanged;
 import net.runelite.api.events.StatChanged;
-import net.runelite.api.MenuEntry;
-import net.runelite.client.util.Text;
 import shortestpath.pathfinder.PathfinderConfig;
 
 import java.util.ArrayDeque;
+import java.util.Arrays;
 import java.util.Deque;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
+import java.util.Objects;
 
 @Slf4j
 public class MiningTask implements BotTask {
@@ -24,7 +21,7 @@ public class MiningTask implements BotTask {
     private final BotConfig config;
     private final TaskManager taskManager;
     private final PathfinderConfig pathfinderConfig;
-    private ScheduledExecutorService scheduler;
+    private final ActionService actionService;
 
     // Internal state for this task only
     private enum MiningState {
@@ -55,11 +52,12 @@ public class MiningTask implements BotTask {
     private long xpGainedThisMine = 0;
     private boolean miningStarted = false;
 
-    public MiningTask(AndromedaPlugin plugin, BotConfig config, TaskManager taskManager, PathfinderConfig pathfinderConfig) {
+    public MiningTask(AndromedaPlugin plugin, BotConfig config, TaskManager taskManager, PathfinderConfig pathfinderConfig, ActionService actionService) {
         this.plugin = plugin;
         this.config = config;
         this.taskManager = taskManager;
         this.pathfinderConfig = pathfinderConfig;
+        this.actionService = Objects.requireNonNull(actionService, "actionService cannot be null");
     }
 
     @Override
@@ -67,9 +65,6 @@ public class MiningTask implements BotTask {
         log.info("Starting Mining Task.");
         this.currentState = MiningState.FINDING_ROCK;
         this.lastMiningXp = plugin.getClient().getSkillExperience(Skill.MINING);
-        if (this.scheduler == null || this.scheduler.isShutdown()) {
-            this.scheduler = Executors.newSingleThreadScheduledExecutor();
-        }
     }
 
     @Override
@@ -77,9 +72,6 @@ public class MiningTask implements BotTask {
         log.info("Stopping Mining Task.");
         this.targetRock = null;
         plugin.setTargetRock(null); // Clear overlay
-        if (this.scheduler != null && !this.scheduler.isShutdown()) {
-            this.scheduler.shutdownNow();
-        }
     }
 
     @Override
@@ -137,7 +129,10 @@ public class MiningTask implements BotTask {
                 doCheckInventory();
                 break;
             case DROPPING:
-                doDropping();
+                if (!actionService.isDropping()) {
+                    log.info("Dropping complete. Resuming mining.");
+                    currentState = MiningState.FINDING_ROCK;
+                }
                 break;
             case IDLE:
                 // Do nothing in idle state
@@ -270,7 +265,7 @@ public class MiningTask implements BotTask {
                     currentState = MiningState.WAITING_FOR_SUBTASK;
                     break;
                 case POWER_MINE:
-                    currentState = MiningState.DROPPING;
+                    doDropping();
                     break;
             }
         } else {
@@ -279,30 +274,14 @@ public class MiningTask implements BotTask {
     }
 
     private void doDropping() {
-        log.info("Starting to drop inventory.");
-        currentState = MiningState.IDLE; // Prevent other actions while dropping
-
-        plugin.sendKeyRequest("/key_hold", "shift");
-
-        long delay = (long) (Math.random() * (250 - 350)) + 350; // Initial delay before first click
+        currentState = MiningState.DROPPING;
         int[] oreIds = plugin.getOreIds();
-
-        for (int i = 0; i < 28; i++) {
-            int itemId = plugin.getInventoryItemId(i);
-            if (plugin.isItemInList(itemId, oreIds)) {
-                final int finalI = i;
-                scheduler.schedule(() -> {
-                    plugin.sendClickRequest(plugin.getInventoryItemPoint(finalI), true);
-                }, delay, TimeUnit.MILLISECONDS);
-                delay += (long) (Math.random() * (250 - 350)) + 350; // Stagger subsequent clicks
-            }
+        if (oreIds.length == 0) {
+            log.info("No ore ids found. Cannot drop inventory. Stopping bot.");
+            plugin.stopBot();
+            return;
         }
-
-        // Schedule the final actions after all drops are scheduled
-        scheduler.schedule(() -> {
-            plugin.sendKeyRequest("/key_release", "shift");
-            log.info("Finished dropping inventory.");
-            droppingFinished = true; // Signal to the main loop
-        }, delay, TimeUnit.MILLISECONDS);
+        log.debug("Inventory contains ore ids: {}", Arrays.toString(oreIds));
+        actionService.powerDrop(oreIds);
     }
 } 

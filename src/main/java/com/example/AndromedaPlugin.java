@@ -70,6 +70,8 @@ public class AndromedaPlugin extends Plugin
 	private boolean wasRunning = false;
 	private final TaskManager taskManager = new TaskManager();
 	private PathfinderConfig pathfinderConfig;
+	@Getter
+	private final ActionService actionService = new ActionService(this);
 
 	
 	// Debugging and tracking variables
@@ -244,7 +246,7 @@ public class AndromedaPlugin extends Plugin
 			BotType botType = config.botType();
 			switch (botType) {
 				case MINING_BOT:
-					taskManager.pushTask(new MiningTask(this, config, taskManager, pathfinderConfig));
+					taskManager.pushTask(new MiningTask(this, config, taskManager, pathfinderConfig, this.actionService));
 					break;
 				case COMBAT_BOT:
 					taskManager.pushTask(new CombatTask(this, config, taskManager));

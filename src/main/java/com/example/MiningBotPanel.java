@@ -103,12 +103,12 @@ public class MiningBotPanel extends PluginPanel {
         
         // Save changes when user presses Enter or when field loses focus
         rockTypesField.addActionListener(e -> {
-            configManager.setConfiguration("generalbot", "rockIds", rockTypesField.getText());
+            configManager.setConfiguration("generalbot", "rockTypes", rockTypesField.getText());
         });
         rockTypesField.addFocusListener(new java.awt.event.FocusAdapter() {
             @Override
             public void focusLost(java.awt.event.FocusEvent e) {
-                configManager.setConfiguration("generalbot", "rockIds", rockTypesField.getText());
+                configManager.setConfiguration("generalbot", "rockTypes", rockTypesField.getText());
             }
         });
         

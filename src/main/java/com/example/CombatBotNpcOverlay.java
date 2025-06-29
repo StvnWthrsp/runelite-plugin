@@ -8,14 +8,12 @@ import javax.inject.Inject;
 import java.awt.*;
 
 public class CombatBotNpcOverlay extends Overlay {
-    private final Client client;
     private final BotConfig config;
     private final AndromedaPlugin plugin;
     private final ModelOutlineRenderer modelOutlineRenderer;
 
     @Inject
-    private CombatBotNpcOverlay(Client client, BotConfig config, AndromedaPlugin plugin, ModelOutlineRenderer modelOutlineRenderer) {
-        this.client = client;
+    private CombatBotNpcOverlay(BotConfig config, AndromedaPlugin plugin, ModelOutlineRenderer modelOutlineRenderer) {
         this.config = config;
         this.plugin = plugin;
         this.modelOutlineRenderer = modelOutlineRenderer;
