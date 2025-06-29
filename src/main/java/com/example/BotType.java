@@ -1,7 +1,10 @@
 package com.example;
 
+import lombok.Getter;
+
+@Getter
 public enum BotType {
-    MINING_BOT("Mining Bot"),
+    MINING_BOT("Mining"),
     COMBAT_BOT("Combat"),
     // Future bot types can be added here
     // WOODCUTTING_BOT("Woodcutting Bot"),
@@ -12,10 +15,6 @@ public enum BotType {
 
     BotType(String displayName) {
         this.displayName = displayName;
-    }
-
-    public String getDisplayName() {
-        return displayName;
     }
 
     @Override

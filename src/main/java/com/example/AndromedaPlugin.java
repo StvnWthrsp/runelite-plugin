@@ -77,7 +77,8 @@ public class AndromedaPlugin extends Plugin
 	// Debugging and tracking variables
 	@Getter
     private GameObject targetRock = null;
-	@Getter
+	@Setter
+    @Getter
     private NPC targetNpc = null;
 	private long sessionStartXp = 0;
 	private Instant sessionStartTime = null;
@@ -481,7 +482,7 @@ public class AndromedaPlugin extends Plugin
 			return;
 		}
 
-		boolean success = false;
+		boolean success;
 		switch (endpoint) {
 			case "/key_hold":
 				success = pipeService.sendKeyHold(key);
@@ -505,10 +506,6 @@ public class AndromedaPlugin extends Plugin
     public void setTargetRock(GameObject rock) {
 		this.targetRock = rock;
 		rockOverlay.setTarget(rock);
-	}
-
-    public void setTargetNpc(NPC npc) {
-		this.targetNpc = npc;
 	}
 
     public long getSessionXpGained()

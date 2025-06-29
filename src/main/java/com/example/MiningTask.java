@@ -40,7 +40,7 @@ public class MiningTask implements BotTask {
     private static final WorldPoint VARROCK_EAST_MINE = new WorldPoint(3285, 3365, 0);
     private static final WorldPoint VARROCK_EAST_BANK = new WorldPoint(3253, 3420, 0);
 
-    private MiningState currentState;
+    private MiningState currentState = MiningState.IDLE;
     private final Deque<Runnable> actionQueue = new ArrayDeque<>();
     private int idleTicks = 0;
     private int delayTicks = 0;
@@ -135,7 +135,7 @@ public class MiningTask implements BotTask {
                 }
                 break;
             case IDLE:
-                // Do nothing in idle state
+                currentState = MiningState.FINDING_ROCK;
                 break;
             case WAITING_FOR_SUBTASK:
                 // Handled above, do nothing here
