@@ -22,10 +22,10 @@ public class MiningBotInventoryOverlay extends Overlay
 {
     private final Client client;
     private final BotConfig config;
-    private final AndromedaPlugin plugin;
+    private final RunepalPlugin plugin;
 
     @Inject
-    public MiningBotInventoryOverlay(Client client, AndromedaPlugin plugin, BotConfig config)
+    public MiningBotInventoryOverlay(Client client, RunepalPlugin plugin, BotConfig config)
     {
         this.client = client;
         this.config = config;

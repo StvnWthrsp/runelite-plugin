@@ -6,7 +6,7 @@ import javax.swing.*;
 import java.awt.*;
 
 public class BotPanel extends PluginPanel {
-    private final AndromedaPlugin plugin;
+    private final RunepalPlugin plugin;
     private final BotConfig config;
     private final ConfigManager configManager;
     
@@ -14,7 +14,7 @@ public class BotPanel extends PluginPanel {
     private final JPanel contentPanel;
     private JPanel currentBotPanel;
 
-    public BotPanel(AndromedaPlugin plugin, BotConfig config, ConfigManager configManager) {
+    public BotPanel(RunepalPlugin plugin, BotConfig config, ConfigManager configManager) {
         super();
         this.plugin = plugin;
         this.config = config;
@@ -49,7 +49,7 @@ public class BotPanel extends PluginPanel {
         botTypeComboBox.addActionListener(e -> {
             BotType selectedType = (BotType) botTypeComboBox.getSelectedItem();
             if (selectedType != null) {
-                configManager.setConfiguration("generalbot", "botType", selectedType);
+                configManager.setConfiguration("runepal", "botType", selectedType);
                 updateContentPanel(selectedType);
             }
         });

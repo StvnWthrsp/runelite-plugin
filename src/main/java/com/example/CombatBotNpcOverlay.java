@@ -9,11 +9,11 @@ import java.awt.*;
 
 public class CombatBotNpcOverlay extends Overlay {
     private final BotConfig config;
-    private final AndromedaPlugin plugin;
+    private final RunepalPlugin plugin;
     private final ModelOutlineRenderer modelOutlineRenderer;
 
     @Inject
-    private CombatBotNpcOverlay(BotConfig config, AndromedaPlugin plugin, ModelOutlineRenderer modelOutlineRenderer) {
+    private CombatBotNpcOverlay(BotConfig config, RunepalPlugin plugin, ModelOutlineRenderer modelOutlineRenderer) {
         this.config = config;
         this.plugin = plugin;
         this.modelOutlineRenderer = modelOutlineRenderer;

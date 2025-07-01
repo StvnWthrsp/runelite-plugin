@@ -9,19 +9,17 @@ import net.runelite.api.events.AnimationChanged;
 import net.runelite.api.events.StatChanged;
 import shortestpath.pathfinder.PathfinderConfig;
 
-import java.util.ArrayDeque;
-import java.util.Arrays;
-import java.util.Deque;
-import java.util.Objects;
+import java.util.*;
 
 @Slf4j
 public class MiningTask implements BotTask {
 
-    private final AndromedaPlugin plugin;
+    private final RunepalPlugin plugin;
     private final BotConfig config;
     private final TaskManager taskManager;
     private final PathfinderConfig pathfinderConfig;
     private final ActionService actionService;
+    private final GameService gameService;
 
     // Internal state for this task only
     private enum MiningState {
@@ -52,12 +50,13 @@ public class MiningTask implements BotTask {
     private long xpGainedThisMine = 0;
     private boolean miningStarted = false;
 
-    public MiningTask(AndromedaPlugin plugin, BotConfig config, TaskManager taskManager, PathfinderConfig pathfinderConfig, ActionService actionService) {
+    public MiningTask(RunepalPlugin plugin, BotConfig config, TaskManager taskManager, PathfinderConfig pathfinderConfig, ActionService actionService, GameService gameService) {
         this.plugin = plugin;
         this.config = config;
         this.taskManager = taskManager;
         this.pathfinderConfig = pathfinderConfig;
         this.actionService = Objects.requireNonNull(actionService, "actionService cannot be null");
+        this.gameService = Objects.requireNonNull(gameService, "gameService cannot be null");
     }
 
     @Override
@@ -78,6 +77,14 @@ public class MiningTask implements BotTask {
     public boolean isFinished() {
         // This task runs indefinitely until stopped by the user via the TaskManager.
         return false;
+    }
+
+    @Override
+    public boolean isStarted() {
+        if (currentState == null) {
+            return false;
+        }
+        return true;
     }
 
     @Override
@@ -185,12 +192,12 @@ public class MiningTask implements BotTask {
     }
 
     private void doFindingRock() {
-        if (plugin.isInventoryFull()) {
+        if (gameService.isInventoryFull()) {
             currentState = MiningState.CHECK_INVENTORY;
             return;
         }
         int[] rockIds = plugin.getRockIds();
-        targetRock = plugin.findNearestGameObject(rockIds);
+        targetRock = gameService.findNearestGameObject(rockIds);
         plugin.setTargetRock(targetRock);
 
         if (targetRock != null) {
@@ -206,7 +213,7 @@ public class MiningTask implements BotTask {
             currentState = MiningState.FINDING_ROCK;
             return;
         }
-        plugin.sendClickRequest(plugin.getRandomClickablePoint(targetRock), true);
+        actionService.sendClickRequest(gameService.getRandomClickablePoint(targetRock), true);
         miningStarted = false;
         xpGainedThisMine = 0;
         idleTicks = 0;
@@ -223,7 +230,7 @@ public class MiningTask implements BotTask {
             idleTicks = 0; // Reset idle counter if we see a mining animation
         }
         if (idleTicks > 5) { // 5 ticks = 3 seconds
-            log.warn("Mining seems to have failed or rock depleted (idle for 6s). Finishing.");
+            log.warn("Mining seems to have failed or rock depleted. Finishing.");
             finishMining();
         }
     }
@@ -254,14 +261,14 @@ public class MiningTask implements BotTask {
     }
 
     private void doCheckInventory() {
-        if (plugin.isInventoryFull()) {
+        if (gameService.isInventoryFull()) {
             switch (config.miningMode()) {
                 case BANK:
                     log.info("Inventory full. Banking.");
                     // Order is reversed because we push to the top of the stack
-                    taskManager.pushTask(new WalkTask(plugin, pathfinderConfig, plugin.getClient().getLocalPlayer().getWorldLocation()));
-                    taskManager.pushTask(new BankTask(plugin));
-                    taskManager.pushTask(new WalkTask(plugin, pathfinderConfig, VARROCK_EAST_BANK));
+                    taskManager.pushTask(new WalkTask(plugin, pathfinderConfig, gameService.getPlayerLocation(), actionService));
+                    taskManager.pushTask(new BankTask(plugin, actionService, gameService));
+                    taskManager.pushTask(new WalkTask(plugin, pathfinderConfig, plugin.getBankCoordinates(), actionService));
                     currentState = MiningState.WAITING_FOR_SUBTASK;
                     break;
                 case POWER_MINE:

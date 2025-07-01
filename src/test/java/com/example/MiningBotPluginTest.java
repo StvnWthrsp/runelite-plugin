@@ -7,7 +7,7 @@ public class MiningBotPluginTest
 {
 	public static void main(String[] args) throws Exception
 	{
-		ExternalPluginManager.loadBuiltin(AndromedaPlugin.class);
+		ExternalPluginManager.loadBuiltin(RunepalPlugin.class);
 		RuneLite.main(args);
 	}
 } 

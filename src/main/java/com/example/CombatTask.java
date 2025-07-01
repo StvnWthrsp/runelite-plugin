@@ -2,23 +2,28 @@ package com.example;
 
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.*;
-import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.events.AnimationChanged;
 import net.runelite.api.events.InteractingChanged;
 
 import java.awt.Point;
-import java.awt.Rectangle;
+import java.util.Objects;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+
+import com.example.entity.Interactable;
+import com.example.entity.NpcEntity;
+
 import java.util.Arrays;
 
 @Slf4j
 public class CombatTask implements BotTask {
 
-    private final AndromedaPlugin plugin;
+    private final RunepalPlugin plugin;
     private final BotConfig config;
     private final TaskManager taskManager;
     private ScheduledExecutorService scheduler;
+    private final GameService gameService;
+    private final ActionService actionService;
 
     // Internal state for combat FSM
     private enum CombatState {
@@ -50,10 +55,12 @@ public class CombatTask implements BotTask {
         329   // Salmon
     };
 
-    public CombatTask(AndromedaPlugin plugin, BotConfig config, TaskManager taskManager) {
+    public CombatTask(RunepalPlugin plugin, BotConfig config, TaskManager taskManager, ActionService actionService, GameService gameService) {
         this.plugin = plugin;
         this.config = config;
         this.taskManager = taskManager;
+        this.actionService = Objects.requireNonNull(actionService, "actionService cannot be null");
+        this.gameService = Objects.requireNonNull(gameService, "gameService cannot be null");
     }
 
     @Override
@@ -81,6 +88,14 @@ public class CombatTask implements BotTask {
     public boolean isFinished() {
         // This task runs indefinitely until stopped by the user
         return false;
+    }
+
+    @Override
+    public boolean isStarted() {
+        if (currentState == null) {
+            return false;
+        }
+        return true;
     }
 
     @Override
@@ -163,11 +178,58 @@ public class CombatTask implements BotTask {
     }
 
     private void doFindingNpc() {
+        // Get NPC names to target from config
+        String[] npcNames = getNpcNamesFromConfig();
+        if (npcNames.length == 0) {
+            log.warn("No NPC names configured for combat");
+            return;
+        }
+        
         // Find nearest valid NPC to attack
-        targetNpc = findNearestNpc();
+        Interactable selectedEntity = gameService.findNearest(interactable -> {
+            if (!(interactable instanceof NpcEntity)) {
+                return false;
+            }
+            
+            NpcEntity npcEntity = (NpcEntity) interactable;
+            NPC npc = npcEntity.getNpc();
+            
+            // Check if NPC name is null
+            if (npc.getName() == null) {
+                return false;
+            }
+            
+            // Check if NPC name matches our target list (using config instead of hardcoded "Goblin")
+            boolean nameMatches = Arrays.stream(npcNames)
+                    .anyMatch(targetName -> npc.getName().toLowerCase().contains(targetName.toLowerCase().trim()));
+            if (!nameMatches) {
+                return false;
+            }
+            
+            // Only exclude NPCs that are definitely dead (health ratio exactly 0 AND in combat)
+            // NPCs not in combat will have health ratio 0, but they're still alive and targetable
+            if (npc.getHealthRatio() == 0 && npc.getInteracting() != null) {
+                return false; // NPC is dead (health 0 while in combat)
+            }
+            
+            // Skip NPCs already in combat with another player (not us)
+            if (npc.getInteracting() != null && npc.getInteracting() != plugin.getClient().getLocalPlayer()) {
+                return false;
+            }
+            
+            return true;
+        });
+
+        if (selectedEntity == null) {
+            log.debug("No valid NPCs found, waiting...");
+            targetNpc = null;
+            return;
+        }
+        
+        targetNpc = ((NpcEntity) selectedEntity).getNpc();
         
         if (targetNpc == null) {
-            log.debug("No valid NPCs found, waiting...");
+            log.debug("Selected entity had null NPC, waiting...");
             return;
         }
 
@@ -176,10 +238,10 @@ public class CombatTask implements BotTask {
         // Set target NPC for overlay debugging
         plugin.setTargetNpc(targetNpc);
         
-        // Get clickable point and attack
-        Point clickPoint = getRandomClickablePoint(targetNpc);
-        if (clickPoint != null) {
-            plugin.sendClickRequest(clickPoint, true);
+        // Get clickable point and attack using the new unified approach
+        Point clickPoint = gameService.getRandomClickablePoint(selectedEntity);
+        if (clickPoint != null && clickPoint.x != -1 && clickPoint.y != -1) {
+            actionService.sendClickRequest(clickPoint, true);
             currentState = CombatState.VERIFY_ATTACK;
             waitToVerifyTicks = 5;
             combatStartTicks = 0;
@@ -245,7 +307,7 @@ public class CombatTask implements BotTask {
         }
 
         log.info("Eating food at point: {}", foodPoint);
-        plugin.sendClickRequest(foodPoint, false);
+        actionService.sendClickRequest(foodPoint, false);
         
         // Wait a bit for eating animation
         setRandomDelay(3, 5);
@@ -288,53 +350,6 @@ public class CombatTask implements BotTask {
         return healthPercentage <= config.combatEatAtHealthPercent();
     }
 
-    private NPC findNearestNpc() {
-        String[] npcNames = getNpcNamesFromConfig();
-        if (npcNames.length == 0) {
-            return null;
-        }
-
-        IndexedObjectSet<? extends NPC> npcs = plugin.getClient().getWorldView(-1).npcs();
-        NPC nearestNpc = null;
-        double nearestDistance = Double.MAX_VALUE;
-        WorldPoint playerLocation = plugin.getClient().getLocalPlayer().getWorldLocation();
-
-        for (NPC npc : npcs) {
-            if (npc == null || npc.getName() == null) {
-                continue;
-            }
-
-            // Check if NPC name matches our target list
-            boolean nameMatches = Arrays.stream(npcNames)
-                .anyMatch(targetName -> npc.getName().toLowerCase().contains(targetName.toLowerCase().trim()));
-
-            if (!nameMatches) {
-                continue;
-            }
-
-            // Check if NPC is alive
-            if (npc.getHealthRatio() == 0) {
-                continue;
-            }
-
-            // Check if NPC is already in combat with another player
-            if (npc.getInteracting() != null && npc.getInteracting() != plugin.getClient().getLocalPlayer()) {
-                continue;
-            }
-
-            // Calculate distance
-            WorldPoint npcLocation = npc.getWorldLocation();
-            double distance = npcLocation.distanceTo(playerLocation);
-
-            if (distance < nearestDistance) {
-                nearestDistance = distance;
-                nearestNpc = npc;
-            }
-        }
-
-        return nearestNpc;
-    }
-
     private String[] getNpcNamesFromConfig() {
         String npcNamesStr = config.combatNpcNames();
         if (npcNamesStr == null || npcNamesStr.trim().isEmpty()) {
@@ -345,35 +360,13 @@ public class CombatTask implements BotTask {
 
     private Point findFoodInInventory() {
         for (int slot = 0; slot < 28; slot++) {
-            int itemId = plugin.getInventoryItemId(slot);
+            int itemId = gameService.getInventoryItemId(slot);
             if (Arrays.stream(FOOD_IDS).anyMatch(id -> id == itemId)) {
-                return plugin.getInventoryItemPoint(slot);
+                return gameService.getInventoryItemPoint(slot);
             }
         }
         return null;
     }
 
-    private Point getRandomClickablePoint(NPC npc) {
-        if (npc.getConvexHull() == null) {
-            return null;
-        }
 
-        Rectangle bounds = npc.getConvexHull().getBounds();
-        if (bounds.width <= 0 || bounds.height <= 0) {
-            return null;
-        }
-
-        // Try to find a valid point within the NPC's bounds
-        for (int i = 0; i < 10; i++) {
-            int x = bounds.x + plugin.getRandom().nextInt(bounds.width);
-            int y = bounds.y + plugin.getRandom().nextInt(bounds.height);
-            
-            if (npc.getConvexHull().contains(x, y)) {
-                return new Point(x, y);
-            }
-        }
-
-        // Fallback to center of bounds
-        return new Point(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
-    }
 } 

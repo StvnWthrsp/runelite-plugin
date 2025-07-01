@@ -5,7 +5,7 @@ import net.runelite.client.config.ConfigGroup;
 import net.runelite.client.config.ConfigItem;
 import net.runelite.client.config.ConfigSection;
 
-@ConfigGroup("generalbot")
+@ConfigGroup("runepal")
 public interface BotConfig extends Config
 {
 	// Bot type selection for internal use (not shown in config panel)
@@ -59,17 +59,17 @@ public interface BotConfig extends Config
 		return "Copper"; // Default copper rock
 	}
 
-//	@ConfigItem(
-//			keyName = "oreIds",
-//			name = "Ore IDs",
-//			description = "Comma-separated list of ore item IDs to drop (e.g., 436 for copper ore)",
-//			position = 12,
-//			hidden = true
-//	)
-//	default String oreIds()
-//	{
-//		return "436"; // Default copper ore ID
-//	}
+	@ConfigItem(
+			keyName = "miningBank",
+			name = "Bank Name",
+			description = "The name of the bank to use in banking mode for the mining bot",
+			position = 12,
+			hidden = true
+	)
+	default String miningBank()
+	{
+		return "VarrockEast"; // Default bank
+	}
 
 	// Combat Bot specific settings
 	@ConfigItem(

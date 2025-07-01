@@ -17,7 +17,7 @@ class PipeServer:
     Listens for JSON commands from the Java plugin and dispatches them to automation functions.
     """
     
-    def __init__(self, pipe_name=r'\\.\pipe\OSRSBot'):
+    def __init__(self, pipe_name=r'\\.\pipe\Runepal'):
         self.pipe_name = pipe_name
         self.running = False
         self.connected = False
@@ -239,7 +239,7 @@ class PipeServer:
 
 def main():
     """Main entry point."""
-    log.info("OSRS Automation Server - Named Pipe Edition")
+    log.info("Runepal Automation Server")
     log.info("Version: 2.0.0")
     log.info("Waiting for RuneLite plugin to connect...")
     

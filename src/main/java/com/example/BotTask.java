@@ -32,6 +32,13 @@ public interface BotTask {
     boolean isFinished();
 
     /**
+     * Determines if the task has begun.
+     *
+     * @return true if the task is running, false otherwise.
+     */
+    boolean isStarted();
+
+    /**
      * Provides a human-readable name for the task.
      *
      * @return The name of the task for logging or UI purposes.

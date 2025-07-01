@@ -16,15 +16,17 @@ import java.time.Duration;
 public class MiningBotStatusOverlay extends OverlayPanel
 {
     private final Client client;
-    private final AndromedaPlugin plugin;
+    private final RunepalPlugin plugin;
     private final BotConfig config;
+    private final GameService gameService;
 
     @Inject
-    public MiningBotStatusOverlay(Client client, AndromedaPlugin plugin, BotConfig config)
+    public MiningBotStatusOverlay(Client client, RunepalPlugin plugin, BotConfig config, GameService gameService)
     {
         this.client = client;
         this.plugin = plugin;
         this.config = config;
+        this.gameService = gameService;
         setPosition(OverlayPosition.TOP_LEFT);
     }
 
@@ -54,19 +56,19 @@ public class MiningBotStatusOverlay extends OverlayPanel
                 .build());
 
         // Mining statistics
-        long sessionXpGained = plugin.getSessionXpGained();
-        
-        panelComponent.getChildren().add(LineComponent.builder()
-                .left("Session XP:")
-                .right(String.valueOf(sessionXpGained))
-                .rightColor(Color.GREEN)
-                .build());
-
-        panelComponent.getChildren().add(LineComponent.builder()
-                .left("XP/Hour:")
-                .right(plugin.getXpPerHour())
-                .rightColor(Color.YELLOW)
-                .build());
+//        long sessionXpGained = gameService.getSessionXpGained();
+//
+//        panelComponent.getChildren().add(LineComponent.builder()
+//                .left("Session XP:")
+//                .right(String.valueOf(sessionXpGained))
+//                .rightColor(Color.GREEN)
+//                .build());
+//
+//        panelComponent.getChildren().add(LineComponent.builder()
+//                .left("XP/Hour:")
+//                .right(gameService.getXpPerHour())
+//                .rightColor(Color.YELLOW)
+//                .build());
 
         // Current mining level
         int miningLevel = client.getBoostedSkillLevel(Skill.MINING);
@@ -77,16 +79,16 @@ public class MiningBotStatusOverlay extends OverlayPanel
                 .build());
 
         // Session runtime
-        Duration runtime = plugin.getSessionRuntime();
-        if (runtime != null)
-        {
-            String runtimeStr = formatDuration(runtime);
-            panelComponent.getChildren().add(LineComponent.builder()
-                    .left("Runtime:")
-                    .right(runtimeStr)
-                    .rightColor(Color.WHITE)
-                    .build());
-        }
+//        Duration runtime = gameService.getSessionRuntime();
+//        if (runtime != null)
+//        {
+//            String runtimeStr = formatDuration(runtime);
+//            panelComponent.getChildren().add(LineComponent.builder()
+//                    .left("Runtime:")
+//                    .right(runtimeStr)
+//                    .rightColor(Color.WHITE)
+//                    .build());
+//        }
 
         // Target rock info
         if (plugin.getTargetRock() != null)
@@ -100,7 +102,7 @@ public class MiningBotStatusOverlay extends OverlayPanel
         }
 
         // Inventory status
-        boolean inventoryFull = plugin.isInventoryFull();
+        boolean inventoryFull = gameService.isInventoryFull();
         panelComponent.getChildren().add(LineComponent.builder()
                 .left("Inventory:")
                 .right(inventoryFull ? "FULL" : "Space Available")

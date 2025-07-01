@@ -5,18 +5,23 @@ import com.google.gson.Gson;
 import java.io.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import javax.inject.Inject;
+import javax.inject.Singleton;
+
 /**
  * Service for communicating with the Python automation server via Windows named pipes.
  * This replaces the HTTP client functionality with a more efficient IPC mechanism.
  */
 @Slf4j
+@Singleton
 public class PipeService {
     
-    private static final String PIPE_NAME = "\\\\.\\pipe\\OSRSBot";
+    private static final String PIPE_NAME = "\\\\.\\pipe\\Runepal";
     private PrintWriter pipeWriter;
     private final Gson gson;
     private final AtomicBoolean connected = new AtomicBoolean(false);
     
+    @Inject
     public PipeService() {
         this.gson = new Gson();
     }

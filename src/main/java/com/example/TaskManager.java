@@ -35,6 +35,10 @@ public class TaskManager {
             return; // Return to process the new task on the next tick
         }
 
+        if (!currentTask.isStarted()) {
+            currentTask.onStart();
+        }
+
         // Run the main logic for the current task.
         currentTask.onLoop();
     }

@@ -35,34 +35,36 @@ public class WalkTask implements BotTask {
 
     @Getter
     private final WorldPoint destination;
-    private final AndromedaPlugin plugin;
+    private final RunepalPlugin plugin;
     private final Client client;
     private final PathfinderConfig pathfinderConfig;
 
-    private WalkState state = WalkState.IDLE;
+    private WalkState currentState = WalkState.IDLE;
     private List<WorldPoint> path;
     private Pathfinder pathfinder;
     private Future<?> pathfinderFuture;
     private final ExecutorService pathfinderExecutor;
+    private final ActionService actionService;
 
-    public WalkTask(AndromedaPlugin plugin, PathfinderConfig pathfinderConfig, WorldPoint destination) {
+    public WalkTask(RunepalPlugin plugin, PathfinderConfig pathfinderConfig, WorldPoint destination, ActionService actionService) {
         this.plugin = plugin;
         this.client = plugin.getClient();
         this.pathfinderConfig = pathfinderConfig;
         this.destination = destination;
         ThreadFactory shortestPathNaming = new ThreadFactoryBuilder().setNameFormat("walk-task-%d").build();
         this.pathfinderExecutor = Executors.newSingleThreadExecutor(shortestPathNaming);
+        this.actionService = actionService;
     }
 
     @Override
     public void onStart() {
         log.info("Starting walk task to {}", destination);
-        this.state = WalkState.IDLE;
+        this.currentState = WalkState.IDLE;
     }
 
     @Override
     public void onLoop() {
-        switch (state) {
+        switch (currentState) {
             case IDLE:
                 calculatePath();
                 break;
@@ -81,7 +83,7 @@ public class WalkTask implements BotTask {
         WorldPoint start = client.getLocalPlayer().getWorldLocation();
         if (start.distanceTo(destination) < 2) {
             log.info("Already at destination.");
-            state = WalkState.FINISHED;
+            currentState = WalkState.FINISHED;
             return;
         }
 
@@ -92,7 +94,7 @@ public class WalkTask implements BotTask {
         pathfinderConfig.refresh();
         pathfinder = new Pathfinder(pathfinderConfig, startPacked, Collections.singleton(endPacked));
         pathfinderFuture = pathfinderExecutor.submit(pathfinder);
-        state = WalkState.CALCULATING_PATH;
+        currentState = WalkState.CALCULATING_PATH;
     }
 
     private void checkPathCalculation() {
@@ -103,7 +105,7 @@ public class WalkTask implements BotTask {
         List<Integer> resultPath = pathfinder.getPath();
         if (resultPath.isEmpty()) {
             log.warn("No path found to {}", destination);
-            state = WalkState.FAILED;
+            currentState = WalkState.FAILED;
             return;
         }
 
@@ -111,7 +113,7 @@ public class WalkTask implements BotTask {
                 .map(WorldPointUtil::unpackWorldPoint)
                 .collect(Collectors.toList());
         log.info("Path calculated with {} steps.", this.path.size());
-        state = WalkState.WALKING;
+        currentState = WalkState.WALKING;
     }
 
     private void handleWalking() {
@@ -119,24 +121,24 @@ public class WalkTask implements BotTask {
 
         if (currentLocation.distanceTo(destination) < 2) {
             log.info("Arrived at destination {}", destination);
-            state = WalkState.FINISHED;
+            currentState = WalkState.FINISHED;
             return;
         }
 
         path.removeIf(p -> p.distanceTo(currentLocation) < 5 && p.getPlane() == currentLocation.getPlane());
         if (path.isEmpty()) {
             log.warn("Path became empty before reaching destination. Recalculating...");
-            state = WalkState.IDLE;
+            currentState = WalkState.IDLE;
             return;
         }
 
         if (client.getLocalDestinationLocation() == null) {
             WorldPoint target = getNextMinimapTarget();
             if (target != null) {
-                plugin.walkTo(target);
+                walkTo(target);
             } else {
                 log.warn("Could not find a reachable target on the minimap. Recalculating path.");
-                state = WalkState.IDLE;
+                currentState = WalkState.IDLE;
             }
         }
     }
@@ -204,11 +206,34 @@ public class WalkTask implements BotTask {
 
     @Override
     public boolean isFinished() {
-        return state == WalkState.FINISHED || state == WalkState.FAILED;
+        return currentState == WalkState.FINISHED || currentState == WalkState.FAILED;
+    }
+
+    @Override
+    public boolean isStarted() {
+        if (currentState == null) {
+            return false;
+        }
+        return true;
     }
 
     @Override
     public String getTaskName() {
         return "Walking to " + destination.toString();
+    }
+
+    public void walkTo(WorldPoint worldPoint) {
+        LocalPoint localPoint = LocalPoint.fromWorld(client.getWorldView(-1), worldPoint);
+        if (localPoint != null) {
+            net.runelite.api.Point minimapPoint = Perspective.localToMinimap(client, localPoint);
+            if (minimapPoint != null) {
+                log.info("Requesting walk to {} via minimap click at {}", worldPoint, minimapPoint);
+                actionService.sendClickRequest(new java.awt.Point(minimapPoint.getX(), minimapPoint.getY()), true);
+            } else {
+                log.warn("Cannot walk to {}: not visible on minimap.", worldPoint);
+            }
+        } else {
+            log.warn("Cannot walk to {}: not in scene.", worldPoint);
+        }
     }
 } 

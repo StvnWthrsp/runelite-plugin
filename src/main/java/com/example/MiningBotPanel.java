@@ -16,7 +16,7 @@ import java.awt.Insets;
 public class MiningBotPanel extends PluginPanel {
     private final JLabel statusLabel = new JLabel("Status: IDLE");
     private final JButton toggleButton = new JButton("Start");
-    private final AndromedaPlugin plugin;
+    private final RunepalPlugin plugin;
     private final BotConfig config;
     private final ConfigManager configManager;
     
@@ -25,7 +25,7 @@ public class MiningBotPanel extends PluginPanel {
     private final JTextField rockTypesField;
     private final JTextField oreIdsField;
 
-    public MiningBotPanel(AndromedaPlugin plugin, BotConfig config, ConfigManager configManager) {
+    public MiningBotPanel(RunepalPlugin plugin, BotConfig config, ConfigManager configManager) {
         super();
         this.plugin = plugin;
         this.config = config;
@@ -63,11 +63,12 @@ public class MiningBotPanel extends PluginPanel {
         
         // Button actions
         toggleButton.addActionListener(e -> {
-            configManager.setConfiguration("generalbot", "startBot", !config.startBot());
+            configManager.setConfiguration("runepal", "startBot", !config.startBot());
         });
     }
     
     private JPanel createConfigurationPanel() {
+        final JComboBox<Banks> bankComboBox;
         JPanel configPanel = new JPanel(new GridBagLayout());
         configPanel.setBorder(BorderFactory.createTitledBorder("Mining Configuration"));
         
@@ -86,39 +87,55 @@ public class MiningBotPanel extends PluginPanel {
         configPanel.add(new JLabel("Rock Types:"), gbc);
         gbc.gridx = 1; gbc.fill = GridBagConstraints.HORIZONTAL;
         configPanel.add(rockTypesField, gbc);
+
+        // Create the dropdown for bot type selection
+        bankComboBox = new JComboBox<>(Banks.values());
+        bankComboBox.setSelectedItem(config.miningBank());
         
-        // Ore IDs
-        // gbc.gridx = 0; gbc.gridy = 2; gbc.fill = GridBagConstraints.NONE;
-        // configPanel.add(new JLabel("Ore IDs:"), gbc);
-        // gbc.gridx = 1; gbc.fill = GridBagConstraints.HORIZONTAL;
-        // configPanel.add(oreIdsField, gbc);
+        // Dropdown panel
+        JPanel dropdownPanel = new JPanel(new BorderLayout());
+        dropdownPanel.setBorder(BorderFactory.createTitledBorder("Select Bank"));
+        dropdownPanel.add(bankComboBox, BorderLayout.CENTER);
+
+        gbc.gridx = 0;
+        gbc.gridy = 2;
+        gbc.gridwidth = 2;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        configPanel.add(dropdownPanel, gbc);
         
         // Add event listeners to save changes
+        bankComboBox.addActionListener(e -> {
+            Banks selectedBank = (Banks) bankComboBox.getSelectedItem();
+            if (selectedBank != null) {
+                configManager.setConfiguration("runepal", "miningBank", selectedBank);
+            }
+        });
+
         miningModeComboBox.addActionListener(e -> {
             MiningMode selectedMode = (MiningMode) miningModeComboBox.getSelectedItem();
             if (selectedMode != null) {
-                configManager.setConfiguration("generalbot", "miningMode", selectedMode);
+                configManager.setConfiguration("runepal", "miningMode", selectedMode);
             }
         });
         
         // Save changes when user presses Enter or when field loses focus
         rockTypesField.addActionListener(e -> {
-            configManager.setConfiguration("generalbot", "rockTypes", rockTypesField.getText());
+            configManager.setConfiguration("runepal", "rockTypes", rockTypesField.getText());
         });
         rockTypesField.addFocusListener(new java.awt.event.FocusAdapter() {
             @Override
             public void focusLost(java.awt.event.FocusEvent e) {
-                configManager.setConfiguration("generalbot", "rockTypes", rockTypesField.getText());
+                configManager.setConfiguration("runepal", "rockTypes", rockTypesField.getText());
             }
         });
         
         oreIdsField.addActionListener(e -> {
-            configManager.setConfiguration("generalbot", "oreIds", oreIdsField.getText());
+            configManager.setConfiguration("runepal", "oreIds", oreIdsField.getText());
         });
         oreIdsField.addFocusListener(new java.awt.event.FocusAdapter() {
             @Override
             public void focusLost(java.awt.event.FocusEvent e) {
-                configManager.setConfiguration("generalbot", "oreIds", oreIdsField.getText());
+                configManager.setConfiguration("runepal", "oreIds", oreIdsField.getText());
             }
         });
         

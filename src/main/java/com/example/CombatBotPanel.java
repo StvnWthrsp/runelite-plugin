@@ -6,7 +6,7 @@ import javax.swing.*;
 import java.awt.*;
 
 public class CombatBotPanel extends PluginPanel {
-    private final AndromedaPlugin plugin;
+    private final RunepalPlugin plugin;
     private final BotConfig config;
     private final ConfigManager configManager;
     
@@ -17,7 +17,7 @@ public class CombatBotPanel extends PluginPanel {
     
     private boolean isRunning = false;
 
-    public CombatBotPanel(AndromedaPlugin plugin, BotConfig config, ConfigManager configManager) {
+    public CombatBotPanel(RunepalPlugin plugin, BotConfig config, ConfigManager configManager) {
         super();
         this.plugin = plugin;
         this.config = config;
@@ -115,11 +115,11 @@ public class CombatBotPanel extends PluginPanel {
         try {
             // Save NPC names
             String npcNames = npcNamesField.getText().trim();
-            configManager.setConfiguration("generalbot", "combatNpcNames", npcNames);
+            configManager.setConfiguration("runepal", "combatNpcNames", npcNames);
             
             // Save health percentage
             int healthPercent = (Integer) healthPercentSpinner.getValue();
-            configManager.setConfiguration("generalbot", "combatEatAtHealthPercent", healthPercent);
+            configManager.setConfiguration("runepal", "combatEatAtHealthPercent", healthPercent);
             
             JOptionPane.showMessageDialog(this, 
                 "Configuration saved successfully!", 
@@ -167,8 +167,8 @@ public class CombatBotPanel extends PluginPanel {
     
     private void startBot() {
         // Set bot type and start
-        configManager.setConfiguration("generalbot", "botType", BotType.COMBAT_BOT);
-        configManager.setConfiguration("generalbot", "startBot", true);
+        configManager.setConfiguration("runepal", "botType", BotType.COMBAT_BOT);
+        configManager.setConfiguration("runepal", "startBot", true);
         
         isRunning = true;
         startStopButton.setText("Stop Combat Bot");
@@ -181,7 +181,7 @@ public class CombatBotPanel extends PluginPanel {
     }
     
     private void stopBot() {
-        configManager.setConfiguration("generalbot", "startBot", false);
+        configManager.setConfiguration("runepal", "startBot", false);
         plugin.stopBot();
         
         isRunning = false;

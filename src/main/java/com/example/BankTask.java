@@ -20,26 +20,30 @@ public class BankTask implements BotTask {
         FAILED
     }
 
-    private final AndromedaPlugin plugin;
+    private final RunepalPlugin plugin;
     private final Client client;
+    private final ActionService actionService;
+    private final GameService gameService;
 
-    private BankState state = BankState.FIND_BANK;
+    private BankState currentState = BankState.FIND_BANK;
 
     @Inject
-    public BankTask(AndromedaPlugin plugin) {
+    public BankTask(RunepalPlugin plugin, ActionService actionService, GameService gameService) {
         this.plugin = plugin;
         this.client = plugin.getClient();
+        this.actionService = actionService;
+        this.gameService = gameService;
     }
 
     @Override
     public void onStart() {
         log.info("Starting bank task.");
-        this.state = BankState.FIND_BANK;
+        this.currentState = BankState.FIND_BANK;
     }
 
     @Override
     public void onLoop() {
-        switch (state) {
+        switch (currentState) {
             case FIND_BANK:
                 findAndOpenBank();
                 break;
@@ -58,14 +62,14 @@ public class BankTask implements BotTask {
     }
 
     private void findAndOpenBank() {
-        GameObject bankBooth = plugin.findNearestGameObject(10583, 10355);
+        GameObject bankBooth = gameService.findNearestGameObject(10583, 10355);
         if (bankBooth != null) {
             log.info("Found bank booth. Clicking it.");
-            plugin.sendClickRequest(plugin.getRandomClickablePoint(bankBooth), true);
-            state = BankState.OPENING_BANK;
+            actionService.sendClickRequest(gameService.getRandomClickablePoint(bankBooth), true);
+            currentState = BankState.OPENING_BANK;
         } else {
             log.warn("No bank booth found. Cannot proceed with banking.");
-            state = BankState.FAILED;
+            currentState = BankState.FAILED;
         }
     }
 
@@ -73,7 +77,7 @@ public class BankTask implements BotTask {
         Widget bankWidget = client.getWidget(InterfaceID.Bankmain.ITEMS_CONTAINER);
         if (bankWidget != null && !bankWidget.isHidden()) {
             log.info("Bank is open.");
-            state = BankState.DEPOSITING;
+            currentState = BankState.DEPOSITING;
         }
         // TODO: Add a timeout here in case the widget never opens.
     }
@@ -82,16 +86,16 @@ public class BankTask implements BotTask {
         Widget depositInventoryButton = client.getWidget(InterfaceID.Bankmain.DEPOSITINV);
         if (depositInventoryButton != null && !depositInventoryButton.isHidden()) {
             log.info("Depositing inventory.");
-            plugin.sendClickRequest(plugin.getRandomPointInBounds(depositInventoryButton.getBounds()), true);
-            state = BankState.WAITING_FOR_DEPOSIT;
+            actionService.sendClickRequest(gameService.getRandomPointInBounds(depositInventoryButton.getBounds()), true);
+            currentState = BankState.WAITING_FOR_DEPOSIT;
         }
         // TODO: Wait for inventory to be empty.
     }
 
     private void waitForDeposit() {
-        if (plugin.isInventoryEmpty()) {
+        if (gameService.isInventoryEmpty()) {
             log.info("Inventory is empty. Banking complete.");
-            state = BankState.FINISHED;
+            currentState = BankState.FINISHED;
         }
         // TODO: Add a timeout here in case inventory never becomes empty
     }
@@ -104,7 +108,15 @@ public class BankTask implements BotTask {
 
     @Override
     public boolean isFinished() {
-        return state == BankState.FINISHED || state == BankState.FAILED;
+        return currentState == BankState.FINISHED || currentState == BankState.FAILED;
+    }
+
+    @Override
+    public boolean isStarted() {
+        if (currentState == null) {
+            return false;
+        }
+        return true;
     }
 
     @Override
