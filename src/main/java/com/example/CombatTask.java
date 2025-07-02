@@ -24,6 +24,7 @@ public class CombatTask implements BotTask {
     private ScheduledExecutorService scheduler;
     private final GameService gameService;
     private final ActionService actionService;
+    private final EventService eventService;
 
     // Internal state for combat FSM
     private enum CombatState {
@@ -55,12 +56,13 @@ public class CombatTask implements BotTask {
         329   // Salmon
     };
 
-    public CombatTask(RunepalPlugin plugin, BotConfig config, TaskManager taskManager, ActionService actionService, GameService gameService) {
+    public CombatTask(RunepalPlugin plugin, BotConfig config, TaskManager taskManager, ActionService actionService, GameService gameService, EventService eventService) {
         this.plugin = plugin;
         this.config = config;
         this.taskManager = taskManager;
         this.actionService = Objects.requireNonNull(actionService, "actionService cannot be null");
         this.gameService = Objects.requireNonNull(gameService, "gameService cannot be null");
+        this.eventService = Objects.requireNonNull(eventService, "eventService cannot be null");
     }
 
     @Override
@@ -68,6 +70,10 @@ public class CombatTask implements BotTask {
         log.info("Starting Combat Task.");
         this.currentState = CombatState.FINDING_NPC;
         this.lastHealthCheck = plugin.getClient().getBoostedSkillLevel(Skill.HITPOINTS);
+        
+        // Subscribe to events
+        this.eventService.subscribe(AnimationChanged.class, this::onAnimationChanged);
+        this.eventService.subscribe(InteractingChanged.class, this::onInteractingChanged);
         
         if (this.scheduler == null || this.scheduler.isShutdown()) {
             this.scheduler = Executors.newSingleThreadScheduledExecutor();
@@ -79,6 +85,11 @@ public class CombatTask implements BotTask {
         log.info("Stopping Combat Task.");
         this.targetNpc = null;
         plugin.setTargetNpc(null); // Clear overlay
+        
+        // Unsubscribe from events
+        this.eventService.unsubscribe(AnimationChanged.class, this::onAnimationChanged);
+        this.eventService.unsubscribe(InteractingChanged.class, this::onInteractingChanged);
+        
         if (this.scheduler != null && !this.scheduler.isShutdown()) {
             this.scheduler.shutdownNow();
         }

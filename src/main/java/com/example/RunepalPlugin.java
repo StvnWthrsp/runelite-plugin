@@ -11,6 +11,7 @@ import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
 import net.runelite.api.events.GameStateChanged;
+import net.runelite.api.events.GameTick;
 import net.runelite.api.events.AnimationChanged;
 import net.runelite.api.events.StatChanged;
 import net.runelite.api.events.InteractingChanged;
@@ -20,8 +21,7 @@ import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
 import java.util.Arrays;
-import net.runelite.client.task.Schedule;
-import java.time.temporal.ChronoUnit;
+
 import net.runelite.api.GameObject;
 import net.runelite.api.NPC;
 import java.util.List;
@@ -63,6 +63,10 @@ public class RunepalPlugin extends Plugin
 	private ActionService actionService = null;
 	@Getter
 	private GameService gameService = null;
+	@Getter
+	private HumanizerService humanizerService = null;
+	@Getter
+	private EventService eventService = null;
 
 	// Debugging and tracking variables
 	@Getter
@@ -122,6 +126,12 @@ public class RunepalPlugin extends Plugin
 		overlayManager.add(inventoryOverlay);
 		overlayManager.add(combatNpcOverlay);
 
+		// Initialize core services
+		eventService = new EventService();
+		humanizerService = new HumanizerService();
+		gameService = new GameService(client, this);
+		actionService = new ActionService(this, pipeService, gameService);
+
 		ShortestPathConfig shortestPathConfig = configManager.getConfig(ShortestPathConfig.class);
 		pathfinderConfig = new PathfinderConfig(client, shortestPathConfig);
 		if (client.getGameState() == GameState.LOGGED_IN) {
@@ -151,6 +161,11 @@ public class RunepalPlugin extends Plugin
 		overlayManager.remove(combatNpcOverlay);
 		taskManager.clearTasks();
 
+		// Clean up services
+		if (eventService != null) {
+			eventService.clearAllSubscribers();
+		}
+
 		// Disconnect from pipe service
 		pipeService.disconnect();
 	}
@@ -173,29 +188,41 @@ public class RunepalPlugin extends Plugin
 				sessionStartTime = Instant.now();
 			}
 		}
+		else if (gameStateChanged.getGameState() == GameState.LOGIN_SCREEN)
+		{
+			log.info("Player logged out - gracefully stopping bot.");
+			
+			// Gracefully stop the bot when player logs out
+			if (config.startBot()) {
+				stopBot();
+				log.info("Bot stopped due to logout.");
+			}
+		}
+		
+		// Publish game state change event
+		if (eventService != null) {
+			eventService.publish(gameStateChanged);
+		}
 	}
 
 	@Subscribe
 	public void onAnimationChanged(AnimationChanged animationChanged) {
-		BotTask currentTask = taskManager.getCurrentTask();
-		if (currentTask instanceof MiningTask) {
-			((MiningTask) currentTask).onAnimationChanged(animationChanged);
+		if (eventService != null) {
+			eventService.publish(animationChanged);
 		}
 	}
 
 	@Subscribe
 	public void onStatChanged(StatChanged statChanged) {
-		BotTask currentTask = taskManager.getCurrentTask();
-		if (currentTask instanceof MiningTask) {
-			((MiningTask) currentTask).onStatChanged(statChanged);
+		if (eventService != null) {
+			eventService.publish(statChanged);
 		}
 	}
 
 	@Subscribe
 	public void onInteractingChanged(InteractingChanged interactingChanged) {
-		BotTask currentTask = taskManager.getCurrentTask();
-		if (currentTask instanceof CombatTask) {
-			((CombatTask) currentTask).onInteractingChanged(interactingChanged);
+		if (eventService != null) {
+			eventService.publish(interactingChanged);
 		}
 	}
 
@@ -205,11 +232,13 @@ public class RunepalPlugin extends Plugin
 		return configManager.getConfig(BotConfig.class);
 	}
 
-	@Schedule(
-		period = 600,
-		unit = ChronoUnit.MILLIS
-	)
-	public void onGameTick() {
+	@Subscribe
+	public void onGameTick(GameTick gameTick) {
+		// Publish game tick event to the event service
+		if (eventService != null) {
+			eventService.publish(gameTick);
+		}
+
 		if (panel != null) {
 			panel.setStatus(currentState);
 			panel.setButtonText(config.startBot() ? "Stop" : "Start");
@@ -230,10 +259,10 @@ public class RunepalPlugin extends Plugin
 			BotType botType = config.botType();
 			switch (botType) {
 				case MINING_BOT:
-					taskManager.pushTask(new MiningTask(this, config, taskManager, pathfinderConfig, actionService, gameService));
+					taskManager.pushTask(new MiningTask(this, config, taskManager, pathfinderConfig, actionService, gameService, eventService));
 					break;
 				case COMBAT_BOT:
-					taskManager.pushTask(new CombatTask(this, config, taskManager, actionService, gameService));
+					taskManager.pushTask(new CombatTask(this, config, taskManager, actionService, gameService, eventService));
 					break;
 				default:
 					log.warn("Unknown bot type: {}", botType);
@@ -257,7 +286,7 @@ public class RunepalPlugin extends Plugin
 	}
 
 	public void stopBot() {
-		configManager.setConfiguration("miningbot", "startBot", false);
+		configManager.setConfiguration("runepal", "startBot", false);
 	}
 
 	// --- Public Helper Methods for Tasks ---
