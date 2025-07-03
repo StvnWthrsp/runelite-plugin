@@ -53,6 +53,7 @@ public class WalkTask implements BotTask {
     private final GameService gameService;
 
     private WalkState currentState = WalkState.IDLE;
+    private int delayTicks = 0;
     private List<WorldPoint> path;
     private Pathfinder pathfinder;
     private Future<?> pathfinderFuture;
@@ -64,6 +65,7 @@ public class WalkTask implements BotTask {
     private long transportStartTime;
     private static final long TRANSPORT_TIMEOUT_MS = 30000; // 30 seconds
     private int pathIndex = 0;
+    private TileObject doorToOpen;
 
     public WalkTask(RunepalPlugin plugin, PathfinderConfig pathfinderConfig, WorldPoint destination, ActionService actionService, GameService gameService) {
         this.plugin = plugin;
@@ -85,6 +87,11 @@ public class WalkTask implements BotTask {
 
     @Override
     public void onLoop() {
+        if (delayTicks > 0) {
+            delayTicks--;
+            return;
+        }
+
         switch (currentState) {
             case IDLE:
                 calculatePath();
@@ -150,6 +157,12 @@ public class WalkTask implements BotTask {
     private void handleWalking() {
         WorldPoint currentLocation = client.getLocalPlayer().getWorldLocation();
 
+        // Check if we're already walking to a destination
+        if (client.getLocalDestinationLocation() != null) {
+            return;
+        }
+
+        // Check if we're already at the destination
         if (currentLocation.equals(destination)) {
             log.info("Already at destination.");
             currentState = WalkState.FINISHED;
@@ -178,14 +191,11 @@ public class WalkTask implements BotTask {
             }
             
             // We're adjacent to the door, try to interact with it
-            TileObject door = findDoorObject(doorInfo.doorLocation);
-            if ((door != null && door instanceof GameObject) || (door != null && door instanceof WallObject)) {
-                log.info("Found door object {} at {}, attempting to open", door.getId(), doorInfo.doorLocation);
-                if (door instanceof GameObject) {
-                    actionService.interactWithGameObject((GameObject) door, "Open");
-                } else if (door instanceof WallObject) {
-                    actionService.interactWithWallObject((WallObject) door, "Open");
-                }
+            doorToOpen = findDoorObject(doorInfo.doorLocation);
+            if ((doorToOpen != null && doorToOpen instanceof GameObject) || (doorToOpen != null && doorToOpen instanceof WallObject)) {
+                log.info("Found door object {} at {}, attempting to open", doorToOpen.getId(), doorInfo.doorLocation);
+                currentState = WalkState.OPENING_DOOR;
+                setRandomDelay(1, 5);
                 return;
             } else {
                 log.warn("No door object found at {}, continuing with normal walking", doorInfo.doorLocation);
@@ -196,7 +206,12 @@ public class WalkTask implements BotTask {
         if (pathIndex < path.size()) {
             WorldPoint target = getNextMinimapTarget();
             walkTo(target);
+            setRandomDelay(3, 10);
         }
+    }
+
+    private void setRandomDelay(int minTicks, int maxTicks) {
+        delayTicks = plugin.getRandom().nextInt(maxTicks - minTicks + 1) + minTicks;
     }
 
     /**
@@ -207,21 +222,23 @@ public class WalkTask implements BotTask {
         // pathIndex-1 because we're starting from our current position, pathIndex is the next point in the path
         for (int i = pathIndex - 1; i < Math.min(pathIndex + 10, path.size()); i++) {
             WorldPoint pathPoint = path.get(i);
-            log.info("Checking if movement between {} and {} is blocked by a door", currentLocation, pathPoint);
+            log.trace("Checking if movement between {} and {} is blocked by a door", currentLocation, pathPoint);
             // Check if we can move from current point to this path point
-            if (isMovementBlockedByDoor(path.get(i - 1), pathPoint)) {
-                log.info("Movement between {} and {} is blocked by a door", currentLocation, pathPoint);
-                log.info("Last reachable point: {}", path.get(i - 1));
-                return new DoorInfo(pathPoint, pathPoint, path.get(i - 1));
+            if (isMovementBlockedByDoor(currentLocation, pathPoint)) {
+                log.debug("Movement between current location{} and {} is blocked by a door", currentLocation, pathPoint);
+                log.debug("Last reachable point: {}", currentLocation);
+                return new DoorInfo(pathPoint, pathPoint, currentLocation);
             }
             
             // Also check the previous point to this point
-            // if (i > 0) {
-            //     WorldPoint prevPoint = path.get(i - 1);
-            //     if (isMovementBlockedByDoor(prevPoint, pathPoint)) {
-            //         return new DoorInfo(pathPoint, pathPoint);
-            //     }
-            // }
+            if (i > 0) {
+                WorldPoint prevPoint = path.get(i - 1);
+                if (isMovementBlockedByDoor(prevPoint, pathPoint)) {
+                    log.debug("Movement between {} and {} is blocked by a door", currentLocation, pathPoint);
+                    log.debug("Last reachable point: {}", path.get(i - 1));
+                    return new DoorInfo(pathPoint, pathPoint, path.get(i - 1));
+                }
+            }
         }
         
         return null;
@@ -232,9 +249,9 @@ public class WalkTask implements BotTask {
      */
     private boolean isMovementBlockedByDoor(WorldPoint from, WorldPoint to) {
         // Only check adjacent tiles
-        // if (from.distanceTo(to) > 1) {
-        //     return false;
-        // }
+        if (from.distanceTo(to) > 1) {
+            return false;
+        }
         
         try {
             // Get collision data from the client
@@ -381,25 +398,6 @@ public class WalkTask implements BotTask {
         return false;
     }
 
-    private boolean isOpenDoor(TileObject obj) {
-        if (obj == null) {
-            return false;
-        }
-        
-        int id = obj.getId();
-        int[] openDoorIds = {
-            ObjectID.FAI_VARROCK_DOOR_OPEN
-        };
-
-        for (int openDoorId : openDoorIds) {
-            if (id == openDoorId) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
     /**
      * Helper class to store door information
      */
@@ -439,22 +437,6 @@ public class WalkTask implements BotTask {
             return path.get(pathIndex);
         }
         
-        return null;
-    }
-
-    private WorldPoint getNextUnblockedPathPoint() {
-        for (int i = path.size() - 1; i >= 0; i--) {
-            WorldPoint point = path.get(i);
-            if (!isMovementBlockedByDoor(client.getLocalPlayer().getWorldLocation(), point)) {
-                return point;
-            }
-        }
-
-        // Fallback to current path position
-        if (pathIndex < path.size()) {
-            return path.get(pathIndex);
-        }
-
         return null;
     }
 
@@ -558,26 +540,18 @@ public class WalkTask implements BotTask {
     }
 
     private void handleDoorOpening() {
-        if (System.currentTimeMillis() - transportStartTime > TRANSPORT_TIMEOUT_MS) {
-            log.warn("Door opening timed out");
+        if ((doorToOpen != null && doorToOpen instanceof GameObject) || (doorToOpen != null && doorToOpen instanceof WallObject)) {
+            if (doorToOpen instanceof GameObject) {
+                actionService.interactWithGameObject((GameObject) doorToOpen, "Open");
+            } else if (doorToOpen instanceof WallObject) {
+                actionService.interactWithWallObject((WallObject) doorToOpen, "Open");
+            }
             currentState = WalkState.WALKING;
+            setRandomDelay(0, 2);
             return;
-        }
-
-        if (pendingTransport == null) {
-            log.error("No pending transport for door opening");
-            currentState = WalkState.WALKING;
-            return;
-        }
-
-        // Check if door opening is complete by checking if we can continue walking
-        log.info("Door opening in progress, checking if complete");
-        
-        // Wait a moment for door to open, then continue
-        if (System.currentTimeMillis() - transportStartTime > 2000) { // 2 seconds
-            log.info("Door opening complete, resuming walking");
-            currentState = WalkState.WALKING;
-            pendingTransport = null;
+        } else {
+            log.warn("Could not open door. Recalculating path.");
+            currentState = WalkState.IDLE;
         }
     }
 

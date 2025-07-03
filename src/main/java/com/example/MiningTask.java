@@ -222,7 +222,6 @@ public class MiningTask implements BotTask {
     // --- FSM LOGIC ---
     private void setRandomDelay(int minTicks, int maxTicks) {
         delayTicks = plugin.getRandom().nextInt(maxTicks - minTicks + 1) + minTicks;
-        delayTicks = 0;
     }
 
     private void doFindingRock() {
@@ -275,7 +274,7 @@ public class MiningTask implements BotTask {
             log.warn("Configured rock IDs: {}", Arrays.toString(rockIds));
             log.warn("Player location: {}", gameService.getPlayerLocation());
             // Wait a bit before trying again to avoid spamming
-            setRandomDelay(5, 10);
+            setRandomDelay(1, 3);
         }
     }
 
@@ -290,7 +289,6 @@ public class MiningTask implements BotTask {
         idleTicks = 0;
         lastMiningXp = plugin.getClient().getSkillExperience(Skill.MINING);
         currentState = MiningState.WAIT_MINING;
-        setRandomDelay(3, 5); // Wait a few ticks for the animation to start
     }
 
     private void doWaitMining() {
@@ -351,6 +349,7 @@ public class MiningTask implements BotTask {
                     currentState = MiningState.WAITING_FOR_SUBTASK;
                     break;
                 case POWER_MINE:
+                    setRandomDelay(1, 3);
                     doDropping();
                     break;
             }
