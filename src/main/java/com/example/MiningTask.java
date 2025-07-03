@@ -346,6 +346,7 @@ public class MiningTask implements BotTask {
                     // Order is reversed because we push to the top of the stack
                     taskManager.pushTask(new WalkTask(plugin, pathfinderConfig, gameService.getPlayerLocation(), actionService, gameService));
                     taskManager.pushTask(new BankTask(plugin, actionService, gameService));
+                    log.info("Banking to: {}", plugin.getBankCoordinates());
                     taskManager.pushTask(new WalkTask(plugin, pathfinderConfig, plugin.getBankCoordinates(), actionService, gameService));
                     currentState = MiningState.WAITING_FOR_SUBTASK;
                     break;

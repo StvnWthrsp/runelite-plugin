@@ -68,7 +68,7 @@ public interface BotConfig extends Config
 	)
 	default String miningBank()
 	{
-		return "VarrockEast"; // Default bank
+		return "VARROCK_EAST"; // Default bank
 	}
 
 	// Combat Bot specific settings

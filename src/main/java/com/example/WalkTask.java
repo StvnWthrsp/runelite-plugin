@@ -172,9 +172,8 @@ public class WalkTask implements BotTask {
             
             // Walk to the door first if we're not adjacent
             if (currentLocation.distanceTo(doorInfo.doorLocation) > 1) {
-                log.info("Walking to door at {}", doorInfo.doorLocation);
-                WorldPoint adjacentLocation = new WorldPoint(doorInfo.doorLocation.getX(), doorInfo.doorLocation.getY() + 1, client.getLocalPlayer().getWorldLocation().getPlane());
-                walkTo(adjacentLocation);
+                log.info("Walking to door at {}, stopping at {}", doorInfo.doorLocation, doorInfo.lastUnblockedPoint);
+                walkTo(doorInfo.lastUnblockedPoint);
                 return;
             }
             
@@ -206,21 +205,23 @@ public class WalkTask implements BotTask {
     private DoorInfo findDoorBlockingPath(WorldPoint currentLocation) {
         // Look ahead in our path to find where we might be blocked
         // pathIndex-1 because we're starting from our current position, pathIndex is the next point in the path
-        for (int i = pathIndex - 1; i < Math.min(pathIndex + 5, path.size()); i++) {
+        for (int i = pathIndex - 1; i < Math.min(pathIndex + 10, path.size()); i++) {
             WorldPoint pathPoint = path.get(i);
-            
+            log.info("Checking if movement between {} and {} is blocked by a door", currentLocation, pathPoint);
             // Check if we can move from current point to this path point
-            if (isMovementBlockedByDoor(currentLocation, pathPoint)) {
-                return new DoorInfo(pathPoint, pathPoint);
+            if (isMovementBlockedByDoor(path.get(i - 1), pathPoint)) {
+                log.info("Movement between {} and {} is blocked by a door", currentLocation, pathPoint);
+                log.info("Last reachable point: {}", path.get(i - 1));
+                return new DoorInfo(pathPoint, pathPoint, path.get(i - 1));
             }
             
             // Also check the previous point to this point
-            if (i > 0) {
-                WorldPoint prevPoint = path.get(i - 1);
-                if (isMovementBlockedByDoor(prevPoint, pathPoint)) {
-                    return new DoorInfo(pathPoint, pathPoint);
-                }
-            }
+            // if (i > 0) {
+            //     WorldPoint prevPoint = path.get(i - 1);
+            //     if (isMovementBlockedByDoor(prevPoint, pathPoint)) {
+            //         return new DoorInfo(pathPoint, pathPoint);
+            //     }
+            // }
         }
         
         return null;
@@ -231,11 +232,9 @@ public class WalkTask implements BotTask {
      */
     private boolean isMovementBlockedByDoor(WorldPoint from, WorldPoint to) {
         // Only check adjacent tiles
-        if (from.distanceTo(to) > 1) {
-            return false;
-        }
-
-        log.info("Checking if movement between {} and {} is blocked by a door", from, to);
+        // if (from.distanceTo(to) > 1) {
+        //     return false;
+        // }
         
         try {
             // Get collision data from the client
@@ -407,10 +406,12 @@ public class WalkTask implements BotTask {
     private static class DoorInfo {
         final WorldPoint doorLocation;
         final WorldPoint targetLocation;
+        final WorldPoint lastUnblockedPoint;
         
-        DoorInfo(WorldPoint doorLocation, WorldPoint targetLocation) {
+        DoorInfo(WorldPoint doorLocation, WorldPoint targetLocation, WorldPoint lastUnblockedPoint) {
             this.doorLocation = doorLocation;
             this.targetLocation = targetLocation;
+            this.lastUnblockedPoint = lastUnblockedPoint;
         }
     }
 

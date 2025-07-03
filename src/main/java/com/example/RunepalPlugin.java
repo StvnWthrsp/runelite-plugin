@@ -334,9 +334,12 @@ public class RunepalPlugin extends Plugin
 
 	public WorldPoint getBankCoordinates() {
 		String bankName = config.miningBank();
+		log.info("Bank name: {}", bankName);
 		switch (bankName) {
-			case "VarrockEast":
+			case "VARROCK_EAST":
 				return Banks.VARROCK_EAST.getBankCoordinates();
+			case "INTERIOR_TEST":
+				return Banks.INTERIOR_TEST.getBankCoordinates();
 			default:
 				return null;
 		}
