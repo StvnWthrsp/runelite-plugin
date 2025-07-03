@@ -9,6 +9,7 @@ import net.runelite.api.ItemContainer;
 import net.runelite.api.InventoryID;
 import net.runelite.api.Item;
 import net.runelite.api.ItemID;
+import net.runelite.api.WallObject;
 import net.runelite.api.gameval.InterfaceID.MagicSpellbook;
 import shortestpath.Transport;
 
@@ -378,6 +379,23 @@ public class ActionService {
         
         // For most interactions, a left click will work
         // For specific actions, you might need right-click menu handling
+        sendClickRequest(clickPoint, true);
+        return true;
+    }
+
+    public boolean interactWithWallObject(WallObject wallObject, String action) {
+        if (wallObject == null) {
+            log.warn("Cannot interact with null wall object");
+            return false;
+        }
+
+        Point clickPoint = gameService.getRandomClickablePoint(wallObject);
+        if (clickPoint.x == -1) {
+            log.warn("Could not get clickable point for wall object {}", wallObject.getId());
+            return false;
+        }
+
+        log.info("Interacting with wall object {} using action '{}'", wallObject.getId(), action);
         sendClickRequest(clickPoint, true);
         return true;
     }

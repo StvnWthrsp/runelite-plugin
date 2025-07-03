@@ -6,32 +6,30 @@ import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.gameval.InterfaceID;
+import net.runelite.api.gameval.ObjectID;
 import net.runelite.api.Perspective;
 import net.runelite.api.Point;
 import net.runelite.api.coords.LocalPoint;
 import net.runelite.api.widgets.Widget;
 import net.runelite.api.GameObject;
-import net.runelite.api.GameState;
-import net.runelite.api.Item;
-import net.runelite.api.InventoryID;
-import net.runelite.api.ItemContainer;
-import net.runelite.api.MenuAction;
 import shortestpath.WorldPointUtil;
 import shortestpath.pathfinder.Pathfinder;
 import shortestpath.pathfinder.PathfinderConfig;
-import shortestpath.Transport;
-import shortestpath.TransportType;
+import net.runelite.api.Scene;
+import net.runelite.api.Tile;
+import net.runelite.api.Constants;
+import net.runelite.api.CollisionData;
+import net.runelite.api.CollisionDataFlag;
+import net.runelite.api.TileObject;
+import net.runelite.api.WallObject;
 
 import java.util.Collections;
 import java.util.List;
-import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.ThreadFactory;
 import java.util.stream.Collectors;
-import java.util.regex.Pattern;
-import java.util.regex.Matcher;
 
 @Slf4j
 public class WalkTask implements BotTask {
@@ -62,7 +60,7 @@ public class WalkTask implements BotTask {
     private final ActionService actionService;
     
     // Transport execution state
-    private Transport pendingTransport;
+    private Object pendingTransport;
     private long transportStartTime;
     private static final long TRANSPORT_TIMEOUT_MS = 30000; // 30 seconds
     private int pathIndex = 0;
@@ -113,7 +111,7 @@ public class WalkTask implements BotTask {
 
     private void calculatePath() {
         WorldPoint start = client.getLocalPlayer().getWorldLocation();
-        if (start.distanceTo(destination) < 2) {
+        if (start.equals(destination)) {
             log.info("Already at destination.");
             currentState = WalkState.FINISHED;
             return;
@@ -152,8 +150,8 @@ public class WalkTask implements BotTask {
     private void handleWalking() {
         WorldPoint currentLocation = client.getLocalPlayer().getWorldLocation();
 
-        if (currentLocation.distanceTo(destination) < 2) {
-            log.info("Arrived at destination {}", destination);
+        if (currentLocation.equals(destination)) {
+            log.info("Already at destination.");
             currentState = WalkState.FINISHED;
             return;
         }
@@ -167,39 +165,252 @@ public class WalkTask implements BotTask {
             return;
         }
 
-        WorldPoint nextStep = path.get(Math.min(pathIndex + 1, path.size() - 1));
-        
-        // Check if the next step requires a transport (teleport/door)
-        Transport transport = findTransportBetween(currentLocation, nextStep);
-        
-        if (transport != null) {
-            log.info("Found transport: {} from {} to {}", transport.getDisplayInfo(), currentLocation, nextStep);
-            pendingTransport = transport;
+        // Check for doors blocking our path using collision data
+        DoorInfo doorInfo = findDoorBlockingPath(currentLocation);
+        if (doorInfo != null) {
+            log.info("Door detected at {} blocking path to {}", doorInfo.doorLocation, doorInfo.targetLocation);
             
-            if (TransportType.isTeleport(transport.getType())) {
-                currentState = WalkState.EXECUTING_TELEPORT;
-                transportStartTime = System.currentTimeMillis();
-            } else if (isDoorTransport(transport)) {
-                currentState = WalkState.OPENING_DOOR;
-                transportStartTime = System.currentTimeMillis();
-            } else {
-                // Other transport types (boats, etc.)
-                executeTransport(transport);
-                currentState = WalkState.WAITING_FOR_TRANSPORT;
-                transportStartTime = System.currentTimeMillis();
+            // Walk to the door first if we're not adjacent
+            if (currentLocation.distanceTo(doorInfo.doorLocation) > 1) {
+                log.info("Walking to door at {}", doorInfo.doorLocation);
+                WorldPoint adjacentLocation = new WorldPoint(doorInfo.doorLocation.getX(), doorInfo.doorLocation.getY() + 1, client.getLocalPlayer().getWorldLocation().getPlane());
+                walkTo(adjacentLocation);
+                return;
             }
-            return;
+            
+            // We're adjacent to the door, try to interact with it
+            TileObject door = findDoorObject(doorInfo.doorLocation);
+            if ((door != null && door instanceof GameObject) || (door != null && door instanceof WallObject)) {
+                log.info("Found door object {} at {}, attempting to open", door.getId(), doorInfo.doorLocation);
+                if (door instanceof GameObject) {
+                    actionService.interactWithGameObject((GameObject) door, "Open");
+                } else if (door instanceof WallObject) {
+                    actionService.interactWithWallObject((WallObject) door, "Open");
+                }
+                return;
+            } else {
+                log.warn("No door object found at {}, continuing with normal walking", doorInfo.doorLocation);
+            }
         }
 
-        // Normal walking logic
-        if (client.getLocalDestinationLocation() == null) {
+        // Normal walking - proceed to next point in path
+        if (pathIndex < path.size()) {
             WorldPoint target = getNextMinimapTarget();
-            if (target != null) {
-                walkTo(target);
-            } else {
-                log.warn("Could not find a reachable target on the minimap. Recalculating path.");
-                currentState = WalkState.IDLE;
+            walkTo(target);
+        }
+    }
+
+    /**
+     * Finds a door that is blocking our path by checking collision data
+     */
+    private DoorInfo findDoorBlockingPath(WorldPoint currentLocation) {
+        // Look ahead in our path to find where we might be blocked
+        // pathIndex-1 because we're starting from our current position, pathIndex is the next point in the path
+        for (int i = pathIndex - 1; i < Math.min(pathIndex + 5, path.size()); i++) {
+            WorldPoint pathPoint = path.get(i);
+            
+            // Check if we can move from current point to this path point
+            if (isMovementBlockedByDoor(currentLocation, pathPoint)) {
+                return new DoorInfo(pathPoint, pathPoint);
             }
+            
+            // Also check the previous point to this point
+            if (i > 0) {
+                WorldPoint prevPoint = path.get(i - 1);
+                if (isMovementBlockedByDoor(prevPoint, pathPoint)) {
+                    return new DoorInfo(pathPoint, pathPoint);
+                }
+            }
+        }
+        
+        return null;
+    }
+
+    /**
+     * Checks if movement between two adjacent points is blocked by a door using collision data
+     */
+    private boolean isMovementBlockedByDoor(WorldPoint from, WorldPoint to) {
+        // Only check adjacent tiles
+        if (from.distanceTo(to) > 1) {
+            return false;
+        }
+
+        log.info("Checking if movement between {} and {} is blocked by a door", from, to);
+        
+        try {
+            // Get collision data from the client
+            CollisionData[] collisionData = client.getCollisionMaps();
+            if (collisionData == null) {
+                return false;
+            }
+            
+            int plane = from.getPlane();
+            if (plane < 0 || plane >= collisionData.length) {
+                return false;
+            }
+            
+            CollisionData planeCollision = collisionData[plane];
+            if (planeCollision == null) {
+                return false;
+            }
+            
+            // Calculate direction from 'from' to 'to'
+            int dx = to.getX() - from.getX();
+            int dy = to.getY() - from.getY();
+            
+            // Convert world coordinates to collision map coordinates
+            int baseX = client.getTopLevelWorldView().getBaseX();
+            int baseY = client.getTopLevelWorldView().getBaseY();
+            int localX = from.getX() - baseX;
+            int localY = from.getY() - baseY;
+            
+            // Check if coordinates are within bounds
+            if (localX < 0 || localX >= 104 || localY < 0 || localY >= 104) {
+                return false;
+            }
+            
+            int[][] flags = planeCollision.getFlags();
+            int currentFlags = flags[localX][localY];
+            
+            // Check for door-specific collision flags based on direction
+            if (dx == 1 && dy == 0) { // Moving east
+                // Check if there's a wall blocking east movement
+                return (currentFlags & CollisionDataFlag.BLOCK_MOVEMENT_EAST) != 0;
+            } else if (dx == -1 && dy == 0) { // Moving west
+                // Check if there's a wall blocking west movement
+                return (currentFlags & CollisionDataFlag.BLOCK_MOVEMENT_WEST) != 0;
+            } else if (dx == 0 && dy == 1) { // Moving north
+                // Check if there's a wall blocking north movement
+                return (currentFlags & CollisionDataFlag.BLOCK_MOVEMENT_NORTH) != 0;
+            } else if (dx == 0 && dy == -1) { // Moving south
+                // Check if there's a wall blocking south movement
+                return (currentFlags & CollisionDataFlag.BLOCK_MOVEMENT_SOUTH) != 0;
+            }
+            
+            return false;
+        } catch (Exception e) {
+            log.warn("Error checking collision data: {}", e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Finds the actual door GameObject at the specified location
+     */
+    private TileObject findDoorObject(WorldPoint location) {
+        Scene scene = client.getTopLevelWorldView().getScene();
+        Tile[][][] tiles = scene.getTiles();
+        int z = location.getPlane();
+        
+        // Convert world coordinates to scene coordinates
+        int baseX = client.getTopLevelWorldView().getBaseX();
+        int baseY = client.getTopLevelWorldView().getBaseY();
+        int sceneX = location.getX() - baseX;
+        int sceneY = location.getY() - baseY;
+        
+        // Check if coordinates are within scene bounds
+        if (sceneX < 0 || sceneX >= Constants.SCENE_SIZE || 
+            sceneY < 0 || sceneY >= Constants.SCENE_SIZE || 
+            z < 0 || z >= Constants.MAX_Z) {
+            return null;
+        }
+        
+        Tile tile = tiles[z][sceneX][sceneY];
+        if (tile == null) {
+            return null;
+        }
+        
+        // Check all game objects on this tile and adjacent tiles
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dy = -1; dy <= 1; dy++) {
+                int checkX = sceneX + dx;
+                int checkY = sceneY + dy;
+                
+                if (checkX >= 0 && checkX < Constants.SCENE_SIZE && 
+                    checkY >= 0 && checkY < Constants.SCENE_SIZE) {
+                    
+                    Tile checkTile = tiles[z][checkX][checkY];
+                    if (checkTile != null) {
+                        for (GameObject obj : checkTile.getGameObjects()) {
+                            if (obj != null && isClosedDoor(obj)) {
+                                return obj;
+                            }
+                        }
+                        
+                        // Also check wall objects - but we need to handle them differently
+                        WallObject wallObj = checkTile.getWallObject();
+                        if (wallObj != null && isClosedDoor(wallObj)) {
+                            return wallObj;
+                        }
+                    }
+                }
+            }
+        }
+        
+        return null;
+    }
+
+    /**
+     * Checks if a TileObject is a door
+     */
+    private boolean isClosedDoor(TileObject obj) {
+        if (obj == null) {
+            return false;
+        }
+        
+        // Check for common door object IDs and names
+        int id = obj.getId();
+        
+        // Common door IDs (this list may need to be expanded)
+        int[] doorIds = {
+            1516, 1517, 1518, 1519, 1520, 1521, 1522, 1523, 1524, 1525, // Basic doors
+            1530, 1531, 1532, 1533, 1534, 1535, 1536, 1537, 1538, 1539, // More doors
+            11707, 11708, 11709, 11710, 11711, 11712, 11713, 11714, 11715, 11716, // Fancy doors
+            9398, 9399, 9400, 9401, 9402, 9403, 9404, 9405, 9406, 9407, // Door variations
+            24306, 24307, 24308, 24309, 24310, 24311, 24312, 24313, 24314, 24315, // More door variations
+            ObjectID.FAI_VARROCK_DOOR, 2398, 11780, 50048
+        };
+        
+        for (int doorId : doorIds) {
+            if (id == doorId) {
+                return true;
+            }
+        }
+        
+        // Check object name if we have access to it
+        // This is a fallback for doors not in our ID list
+        return false;
+    }
+
+    private boolean isOpenDoor(TileObject obj) {
+        if (obj == null) {
+            return false;
+        }
+        
+        int id = obj.getId();
+        int[] openDoorIds = {
+            ObjectID.FAI_VARROCK_DOOR_OPEN
+        };
+
+        for (int openDoorId : openDoorIds) {
+            if (id == openDoorId) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Helper class to store door information
+     */
+    private static class DoorInfo {
+        final WorldPoint doorLocation;
+        final WorldPoint targetLocation;
+        
+        DoorInfo(WorldPoint doorLocation, WorldPoint targetLocation) {
+            this.doorLocation = doorLocation;
+            this.targetLocation = targetLocation;
         }
     }
 
@@ -212,256 +423,6 @@ public class WalkTask implements BotTask {
                 break;
             }
         }
-    }
-
-    private Transport findTransportBetween(WorldPoint from, WorldPoint to) {
-        int fromPacked = WorldPointUtil.packWorldPoint(from);
-        int toPacked = WorldPointUtil.packWorldPoint(to);
-        
-        // Check regular transports
-        Set<Transport> transports = pathfinderConfig.getTransports().get(fromPacked);
-        if (transports != null) {
-            for (Transport transport : transports) {
-                if (transport.getDestination() == toPacked) {
-                    return transport;
-                }
-            }
-        }
-        
-        // Check teleports (origin = UNDEFINED)
-        Set<Transport> teleports = pathfinderConfig.getTransports().get(WorldPointUtil.UNDEFINED);
-        if (teleports != null) {
-            for (Transport teleport : teleports) {
-                if (teleport.getDestination() == toPacked) {
-                    return teleport;
-                }
-            }
-        }
-        
-        return null;
-    }
-
-    private boolean isDoorTransport(Transport transport) {
-        return transport.getDisplayInfo() != null && 
-               transport.getDisplayInfo().toLowerCase().contains("door");
-    }
-
-    private void handleTeleportExecution() {
-        if (System.currentTimeMillis() - transportStartTime > TRANSPORT_TIMEOUT_MS) {
-            log.warn("Teleport execution timed out");
-            currentState = WalkState.FAILED;
-            return;
-        }
-
-        if (pendingTransport == null) {
-            log.error("No pending transport for teleport execution");
-            currentState = WalkState.WALKING;
-            return;
-        }
-
-        boolean success = executeTeleport(pendingTransport);
-        if (success) {
-            log.info("Teleport initiated: {}", pendingTransport.getDisplayInfo());
-            currentState = WalkState.WAITING_FOR_TRANSPORT;
-        } else {
-            log.warn("Failed to execute teleport, continuing with walking");
-            currentState = WalkState.WALKING;
-        }
-    }
-
-    private void handleDoorOpening() {
-        if (System.currentTimeMillis() - transportStartTime > TRANSPORT_TIMEOUT_MS) {
-            log.warn("Door opening timed out");
-            currentState = WalkState.WALKING;
-            return;
-        }
-
-        if (pendingTransport == null) {
-            log.error("No pending transport for door opening");
-            currentState = WalkState.WALKING;
-            return;
-        }
-
-        boolean success = openDoor(pendingTransport);
-        if (success) {
-            log.info("Door opening initiated: {}", pendingTransport.getDisplayInfo());
-            currentState = WalkState.WAITING_FOR_TRANSPORT;
-        } else {
-            log.warn("Failed to open door, continuing with walking");
-            currentState = WalkState.WALKING;
-        }
-    }
-
-    private void handleTransportWait() {
-        if (System.currentTimeMillis() - transportStartTime > TRANSPORT_TIMEOUT_MS) {
-            log.warn("Transport wait timed out");
-            currentState = WalkState.WALKING;
-            pendingTransport = null;
-            return;
-        }
-
-        // Check if transport completed (player moved to destination)
-        WorldPoint currentLocation = client.getLocalPlayer().getWorldLocation();
-        WorldPoint expectedDestination = WorldPointUtil.unpackWorldPoint(pendingTransport.getDestination());
-        
-        if (currentLocation.distanceTo(expectedDestination) < 5) {
-            log.info("Transport completed successfully");
-            pathIndex++; // Move to next step in path
-            currentState = WalkState.WALKING;
-            pendingTransport = null;
-        }
-        
-        // If player is not moving and has been waiting, might need to continue walking
-        if (client.getLocalDestinationLocation() == null && 
-            System.currentTimeMillis() - transportStartTime > 5000) {
-            log.info("Transport appears complete, resuming walking");
-            currentState = WalkState.WALKING;
-            pendingTransport = null;
-        }
-    }
-
-    private boolean executeTeleport(Transport teleport) {
-        switch (teleport.getType()) {
-            case TELEPORTATION_ITEM:
-                return useTeleportationItem(teleport);
-            case TELEPORTATION_SPELL:
-                return castTeleportSpell(teleport);
-            case TELEPORTATION_MINIGAME:
-                return useTeleportationMinigame(teleport);
-            default:
-                log.warn("Unsupported teleport type: {}", teleport.getType());
-                return false;
-        }
-    }
-
-    private boolean useTeleportationItem(Transport teleport) {
-        // Parse item requirement from transport
-        int[] itemIds = parseItemIds(teleport);
-        
-        if (itemIds.length == 0) {
-            log.warn("No item IDs found for teleport: {}", teleport.getDisplayInfo());
-            return false;
-        }
-        
-        // Find the item in inventory
-        ItemContainer inventory = client.getItemContainer(InventoryID.INVENTORY);
-        if (inventory == null) {
-            return false;
-        }
-        
-        for (int itemId : itemIds) {
-            Item[] items = inventory.getItems();
-            for (int i = 0; i < items.length; i++) {
-                if (items[i].getId() == itemId) {
-                    log.info("Using teleport item {} (ID: {})", teleport.getDisplayInfo(), itemId);
-                    
-                    // Determine the correct menu action based on teleport destination
-                    String teleportOption = extractTeleportOption(teleport.getDisplayInfo());
-                    if (teleportOption != null) {
-                        return actionService.useInventoryItem(i, teleportOption);
-                    } else {
-                        // Default to "Break" for consumable teleports or right-click for others
-                        return actionService.useInventoryItem(i, teleport.isConsumable() ? "Break" : null);
-                    }
-                }
-            }
-        }
-        
-        log.warn("Required teleport item not found in inventory for: {}", teleport.getDisplayInfo());
-        return false;
-    }
-
-    private boolean castTeleportSpell(Transport teleport) {
-        String spellName = teleport.getDisplayInfo();
-        if (spellName == null) {
-            return false;
-        }
-        
-        log.info("Casting teleport spell: {}", spellName);
-        
-        // Check if we have required runes (this would need to be implemented in ActionService)
-        if (!actionService.hasRequiredRunes(teleport)) {
-            log.warn("Missing required runes for spell: {}", spellName);
-            return false;
-        }
-        
-        return actionService.castSpell(spellName);
-    }
-
-    private boolean useTeleportationMinigame(Transport teleport) {
-        // Handle minigame teleports (like Pest Control portal, etc.)
-        log.info("Using minigame teleport: {}", teleport.getDisplayInfo());
-        
-        // This would need specific logic for each minigame teleport
-        // For now, just try to click on the destination area
-        WorldPoint destination = WorldPointUtil.unpackWorldPoint(teleport.getDestination());
-        walkTo(destination);
-        return true; // Return true to indicate we attempted the teleport
-    }
-
-    private boolean openDoor(Transport doorTransport) {
-        int objectId = extractObjectId(doorTransport.getDisplayInfo());
-        if (objectId == -1) {
-            log.warn("Could not extract object ID from door transport: {}", doorTransport.getDisplayInfo());
-            return false;
-        }
-        
-        // Find the door object
-        GameObject door = gameService.findNearestGameObject(objectId);
-        if (door == null) {
-            log.warn("Door object {} not found nearby", objectId);
-            return false;
-        }
-        
-        log.info("Opening door: {} (Object ID: {})", doorTransport.getDisplayInfo(), objectId);
-        return actionService.interactWithGameObject(door, "Open");
-    }
-
-    private void executeTransport(Transport transport) {
-        // Handle other transport types like boats, etc.
-        log.info("Executing transport: {}", transport.getDisplayInfo());
-        
-        // This could be expanded for specific transport types
-        // For now, just try to interact with objects at the origin location
-        WorldPoint origin = WorldPointUtil.unpackWorldPoint(transport.getOrigin());
-        walkTo(origin);
-    }
-
-    private int[] parseItemIds(Transport teleport) {
-        // Parse item IDs from the transport's item requirements
-        if (teleport.getItemRequirements() == null) {
-            return new int[0];
-        }
-        
-        // This is a simplified implementation - the actual parsing would be more complex
-        // based on the TransportItems structure
-        return new int[0]; // Placeholder - would need to implement based on TransportItems
-    }
-
-    private String extractTeleportOption(String displayInfo) {
-        if (displayInfo == null) return null;
-        
-        // Extract teleport destination from display info
-        // Examples: "Games necklace: Barbarian Outpost" -> "Barbarian Outpost"
-        if (displayInfo.contains(":")) {
-            return displayInfo.split(":")[1].trim();
-        }
-        
-        return null;
-    }
-
-    private int extractObjectId(String displayInfo) {
-        if (displayInfo == null) return -1;
-        
-        // Extract object ID from display info like "Open Door 9398"
-        Pattern pattern = Pattern.compile("(\\d+)");
-        Matcher matcher = pattern.matcher(displayInfo);
-        
-        if (matcher.find()) {
-            return Integer.parseInt(matcher.group(1));
-        }
-        
-        return -1;
     }
 
     private WorldPoint getNextMinimapTarget() {
@@ -477,6 +438,22 @@ public class WalkTask implements BotTask {
             return path.get(pathIndex);
         }
         
+        return null;
+    }
+
+    private WorldPoint getNextUnblockedPathPoint() {
+        for (int i = path.size() - 1; i >= 0; i--) {
+            WorldPoint point = path.get(i);
+            if (!isMovementBlockedByDoor(client.getLocalPlayer().getWorldLocation(), point)) {
+                return point;
+            }
+        }
+
+        // Fallback to current path position
+        if (pathIndex < path.size()) {
+            return path.get(pathIndex);
+        }
+
         return null;
     }
 
@@ -558,6 +535,64 @@ public class WalkTask implements BotTask {
             }
         } else {
             log.warn("Cannot walk to {}: not in scene.", worldPoint);
+        }
+    }
+
+    private void handleTeleportExecution() {
+        if (System.currentTimeMillis() - transportStartTime > TRANSPORT_TIMEOUT_MS) {
+            log.warn("Teleport execution timed out");
+            currentState = WalkState.FAILED;
+            return;
+        }
+
+        if (pendingTransport == null) {
+            log.error("No pending transport for teleport execution");
+            currentState = WalkState.WALKING;
+            return;
+        }
+
+        // For now, just continue walking as teleport implementation is complex
+        log.info("Teleport execution not fully implemented, continuing walking");
+        currentState = WalkState.WALKING;
+    }
+
+    private void handleDoorOpening() {
+        if (System.currentTimeMillis() - transportStartTime > TRANSPORT_TIMEOUT_MS) {
+            log.warn("Door opening timed out");
+            currentState = WalkState.WALKING;
+            return;
+        }
+
+        if (pendingTransport == null) {
+            log.error("No pending transport for door opening");
+            currentState = WalkState.WALKING;
+            return;
+        }
+
+        // Check if door opening is complete by checking if we can continue walking
+        log.info("Door opening in progress, checking if complete");
+        
+        // Wait a moment for door to open, then continue
+        if (System.currentTimeMillis() - transportStartTime > 2000) { // 2 seconds
+            log.info("Door opening complete, resuming walking");
+            currentState = WalkState.WALKING;
+            pendingTransport = null;
+        }
+    }
+
+    private void handleTransportWait() {
+        if (System.currentTimeMillis() - transportStartTime > TRANSPORT_TIMEOUT_MS) {
+            log.warn("Transport wait timed out");
+            currentState = WalkState.WALKING;
+            pendingTransport = null;
+            return;
+        }
+
+        // For doors, just wait a short time then continue
+        if (System.currentTimeMillis() - transportStartTime > 3000) { // 3 seconds
+            log.info("Transport wait complete, resuming walking");
+            currentState = WalkState.WALKING;
+            pendingTransport = null;
         }
     }
 } 

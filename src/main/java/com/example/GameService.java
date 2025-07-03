@@ -130,6 +130,34 @@ public class GameService {
         return new Point((int)bounds.getCenterX(), (int)bounds.getCenterY());
     }
 
+    public Point getRandomClickablePoint(TileObject tileObject) {
+        Shape clickbox = tileObject.getClickbox();
+        if (clickbox == null)
+        {
+            return new Point(-1, -1);
+        }
+        Rectangle bounds = clickbox.getBounds();
+        if (bounds.isEmpty())
+        {
+            return new Point(-1, -1);
+        }
+
+        // In a loop, generate a random x and y within the bounding rectangle.
+        for (int i = 0; i < 10; i++) {
+            Point randomPoint = new Point(
+                    bounds.x + random.nextInt(bounds.width),
+                    bounds.y + random.nextInt(bounds.height)
+            );
+
+            // Use shape.contains(x, y) to check if the random point is within the actual shape.
+            if (clickbox.contains(randomPoint)) {
+                return randomPoint;
+            }
+        }
+        // Fallback to center if we fail to find a point
+        return new Point((int)bounds.getCenterX(), (int)bounds.getCenterY());
+    }
+
     public NPC findNearestNpc(String[] npcNames) {
         if (npcNames.length == 0) {
             return null;
