@@ -117,7 +117,7 @@ public class WalkTask implements BotTask {
     }
 
     private void calculatePath() {
-        WorldPoint start = client.getLocalPlayer().getWorldLocation();
+        WorldPoint start = gameService.getPlayerLocation();
         if (start.equals(destination)) {
             log.info("Already at destination.");
             currentState = WalkState.FINISHED;
@@ -155,7 +155,7 @@ public class WalkTask implements BotTask {
     }
 
     private void handleWalking() {
-        WorldPoint currentLocation = client.getLocalPlayer().getWorldLocation();
+        WorldPoint currentLocation = gameService.getPlayerLocation();
 
         // Check if we're already walking to a destination
         if (client.getLocalDestinationLocation() != null) {
@@ -193,12 +193,12 @@ public class WalkTask implements BotTask {
             // We're adjacent to the door, try to interact with it
             doorToOpen = findDoorObject(doorInfo.doorLocation);
             if ((doorToOpen != null && doorToOpen instanceof GameObject) || (doorToOpen != null && doorToOpen instanceof WallObject)) {
-                log.info("Found door object {} at {}, attempting to open", doorToOpen.getId(), doorInfo.doorLocation);
+                log.debug("Found door object {} at {}, attempting to open", doorToOpen.getId(), doorInfo.doorLocation);
                 currentState = WalkState.OPENING_DOOR;
                 setRandomDelay(1, 5);
                 return;
             } else {
-                log.warn("No door object found at {}, continuing with normal walking", doorInfo.doorLocation);
+                log.warn("Door object detected but is not GameObject or WallObject, continuing with normal walking", doorInfo.doorLocation);
             }
         }
 
@@ -218,9 +218,9 @@ public class WalkTask implements BotTask {
      * Finds a door that is blocking our path by checking collision data
      */
     private DoorInfo findDoorBlockingPath(WorldPoint currentLocation) {
+        log.info("Finding door blocking path from {} to {}", currentLocation, path.get(pathIndex));
         // Look ahead in our path to find where we might be blocked
-        // pathIndex-1 because we're starting from our current position, pathIndex is the next point in the path
-        for (int i = pathIndex - 1; i < Math.min(pathIndex + 10, path.size()); i++) {
+        for (int i = pathIndex; i < Math.min(pathIndex + 10, path.size()); i++) {
             WorldPoint pathPoint = path.get(i);
             log.trace("Checking if movement between {} and {} is blocked by a door", currentLocation, pathPoint);
             // Check if we can move from current point to this path point
@@ -416,8 +416,9 @@ public class WalkTask implements BotTask {
     private void updatePathIndex(WorldPoint currentLocation) {
         // Update path index to current position
         for (int i = pathIndex; i < path.size(); i++) {
-            if (path.get(i).distanceTo(currentLocation) < 3) {
+            if (path.get(i).distanceTo(currentLocation) < 1) {
                 pathIndex = i;
+                log.debug("Updated path index to {}, current location: {}", pathIndex, path.get(i));
             } else {
                 break;
             }
