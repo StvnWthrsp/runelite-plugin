@@ -1,10 +1,10 @@
 package com.example;
 
+import com.example.utils.ClickObstructionChecker;
 import com.google.inject.Singleton;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.GameObject;
 import net.runelite.api.widgets.Widget;
-import net.runelite.api.widgets.WidgetInfo;
 import net.runelite.api.ItemContainer;
 import net.runelite.api.InventoryID;
 import net.runelite.api.Item;
@@ -29,6 +29,7 @@ public class ActionService {
     private final PipeService pipeService;
     private final GameService gameService;
     private volatile boolean isCurrentlyDropping = false;
+    private final ClickObstructionChecker clickObstructionChecker;
 
     @Inject
     public ActionService(RunepalPlugin plugin, PipeService pipeService, GameService gameService) {
@@ -36,6 +37,7 @@ public class ActionService {
         this.scheduler = Executors.newSingleThreadScheduledExecutor();
         this.pipeService = Objects.requireNonNull(pipeService, "pipeService cannot be null");
         this.gameService = Objects.requireNonNull(gameService, "gameService cannot be null");
+        this.clickObstructionChecker = new ClickObstructionChecker(plugin.getClient());
     }
 
     public void powerDrop(int[] itemIds) {
@@ -364,12 +366,17 @@ public class ActionService {
      * @return true if the interaction was initiated
      */
     public boolean interactWithGameObject(GameObject gameObject, String action) {
+
         if (gameObject == null) {
             log.warn("Cannot interact with null game object");
             return false;
         }
 
         Point clickPoint = gameService.getRandomClickablePoint(gameObject);
+        if (clickObstructionChecker.isClickObstructed(clickPoint)) {
+            log.warn("Click point is obstructed");
+            return false;
+        }
         if (clickPoint.x == -1) {
             log.warn("Could not get clickable point for game object {}", gameObject.getId());
             return false;
@@ -390,6 +397,10 @@ public class ActionService {
         }
 
         Point clickPoint = gameService.getRandomClickablePoint(wallObject);
+        if (clickObstructionChecker.isClickObstructed(clickPoint)) {
+            log.warn("Click point is obstructed");
+            return false;
+        }
         if (clickPoint.x == -1) {
             log.warn("Could not get clickable point for wall object {}", wallObject.getId());
             return false;

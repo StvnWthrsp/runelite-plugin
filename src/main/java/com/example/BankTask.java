@@ -65,7 +65,8 @@ public class BankTask implements BotTask {
         GameObject bankBooth = gameService.findNearestGameObject(10583, 10355);
         if (bankBooth != null) {
             log.info("Found bank booth. Clicking it.");
-            actionService.sendClickRequest(gameService.getRandomClickablePoint(bankBooth), true);
+            actionService.interactWithGameObject(bankBooth, "Bank");
+            // actionService.sendClickRequest(gameService.getRandomClickablePoint(bankBooth), true);
             currentState = BankState.OPENING_BANK;
         } else {
             log.warn("No bank booth found. Cannot proceed with banking.");
