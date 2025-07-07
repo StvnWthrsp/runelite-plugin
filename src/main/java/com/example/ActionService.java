@@ -428,6 +428,7 @@ public class ActionService {
     }
 
     public void sendClickRequest(Point point, boolean move) {
+        log.info("Sending click request to point: {}, move: {}", point, move);
 		if (point == null || point.x == -1) {
 			log.warn("Invalid point provided to sendClickRequest.");
 			return;

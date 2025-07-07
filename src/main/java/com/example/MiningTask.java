@@ -184,7 +184,7 @@ public class MiningTask implements BotTask {
             return;
         }
         int newAnimation = plugin.getClient().getLocalPlayer().getAnimation();
-        if (isMiningAnimation(newAnimation)) {
+        if (gameService.isCurrentAnimation(newAnimation)) {
             log.info("Mining animation started. Animation: {}", newAnimation);
         }
     }
@@ -292,9 +292,8 @@ public class MiningTask implements BotTask {
     }
 
     private void doWaitMining() {
-        idleTicks++;
-        int currentAnimation = plugin.getClient().getLocalPlayer().getAnimation();
-        if (isMiningAnimation(currentAnimation)) {
+        // Check if we're currently mining
+        if (gameService.isCurrentlyMining()) {
             miningStarted = true;
             idleTicks = 0; // Reset idle counter if we see a mining animation
             
@@ -303,7 +302,10 @@ public class MiningTask implements BotTask {
                 currentState = MiningState.HOVER_NEXT_ROCK;
                 return;
             }
+        } else {
+            idleTicks++; // Only increment idle ticks if not mining
         }
+        
         if (idleTicks > 5) { // 5 ticks = 3 seconds
             log.warn("Mining seems to have failed or rock depleted. Finishing.");
             finishMining();
@@ -320,21 +322,6 @@ public class MiningTask implements BotTask {
         doCheckInventory();
     }
 
-    private boolean isMiningAnimation(int animationId) {
-        return animationId == AnimationID.HUMAN_MINING_BRONZE_PICKAXE ||
-                animationId == AnimationID.HUMAN_MINING_IRON_PICKAXE ||
-                animationId == AnimationID.HUMAN_MINING_STEEL_PICKAXE ||
-                animationId == AnimationID.HUMAN_MINING_BLACK_PICKAXE ||
-                animationId == AnimationID.HUMAN_MINING_MITHRIL_PICKAXE ||
-                animationId == AnimationID.HUMAN_MINING_ADAMANT_PICKAXE ||
-                animationId == AnimationID.HUMAN_MINING_RUNE_PICKAXE ||
-                animationId == AnimationID.HUMAN_MINING_DRAGON_PICKAXE ||
-                animationId == AnimationID.HUMAN_MINING_DRAGON_PICKAXE_PRETTY ||
-                animationId == AnimationID.HUMAN_MINING_INFERNAL_PICKAXE ||
-                animationId == AnimationID.HUMAN_MINING_3A_PICKAXE ||
-                animationId == AnimationID.HUMAN_MINING_CRYSTAL_PICKAXE ||
-                animationId == AnimationID.HUMAN_MINING_TRAILBLAZER_PICKAXE;
-    }
 
     private void doCheckInventory() {
         if (gameService.isInventoryFull()) {

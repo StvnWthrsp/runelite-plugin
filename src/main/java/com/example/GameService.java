@@ -9,6 +9,7 @@ import net.runelite.api.*;
 import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.gameval.InventoryID;
 import net.runelite.api.gameval.InterfaceID;
+import net.runelite.api.gameval.AnimationID;
 import net.runelite.api.widgets.Widget;
 import net.runelite.client.util.Text;
 
@@ -468,5 +469,46 @@ public class GameService {
             }
         }
         return false;
+    }
+
+    /**
+     * Gets the current animation ID of the local player.
+     * 
+     * @return the current animation ID, or -1 if no animation is playing
+     */
+    public int getCurrentAnimation() {
+        return client.getLocalPlayer().getAnimation();
+    }
+
+    /**
+     * Checks if the local player is currently performing a specific animation.
+     * 
+     * @param animationId the animation ID to check for
+     * @return true if the player is performing the specified animation, false otherwise
+     */
+    public boolean isCurrentAnimation(int animationId) {
+        return getCurrentAnimation() == animationId;
+    }
+
+    /**
+     * Checks if the local player is currently performing any mining animation.
+     * 
+     * @return true if the player is performing a mining animation, false otherwise
+     */
+    public boolean isCurrentlyMining() {
+        int currentAnimation = getCurrentAnimation();
+        return currentAnimation == AnimationID.HUMAN_MINING_BRONZE_PICKAXE ||
+                currentAnimation == AnimationID.HUMAN_MINING_IRON_PICKAXE ||
+                currentAnimation == AnimationID.HUMAN_MINING_STEEL_PICKAXE ||
+                currentAnimation == AnimationID.HUMAN_MINING_BLACK_PICKAXE ||
+                currentAnimation == AnimationID.HUMAN_MINING_MITHRIL_PICKAXE ||
+                currentAnimation == AnimationID.HUMAN_MINING_ADAMANT_PICKAXE ||
+                currentAnimation == AnimationID.HUMAN_MINING_RUNE_PICKAXE ||
+                currentAnimation == AnimationID.HUMAN_MINING_DRAGON_PICKAXE ||
+                currentAnimation == AnimationID.HUMAN_MINING_DRAGON_PICKAXE_PRETTY ||
+                currentAnimation == AnimationID.HUMAN_MINING_INFERNAL_PICKAXE ||
+                currentAnimation == AnimationID.HUMAN_MINING_3A_PICKAXE ||
+                currentAnimation == AnimationID.HUMAN_MINING_CRYSTAL_PICKAXE ||
+                currentAnimation == AnimationID.HUMAN_MINING_TRAILBLAZER_PICKAXE;
     }
 } 

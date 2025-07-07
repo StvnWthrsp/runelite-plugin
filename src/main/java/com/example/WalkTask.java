@@ -15,6 +15,8 @@ import net.runelite.api.GameObject;
 import shortestpath.WorldPointUtil;
 import shortestpath.pathfinder.Pathfinder;
 import shortestpath.pathfinder.PathfinderConfig;
+import shortestpath.pathfinder.TransportNode;
+import shortestpath.pathfinder.Node;
 import net.runelite.api.Scene;
 import net.runelite.api.Tile;
 import net.runelite.api.Constants;
@@ -55,6 +57,7 @@ public class WalkTask implements BotTask {
     private WalkState currentState = WalkState.IDLE;
     private int delayTicks = 0;
     private List<WorldPoint> path;
+    private List<Node> nodePath;
     private Pathfinder pathfinder;
     private Future<?> pathfinderFuture;
     private final ExecutorService pathfinderExecutor;
@@ -178,6 +181,30 @@ public class WalkTask implements BotTask {
             return;
         }
 
+        // Check for transport/teleport steps - if next step is far away, it's likely a teleport
+        if (pathIndex + 1 < path.size()) {
+            WorldPoint currentStep = path.get(pathIndex);
+            WorldPoint nextStep = path.get(pathIndex + 1);
+            int distance = currentStep.distanceTo(nextStep);
+            
+            // If distance is greater than normal walking distance (e.g., > 10 tiles), it's likely a teleport
+            if (distance > 10) {
+                log.info("Detected possible teleport from {} to {} (distance: {})", currentStep, nextStep, distance);
+                
+                // Check if we're close to the current step (teleport origin)
+                if (currentLocation.distanceTo(currentStep) <= 2) {
+                    log.info("At teleport origin, executing transport to {}", nextStep);
+                    executeTransport(currentStep, nextStep);
+                    return;
+                } else {
+                    // Walk to the teleport origin first
+                    log.info("Walking to teleport origin at {}", currentStep);
+                    walkTo(currentStep);
+                    return;
+                }
+            }
+        }
+
         // Check for doors blocking our path using collision data
         DoorInfo doorInfo = findDoorBlockingPath(currentLocation);
         if (doorInfo != null) {
@@ -212,6 +239,80 @@ public class WalkTask implements BotTask {
 
     private void setRandomDelay(int minTicks, int maxTicks) {
         delayTicks = plugin.getRandom().nextInt(maxTicks - minTicks + 1) + minTicks;
+    }
+
+    private void executeTransport(WorldPoint origin, WorldPoint destination) {
+        log.info("Executing transport from {} to {}", origin, destination);
+        
+        // Determine teleport type based on destination
+        String teleportType = determineTeleportType(destination);
+        
+        if (teleportType != null) {
+            log.info("Using teleport: {}", teleportType);
+            boolean success = actionService.castSpell(teleportType);
+            
+            if (success) {
+                currentState = WalkState.EXECUTING_TELEPORT;
+                transportStartTime = System.currentTimeMillis();
+                setRandomDelay(5, 15); // Wait for teleport to complete
+            } else {
+                log.warn("Failed to execute teleport {}, falling back to walking", teleportType);
+                // Fall back to normal walking if teleport fails
+                walkTo(destination);
+            }
+        } else {
+            log.warn("Could not determine teleport type for destination {}, falling back to walking", destination);
+            walkTo(destination);
+        }
+    }
+
+    private String determineTeleportType(WorldPoint destination) {
+        // Lumbridge home teleport area (around Lumbridge castle)
+        if (destination.getX() >= 3200 && destination.getX() <= 3230 && 
+            destination.getY() >= 3200 && destination.getY() <= 3230) {
+            return "Home Teleport";
+        }
+        
+        // Varrock teleport area (around Varrock square)
+        if (destination.getX() >= 3200 && destination.getX() <= 3230 && 
+            destination.getY() >= 3420 && destination.getY() <= 3450) {
+            return "Varrock Teleport";
+        }
+        
+        // Falador teleport area (around Falador square)
+        if (destination.getX() >= 2950 && destination.getX() <= 2980 && 
+            destination.getY() >= 3370 && destination.getY() <= 3400) {
+            return "Falador Teleport";
+        }
+        
+        // Add more teleport destinations as needed
+        
+        return null; // Unknown destination, can't teleport
+    }
+
+    private void handleTeleportExecution() {
+        WorldPoint currentLocation = gameService.getPlayerLocation();
+        
+        // Check if teleport completed by seeing if we're at the expected destination
+        if (pathIndex + 1 < path.size()) {
+            WorldPoint expectedDestination = path.get(pathIndex + 1);
+            if (currentLocation.distanceTo(expectedDestination) <= 5) {
+                log.info("Teleport completed successfully, arrived near {}", expectedDestination);
+                pathIndex += 2; // Skip both the origin and destination steps
+                currentState = WalkState.WALKING;
+                return;
+            }
+        }
+        
+        // Check for timeout
+        if (System.currentTimeMillis() - transportStartTime > TRANSPORT_TIMEOUT_MS) {
+            log.warn("Teleport execution timed out, falling back to walking");
+            currentState = WalkState.WALKING;
+            return;
+        }
+        
+        // Continue waiting for teleport to complete
+        setRandomDelay(2, 5);
     }
 
     /**
@@ -522,23 +623,23 @@ public class WalkTask implements BotTask {
         }
     }
 
-    private void handleTeleportExecution() {
-        if (System.currentTimeMillis() - transportStartTime > TRANSPORT_TIMEOUT_MS) {
-            log.warn("Teleport execution timed out");
-            currentState = WalkState.FAILED;
-            return;
-        }
-
-        if (pendingTransport == null) {
-            log.error("No pending transport for teleport execution");
-            currentState = WalkState.WALKING;
-            return;
-        }
-
-        // For now, just continue walking as teleport implementation is complex
-        log.info("Teleport execution not fully implemented, continuing walking");
-        currentState = WalkState.WALKING;
-    }
+//    private void handleTeleportExecution() {
+//        if (System.currentTimeMillis() - transportStartTime > TRANSPORT_TIMEOUT_MS) {
+//            log.warn("Teleport execution timed out");
+//            currentState = WalkState.FAILED;
+//            return;
+//        }
+//
+//        if (pendingTransport == null) {
+//            log.error("No pending transport for teleport execution");
+//            currentState = WalkState.WALKING;
+//            return;
+//        }
+//
+//        // For now, just continue walking as teleport implementation is complex
+//        log.info("Teleport execution not fully implemented, continuing walking");
+//        currentState = WalkState.WALKING;
+//    }
 
     private void handleDoorOpening() {
         if ((doorToOpen != null && doorToOpen instanceof GameObject) || (doorToOpen != null && doorToOpen instanceof WallObject)) {

@@ -6,6 +6,7 @@ import net.runelite.api.NPC;
 import net.runelite.api.ItemID;
 import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.events.GameTick;
+import net.runelite.api.gameval.AnimationID;
 import shortestpath.pathfinder.PathfinderConfig;
 
 import java.util.*;
@@ -50,6 +51,10 @@ public class FishingTask implements BotTask {
     private static final int RAW_ANCHOVIES_ID = ItemID.RAW_ANCHOVIES;
     private static final int COOKED_SHRIMP_ID = ItemID.SHRIMPS;
     private static final int COOKED_ANCHOVIES_ID = ItemID.ANCHOVIES;
+
+    // Animation IDs
+    private static final int COOKING_ANIMATION_ID = AnimationID.HUMAN_COOKING;
+    private static final int COOKING_ANIMATION_LOOP_ID = AnimationID.HUMAN_COOKING_LOOP;
 
     private FishingState currentState = null;
     private final Deque<Runnable> actionQueue = new ArrayDeque<>();
@@ -280,14 +285,20 @@ public class FishingTask implements BotTask {
     }
 
     private void doWaitCooking() {
-        idleTicks++;
+        // Check if we're currently performing the cooking animation
+        if (gameService.isCurrentAnimation(COOKING_ANIMATION_ID)) {
+            cookingStarted = true;
+            idleTicks = 0; // Reset idle counter if we see a cooking animation
+        } else {
+            idleTicks++; // Only increment idle ticks if not cooking
+        }
         
         // Check if cooking interface appeared or we're in cooking animation
         if (idleTicks > 3 && !cookingStarted) {
             // After a few ticks, click to start cooking all
             log.info("Clicking to cook all fish");
             actionService.sendSpacebarRequest(); // Space bar to cook all
-            cookingStarted = true;
+//            cookingStarted = true;
             idleTicks = 0;
         }
         
