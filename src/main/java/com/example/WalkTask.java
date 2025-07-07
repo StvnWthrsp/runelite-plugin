@@ -17,6 +17,8 @@ import shortestpath.pathfinder.Pathfinder;
 import shortestpath.pathfinder.PathfinderConfig;
 import shortestpath.pathfinder.TransportNode;
 import shortestpath.pathfinder.Node;
+import shortestpath.Transport;
+import shortestpath.TransportType;
 import net.runelite.api.Scene;
 import net.runelite.api.Tile;
 import net.runelite.api.Constants;
@@ -25,8 +27,11 @@ import net.runelite.api.CollisionDataFlag;
 import net.runelite.api.TileObject;
 import net.runelite.api.WallObject;
 
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -152,6 +157,10 @@ public class WalkTask implements BotTask {
         this.path = resultPath.stream()
                 .map(WorldPointUtil::unpackWorldPoint)
                 .collect(Collectors.toList());
+        
+        // Store the node path for proper transport detection
+        this.nodePath = getNodePath();
+        
         log.info("Enhanced path calculated with {} steps (including potential teleports/doors).", this.path.size());
         currentState = WalkState.WALKING;
         pathIndex = 0;
@@ -173,7 +182,9 @@ public class WalkTask implements BotTask {
         }
 
         // Update path index based on current location
+        log.info("DEBUG: Before updatePathIndex - pathIndex: {}, currentLocation: {}", pathIndex, currentLocation);
         updatePathIndex(currentLocation);
+        log.info("DEBUG: After updatePathIndex - pathIndex: {}", pathIndex);
 
         if (pathIndex >= path.size()) {
             log.warn("Reached end of path but not at destination. Recalculating...");
@@ -181,14 +192,57 @@ public class WalkTask implements BotTask {
             return;
         }
 
-        // Check for transport/teleport steps - if next step is far away, it's likely a teleport
+        // Check for transport steps using proper node detection
+        log.info("DEBUG: Checking for transport step at pathIndex {}, isTransportStep: {}", pathIndex, isTransportStep(pathIndex));
+        if (pathIndex < path.size() && isTransportStep(pathIndex)) {
+            WorldPoint currentStep = path.get(pathIndex);
+            Transport transport = getTransportInfo(pathIndex);
+            
+            log.info("DEBUG: Transport info - type: {}, displayInfo: {}, transport: {}", 
+                    transport != null ? transport.getType() : "null", 
+                    transport != null ? transport.getDisplayInfo() : "null", 
+                    transport != null ? "not null" : "null");
+            
+            if (transport != null) {
+                log.info("Detected transport step: {} at {}", transport.getDisplayInfo(), currentStep);
+                
+                // Check if we're close to the transport origin
+                if (currentLocation.distanceTo(currentStep) <= 2) {
+                    log.info("At transport origin, executing transport: {}", transport.getDisplayInfo());
+                    executeTransportInteraction(transport, currentStep);
+                    return;
+                } else {
+                    // Walk to the transport origin first
+                    log.info("Walking to transport origin at {}", currentStep);
+                    walkTo(currentStep);
+                    return;
+                }
+            }
+        }
+        
+        // Legacy detection for backwards compatibility
         if (pathIndex + 1 < path.size()) {
             WorldPoint currentStep = path.get(pathIndex);
             WorldPoint nextStep = path.get(pathIndex + 1);
             int distance = currentStep.distanceTo(nextStep);
             
-            // If distance is greater than normal walking distance (e.g., > 10 tiles), it's likely a teleport
-            if (distance > 10) {
+            // DEBUG: Add detailed logging for distance calculation
+            log.info("DEBUG: Path step {} -> {}, planes: {} -> {}, calculated distance: {}", 
+                    currentStep, nextStep, currentStep.getPlane(), nextStep.getPlane(), distance);
+            
+            // Check for broken distance calculation (Integer.MAX_VALUE indicates bug)
+              if (distance == Integer.MAX_VALUE) {
+                  log.warn("DEBUG: Distance calculation returned MAX_VALUE - this indicates a bug in distance calculation between planes");
+                // Calculate 2D distance manually for plane changes
+                int dx = Math.abs(nextStep.getX() - currentStep.getX());
+                int dy = Math.abs(nextStep.getY() - currentStep.getY());
+                int distance2D = (int) Math.sqrt(dx * dx + dy * dy);
+                log.info("DEBUG: Manual 2D distance calculation: {}", distance2D);
+                distance = distance2D; // Use 2D distance instead
+            }
+            
+            // First check for teleports (large distance jumps, any plane)
+            if (distance > 20) {
                 log.info("Detected possible teleport from {} to {} (distance: {})", currentStep, nextStep, distance);
                 
                 // Check if we're close to the current step (teleport origin)
@@ -199,6 +253,37 @@ public class WalkTask implements BotTask {
                 } else {
                     // Walk to the teleport origin first
                     log.info("Walking to teleport origin at {}", currentStep);
+                    walkTo(currentStep);
+                    return;
+                }
+            }
+            
+            // Then check for plane changes with short distance (stairs/ladders)
+            if (currentStep.getPlane() != nextStep.getPlane() && distance <= 20) {
+                log.info("DEBUG: Detected short-distance plane change from {} to {} (distance: {}) - this should be handled as stairs/ladder", currentStep, nextStep, distance);
+                
+                  // Check if we're close to the stair location
+                  if (currentLocation.distanceTo(currentStep) <= 2) {
+                      log.info("At stair location, looking for stairs/ladder object");
+                      GameObject stairObject = findStairObjectGeneric(currentStep);
+                      if (stairObject != null) {
+                          String action = nextStep.getPlane() > currentStep.getPlane() ? "Climb-up" : "Climb-down";
+                          log.info("Found stair object {} at {}, using action: {}", stairObject.getId(), currentStep, action);
+                          actionService.interactWithGameObject(stairObject, action);
+
+                          // Set state to wait for transport completion
+                          currentState = WalkState.WAITING_FOR_TRANSPORT;
+                          transportStartTime = System.currentTimeMillis();
+                          pathIndex++; // Move to next step
+                        return;
+                    } else {
+                        log.warn("Could not find stair object at {}, recalculating path", currentStep);
+                        currentState = WalkState.IDLE;
+                        return;
+                    }
+                } else {
+                    // Walk to the stair location first
+                    log.info("Walking to stair location at {}", currentStep);
                     walkTo(currentStep);
                     return;
                 }
@@ -232,8 +317,11 @@ public class WalkTask implements BotTask {
         // Normal walking - proceed to next point in path
         if (pathIndex < path.size()) {
             WorldPoint target = getNextMinimapTarget();
+            log.info("DEBUG: Normal walking - pathIndex: {}, target: {}, currentLocation: {}", pathIndex, target, currentLocation);
             walkTo(target);
             setRandomDelay(3, 10);
+        } else {
+            log.warn("DEBUG: pathIndex {} >= path.size() {}, cannot proceed with walking", pathIndex, path.size());
         }
     }
 
@@ -267,11 +355,8 @@ public class WalkTask implements BotTask {
     }
 
     private String determineTeleportType(WorldPoint destination) {
-        // Lumbridge home teleport area (around Lumbridge castle)
-        if (destination.getX() >= 3200 && destination.getX() <= 3230 && 
-            destination.getY() >= 3200 && destination.getY() <= 3230) {
-            return "Home Teleport";
-        }
+        // Only return teleport types for actual long-distance teleports
+        // This method should NOT be used for stairs/ladders/doors!
         
         // Varrock teleport area (around Varrock square)
         if (destination.getX() >= 3200 && destination.getX() <= 3230 && 
@@ -283,6 +368,14 @@ public class WalkTask implements BotTask {
         if (destination.getX() >= 2950 && destination.getX() <= 2980 && 
             destination.getY() >= 3370 && destination.getY() <= 3400) {
             return "Falador Teleport";
+        }
+        
+        // Lumbridge home teleport area - but only for actual teleports, not stairs!
+        // We need to be very specific here to avoid false positives
+        if (destination.getX() >= 3218 && destination.getX() <= 3222 && 
+            destination.getY() >= 3218 && destination.getY() <= 3222 &&
+            destination.getPlane() == 0) { // Only ground floor for home teleport
+            return "Home Teleport";
         }
         
         // Add more teleport destinations as needed
@@ -515,30 +608,72 @@ public class WalkTask implements BotTask {
     }
 
     private void updatePathIndex(WorldPoint currentLocation) {
-        // Update path index to current position
-        for (int i = pathIndex; i < path.size(); i++) {
-            if (path.get(i).distanceTo(currentLocation) < 1) {
-                pathIndex = i;
-                log.debug("Updated path index to {}, current location: {}", pathIndex, path.get(i));
-            } else {
-                break;
+        // Update path index to current position - be more aggressive about advancing
+        int closestIndex = pathIndex;
+        int closestDistance = Integer.MAX_VALUE;
+        
+        log.info("DEBUG: updatePathIndex - currentLocation: {}, pathIndex: {}, path.size(): {}", currentLocation, pathIndex, path.size());
+        
+        // Look for the closest point in the path ahead of us (expanded range)
+        for (int i = pathIndex; i < Math.min(pathIndex + 15, path.size()); i++) {
+            int distance = path.get(i).distanceTo(currentLocation);
+            log.info("DEBUG: Path step {}: {}, distance: {}", i, path.get(i), distance);
+            if (distance < closestDistance) {
+                closestDistance = distance;
+                closestIndex = i;
             }
+        }
+        
+        log.info("DEBUG: Closest index: {}, closest distance: {}, current pathIndex: {}", closestIndex, closestDistance, pathIndex);
+        
+        // More aggressive update conditions:
+        // 1. If we're very close (distance <= 2) and it's a later step, update
+        // 2. If we're reasonably close (distance <= 5) and significantly further in path, update
+        if ((closestDistance <= 2 && closestIndex > pathIndex) || 
+            (closestDistance <= 5 && closestIndex > pathIndex + 3)) {
+            pathIndex = closestIndex;
+            log.info("DEBUG: Updated path index to {}, current location: {}", pathIndex, path.get(pathIndex));
+        } else {
+            log.info("DEBUG: No path index update - closestDistance: {}, closestIndex: {}, pathIndex: {}", closestDistance, closestIndex, pathIndex);
         }
     }
 
     private WorldPoint getNextMinimapTarget() {
-        for (int i = path.size() - 1; i >= 0; i--) {
+        WorldPoint currentLocation = gameService.getPlayerLocation();
+        log.info("DEBUG: getNextMinimapTarget - pathIndex: {}, path.size(): {}, currentLocation: {}", pathIndex, path.size(), currentLocation);
+        
+        // Start from furthest points and work backwards, but skip points we're already very close to
+        for (int i = path.size() - 1; i >= pathIndex; i--) {
             WorldPoint point = path.get(i);
+            int distanceToPoint = currentLocation.distanceTo(point);
+            
+            // Skip points we're already very close to (avoid clicking current location)
+            if (distanceToPoint <= 1) {
+                log.info("DEBUG: Skipping target at index {} (too close, distance: {}): {}", i, distanceToPoint, point);
+                continue;
+            }
+            
             if (isPointOnMinimap(point)) {
+                log.info("DEBUG: Selected minimap target at index {} (distance: {}): {}", i, distanceToPoint, point);
                 return point;
             }
         }
         
-        // Fallback to current path position
-        if (pathIndex < path.size()) {
-            return path.get(pathIndex);
+        // Fallback to next path step if we can't find a distant minimap target
+        if (pathIndex + 1 < path.size()) {
+            WorldPoint fallback = path.get(pathIndex + 1);
+            log.info("DEBUG: Using fallback target at pathIndex+1 {}: {}", pathIndex + 1, fallback);
+            return fallback;
         }
         
+        // Last resort - current path position
+        if (pathIndex < path.size()) {
+            WorldPoint lastResort = path.get(pathIndex);
+            log.info("DEBUG: Using last resort target at pathIndex {}: {}", pathIndex, lastResort);
+            return lastResort;
+        }
+        
+        log.warn("DEBUG: No minimap target found - pathIndex: {}, path.size(): {}", pathIndex, path.size());
         return null;
     }
 
@@ -566,7 +701,7 @@ public class WalkTask implements BotTask {
         int distanceSq = (minimapPoint.getX() - centerX) * (minimapPoint.getX() - centerX) +
                          (minimapPoint.getY() - centerY) * (minimapPoint.getY() - centerY);
 
-        int radiusSq = (radius - 5) * (radius - 5);
+        int radiusSq = (radius - 7) * (radius - 7);
 
         return distanceSq <= radiusSq;
     }
@@ -671,5 +806,352 @@ public class WalkTask implements BotTask {
             currentState = WalkState.WALKING;
             pendingTransport = null;
         }
+    }
+    
+    /**
+     * Get the node path from the pathfinder for transport detection
+     * @return list of nodes in the path
+     */
+    private List<Node> getNodePath() {
+        if (pathfinder == null) {
+            log.debug("DEBUG: pathfinder is null in getNodePath");
+            return null;
+        }
+        
+        // Build the node path from the pathfinder's best node
+        Node lastNode = pathfinder.getStats() != null ? getBestNode() : null;
+        if (lastNode == null) {
+            log.debug("DEBUG: lastNode is null in getNodePath");
+            return null;
+        }
+        
+        List<Node> nodes = new ArrayList<>();
+        Node current = lastNode;
+        while (current != null) {
+            nodes.add(0, current);
+            current = current.previous;
+        }
+        
+        log.debug("DEBUG: Built node path with {} nodes", nodes.size());
+        return nodes;
+    }
+    
+    /**
+     * Get the best node from the pathfinder (simplified version)
+     * @return the best node found
+     */
+    private Node getBestNode() {
+        // This is a simplified implementation - in a full implementation,
+        // we would need access to the pathfinder's internal bestLastNode
+        // For now, we'll return null and rely on legacy detection
+        return null;
+    }
+    
+    /**
+     * Check if a path step requires transport interaction
+     * @param stepIndex the index in the path
+     * @return true if this step is a transport step
+     */
+    private boolean isTransportStep(int stepIndex) {
+        if (nodePath == null) {
+            log.debug("DEBUG: nodePath is null");
+            return false;
+        }
+        if (stepIndex >= nodePath.size()) {
+            log.debug("DEBUG: stepIndex {} >= nodePath size {}", stepIndex, nodePath.size());
+            return false;
+        }
+        
+        boolean isTransport = nodePath.get(stepIndex) instanceof TransportNode;
+        log.debug("DEBUG: Step {} is TransportNode: {}", stepIndex, isTransport);
+        return isTransport;
+    }
+    
+    /**
+     * Get transport information for a path step
+     * @param stepIndex the index in the path
+     * @return the transport info or null if not a transport step
+     */
+    private Transport getTransportInfo(int stepIndex) {
+        if (!isTransportStep(stepIndex)) {
+            return null;
+        }
+        
+        if (stepIndex == 0) {
+            return null; // First step can't be a transport
+        }
+        
+        WorldPoint origin = path.get(stepIndex - 1);
+        WorldPoint destination = path.get(stepIndex);
+        
+        // Look up transport from PathfinderConfig
+        int originPacked = WorldPointUtil.packWorldPoint(origin);
+        Set<Transport> transports = pathfinderConfig.getTransportsPacked().getOrDefault(originPacked, new HashSet<>());
+        
+        int destPacked = WorldPointUtil.packWorldPoint(destination);
+        for (Transport transport : transports) {
+            if (transport.getDestination() == destPacked) {
+                return transport;
+            }
+        }
+        
+        return null;
+    }
+    
+    /**
+     * Execute a transport interaction (stairs, doors, etc.)
+     * @param transport the transport to execute
+     * @param location the location to interact at
+     */
+    private void executeTransportInteraction(Transport transport, WorldPoint location) {
+        if (transport == null) {
+            log.warn("Cannot execute null transport");
+            return;
+        }
+        
+        String displayInfo = transport.getDisplayInfo();
+        TransportType type = transport.getType();
+        
+        log.info("Executing transport interaction: {} (type: {})", displayInfo, type);
+        
+        if (type == TransportType.TRANSPORT && displayInfo != null) {
+            if (displayInfo.contains("Climb-up") || displayInfo.contains("Climb-down")) {
+                handleStairsOrLadder(transport, location, displayInfo);
+            } else if (displayInfo.contains("Open") || displayInfo.contains("Door") || displayInfo.contains("Gate")) {
+                handleDoorInteraction(transport, location, displayInfo);
+            } else {
+                log.warn("Unknown transport interaction: {}", displayInfo);
+                // Fall back to walking
+                currentState = WalkState.WALKING;
+            }
+        } else {
+            // For teleports and other transport types, use existing logic
+            executeTransport(location, WorldPointUtil.unpackWorldPoint(transport.getDestination()));
+        }
+    }
+    
+    /**
+     * Handle stairs or ladder interaction
+     * @param transport the transport info
+     * @param location the location to interact at
+     * @param displayInfo the display info containing the action
+     */
+    private void handleStairsOrLadder(Transport transport, WorldPoint location, String displayInfo) {
+        log.info("Handling stairs/ladder at {}: {}", location, displayInfo);
+        
+        // Extract action from display info (e.g., "Climb-up Staircase 16671")
+        String action = "Climb-up";
+        if (displayInfo.contains("Climb-down")) {
+            action = "Climb-down";
+        }
+        
+        // Try to find the staircase/ladder object
+        GameObject stairObject = findStairObject(location, displayInfo);
+        if (stairObject != null) {
+            log.info("Found stair object {} at {}, using action: {}", stairObject.getId(), location, action);
+            actionService.interactWithGameObject(stairObject, action);
+            
+            // Set state to wait for transport completion
+            currentState = WalkState.WAITING_FOR_TRANSPORT;
+            transportStartTime = System.currentTimeMillis();
+            pathIndex++; // Move to next step
+        } else {
+            log.warn("Could not find stair object at {}, falling back to walking", location);
+            currentState = WalkState.WALKING;
+        }
+    }
+    
+    /**
+     * Handle door interaction
+     * @param transport the transport info
+     * @param location the location to interact at
+     * @param displayInfo the display info containing the action
+     */
+    private void handleDoorInteraction(Transport transport, WorldPoint location, String displayInfo) {
+        log.info("Handling door at {}: {}", location, displayInfo);
+        
+        // Use existing door handling logic
+        doorToOpen = findDoorObject(location);
+        if (doorToOpen != null) {
+            currentState = WalkState.OPENING_DOOR;
+            setRandomDelay(1, 3);
+        } else {
+            log.warn("Could not find door object at {}, falling back to walking", location);
+            currentState = WalkState.WALKING;
+        }
+    }
+    
+    /**
+     * Find a stair object at the given location
+     * @param location the location to search
+     * @param displayInfo the display info containing object hints
+     * @return the stair object or null if not found
+     */
+    private GameObject findStairObject(WorldPoint location, String displayInfo) {
+        Scene scene = client.getTopLevelWorldView().getScene();
+        Tile[][][] tiles = scene.getTiles();
+        int z = location.getPlane();
+        
+        // Convert world coordinates to scene coordinates
+        int baseX = client.getTopLevelWorldView().getBaseX();
+        int baseY = client.getTopLevelWorldView().getBaseY();
+        int sceneX = location.getX() - baseX;
+        int sceneY = location.getY() - baseY;
+        
+        // Check if coordinates are within scene bounds
+        if (sceneX < 0 || sceneX >= Constants.SCENE_SIZE || 
+            sceneY < 0 || sceneY >= Constants.SCENE_SIZE || 
+            z < 0 || z >= Constants.MAX_Z) {
+            return null;
+        }
+        
+        // Check tiles around the location
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dy = -1; dy <= 1; dy++) {
+                int checkX = sceneX + dx;
+                int checkY = sceneY + dy;
+                
+                if (checkX >= 0 && checkX < Constants.SCENE_SIZE && 
+                    checkY >= 0 && checkY < Constants.SCENE_SIZE) {
+                    
+                    Tile tile = tiles[z][checkX][checkY];
+                    if (tile != null) {
+                        for (GameObject obj : tile.getGameObjects()) {
+                            if (obj != null && isStairObject(obj, displayInfo)) {
+                                return obj;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        return null;
+    }
+    
+    /**
+     * Check if a game object is a stair object
+     * @param obj the game object to check
+     * @param displayInfo the display info containing object hints
+     * @return true if this is a stair object
+     */
+    private boolean isStairObject(GameObject obj, String displayInfo) {
+        if (obj == null) {
+            return false;
+        }
+        
+        // Try to extract object ID from display info
+        if (displayInfo != null && displayInfo.matches(".*\\d+.*")) {
+            try {
+                // Extract the last number from the display info (usually the object ID)
+                String[] parts = displayInfo.split(" ");
+                for (int i = parts.length - 1; i >= 0; i--) {
+                    if (parts[i].matches("\\d+")) {
+                        int expectedId = Integer.parseInt(parts[i]);
+                        if (obj.getId() == expectedId) {
+                            return true;
+                        }
+                        break;
+                    }
+                }
+            } catch (NumberFormatException e) {
+                // Ignore and fall back to generic check
+            }
+        }
+        
+        // Generic stair object IDs (common staircase IDs)
+        int[] stairIds = {
+            16671, 16672, 16673, 16674, // Common staircases
+            9725, 9726, 9727, 9728, // Common ladders
+            1738, 1739, 1740, 1741, // More staircases
+            11867, 11868, 11869, 11870, // Additional stairs
+            56230, 56231, 16672
+        };
+        
+        for (int stairId : stairIds) {
+            if (obj.getId() == stairId) {
+                return true;
+            }
+        }
+        
+        return false;
+    }
+    
+    /**
+     * Find a stair object at the given location (generic version for legacy detection)
+     * @param location the location to search
+     * @return the stair object or null if not found
+     */
+    private GameObject findStairObjectGeneric(WorldPoint location) {
+        Scene scene = client.getTopLevelWorldView().getScene();
+        Tile[][][] tiles = scene.getTiles();
+        int z = location.getPlane();
+        
+        // Convert world coordinates to scene coordinates
+        int baseX = client.getTopLevelWorldView().getBaseX();
+        int baseY = client.getTopLevelWorldView().getBaseY();
+        int sceneX = location.getX() - baseX;
+        int sceneY = location.getY() - baseY;
+        
+        // Check if coordinates are within scene bounds
+        if (sceneX < 0 || sceneX >= Constants.SCENE_SIZE || 
+            sceneY < 0 || sceneY >= Constants.SCENE_SIZE || 
+            z < 0 || z >= Constants.MAX_Z) {
+            return null;
+        }
+        
+        // Check tiles around the location for any stair-like objects
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dy = -1; dy <= 1; dy++) {
+                int checkX = sceneX + dx;
+                int checkY = sceneY + dy;
+                
+                if (checkX >= 0 && checkX < Constants.SCENE_SIZE && 
+                    checkY >= 0 && checkY < Constants.SCENE_SIZE) {
+                    
+                    Tile tile = tiles[z][checkX][checkY];
+                    if (tile != null) {
+                        for (GameObject obj : tile.getGameObjects()) {
+                            if (obj != null && isStairObjectGeneric(obj)) {
+                                return obj;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        return null;
+    }
+    
+    /**
+     * Check if a game object is a stair object (generic version)
+     * @param obj the game object to check
+     * @return true if this is a stair object
+     */
+    private boolean isStairObjectGeneric(GameObject obj) {
+        if (obj == null) {
+            return false;
+        }
+        
+        // Expanded list of stair object IDs (Lumbridge castle stairs)
+        int[] stairIds = {
+            16671, 16672, 16673, 16674, // Common staircases
+            9725, 9726, 9727, 9728, // Common ladders
+            1738, 1739, 1740, 1741, // More staircases
+            11867, 11868, 11869, 11870, // Additional stairs
+            2466, 2467, 2468, 2469, // More stair types
+            1740, 1742, 1744, 1746, // Stone stairs
+            11797, 11798, 11799, 11800, 56230, 56231, 16672, // Lumbridge castle specific
+            1749, 1750, 1751, 1752 // Additional stair variations
+        };
+        
+        for (int stairId : stairIds) {
+            if (obj.getId() == stairId) {
+                return true;
+            }
+        }
+        
+        return false;
     }
 } 

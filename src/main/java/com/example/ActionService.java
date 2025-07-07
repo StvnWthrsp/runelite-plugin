@@ -10,6 +10,7 @@ import net.runelite.api.InventoryID;
 import net.runelite.api.Item;
 import net.runelite.api.ItemID;
 import net.runelite.api.WallObject;
+import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.gameval.InterfaceID.MagicSpellbook;
 import shortestpath.Transport;
 
@@ -234,12 +235,10 @@ public class ActionService {
         try {
             // Try opening the magic interface first
             // Magic interface widget ID varies by client mode
-            Widget magicTab = plugin.getClient().getWidget(164, 1); // Standard spellbook
+            Widget magicTab = plugin.getClient().getWidget(InterfaceID.MagicSpellbook.UNIVERSE); // Standard spellbook
             if (magicTab == null) {
-                // Try other interface configurations
-                magicTab = plugin.getClient().getWidget(218, 1);
+                log.warn("Could not find magic interface.");
             }
-            
             if (magicTab != null && !magicTab.isHidden()) {
                 // Magic interface is already open, look for home teleport
                 Widget homeTeleportSpell = findHomeTeleportWidget();
@@ -313,6 +312,7 @@ public class ActionService {
             
             // Schedule the home teleport click after a short delay
             scheduler.schedule(() -> {
+                sendKeyRequest("/key_release", "F6");
                 Widget homeTeleportSpell = findHomeTeleportWidget();
                 if (homeTeleportSpell != null) {
                     Point spellPoint = new Point(
@@ -324,8 +324,7 @@ public class ActionService {
                 } else {
                     log.warn("Could not find home teleport widget after opening magic interface");
                 }
-                sendKeyRequest("/key_release", "F6");
-            }, 300, TimeUnit.MILLISECONDS);
+            }, 200, TimeUnit.MILLISECONDS);
             
             return true;
         }

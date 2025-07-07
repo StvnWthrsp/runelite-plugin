@@ -40,7 +40,7 @@ public class FishingTask implements BotTask {
     // Lumbridge Castle kitchen range
     private static final WorldPoint LUMBRIDGE_KITCHEN_RANGE = new WorldPoint(3211, 3215, 0);
     // Lumbridge Castle bank (upstairs)
-    private static final WorldPoint LUMBRIDGE_BANK = new WorldPoint(3208, 3212, 2);
+    private static final WorldPoint LUMBRIDGE_BANK = new WorldPoint(3208, 3220, 2);
 
     // Fishing spot and range object IDs
     private static final int FISHING_SPOT_ID = 1530; // Net fishing spot
@@ -80,11 +80,13 @@ public class FishingTask implements BotTask {
     @Override
     public void onStart() {
         log.info("Starting Fishing Task.");
-        this.currentState = FishingState.WALKING_TO_FISHING;
-        this.eventService.subscribe(GameTick.class, this::onGameTick);
-        if (gameService.isInventoryFull()) {
-            this.currentState = FishingState.WALKING_TO_COOKING;
+        if (this.currentState == FishingState.WAITING_FOR_SUBTASK) {
+            log.info("Returned from subtask. Determining next step.");
+        } else {
+            log.info("Task just started. Determining next step.");
         }
+        determineNextState();
+        this.eventService.subscribe(GameTick.class, this::onGameTick);
     }
 
     @Override
