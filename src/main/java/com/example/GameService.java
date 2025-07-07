@@ -413,4 +413,60 @@ public class GameService {
     public WorldPoint getPlayerLocation() {
         return client.getLocalPlayer().getWorldLocation();
     }
+
+    /**
+     * Convenience method to find the nearest NPC with a specific ID.
+     * 
+     * @param npcId the NPC ID to search for
+     * @return the nearest matching NPC, or null if none found
+     */
+    public NPC findNearestNpc(int npcId) {
+        Interactable result = findNearest(interactable -> {
+            if (interactable instanceof NpcEntity) {
+                NpcEntity npcEntity = (NpcEntity) interactable;
+                return npcEntity.getId() == npcId;
+            }
+            return false;
+        });
+        
+        return result instanceof NpcEntity ? ((NpcEntity) result).getNpc() : null;
+    }
+
+    /**
+     * Convenience method to find the nearest GameObject with a specific ID.
+     * 
+     * @param gameObjectId the GameObject ID to search for
+     * @return the nearest matching GameObject, or null if none found
+     */
+    public GameObject findNearestGameObject(int gameObjectId) {
+        Interactable result = findNearest(interactable -> {
+            if (interactable instanceof GameObjectEntity) {
+                GameObjectEntity gameObjectEntity = (GameObjectEntity) interactable;
+                return gameObjectEntity.getId() == gameObjectId;
+            }
+            return false;
+        });
+        
+        return result instanceof GameObjectEntity ? ((GameObjectEntity) result).getGameObject() : null;
+    }
+
+    /**
+     * Checks if the player has a specific item in their inventory.
+     * 
+     * @param itemId the item ID to check for
+     * @return true if the player has the item, false otherwise
+     */
+    public boolean hasItem(int itemId) {
+        ItemContainer inventory = client.getItemContainer(InventoryID.INV);
+        if (inventory == null) {
+            return false;
+        }
+        
+        for (Item item : inventory.getItems()) {
+            if (item.getId() == itemId) {
+                return true;
+            }
+        }
+        return false;
+    }
 } 

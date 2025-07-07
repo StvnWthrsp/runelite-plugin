@@ -469,4 +469,44 @@ public class ActionService {
 		}
 	}
 
+    /**
+     * Use an item on a game object (e.g., raw fish on cooking range)
+     * @param itemId the item ID to use
+     * @param gameObject the game object to use the item on
+     */
+    public void sendUseItemOnObjectRequest(int itemId, GameObject gameObject) {
+        if (gameObject == null) {
+            log.warn("Cannot use item on null game object");
+            return;
+        }
+        
+        // This would involve finding the item in inventory and using it on the object
+        // For now, we'll simulate a right-click -> use item workflow
+        Point clickPoint = gameService.getRandomClickablePoint(gameObject);
+        if (clickPoint.x == -1) {
+            log.warn("Could not get clickable point for game object {}", gameObject.getId());
+            return;
+        }
+        
+        log.info("Using item {} on game object {}", itemId, gameObject.getId());
+        // In a real implementation, this would require:
+        // 1. Right-click on the item in inventory
+        // 2. Select "Use" from the context menu  
+        // 3. Click on the target object
+        // For now, we'll just click on the object directly
+        sendClickRequest(clickPoint, true);
+    }
+
+    /**
+     * Send a spacebar key press (commonly used for "Cook All" or similar actions)
+     */
+    public void sendSpacebarRequest() {
+        log.info("Sending spacebar key press");
+        if (!pipeService.sendKeyPress("space")) {
+            log.warn("Failed to send spacebar hold command via pipe");
+            plugin.stopBot();
+            return;
+        }
+    }
+
 }

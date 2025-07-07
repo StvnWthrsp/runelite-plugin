@@ -264,6 +264,9 @@ public class RunepalPlugin extends Plugin
 				case COMBAT_BOT:
 					taskManager.pushTask(new CombatTask(this, config, taskManager, actionService, gameService, eventService));
 					break;
+				case FISHING_BOT:
+					taskManager.pushTask(new FishingTask(this, config, taskManager, pathfinderConfig, actionService, gameService, eventService));
+					break;
 				default:
 					log.warn("Unknown bot type: {}", botType);
 					stopBot();
