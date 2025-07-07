@@ -35,7 +35,9 @@ import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -47,6 +49,7 @@ public class WalkTask implements BotTask {
         WALKING,
         EXECUTING_TELEPORT,
         OPENING_DOOR,
+        USING_STAIRS,
         WAITING_FOR_TRANSPORT,
         FAILED,
         FINISHED
@@ -66,6 +69,7 @@ public class WalkTask implements BotTask {
     private Pathfinder pathfinder;
     private Future<?> pathfinderFuture;
     private final ExecutorService pathfinderExecutor;
+    private final ScheduledExecutorService scheduler;
     private final ActionService actionService;
     
     // Transport execution state
@@ -74,6 +78,8 @@ public class WalkTask implements BotTask {
     private static final long TRANSPORT_TIMEOUT_MS = 30000; // 30 seconds
     private int pathIndex = 0;
     private TileObject doorToOpen;
+    private GameObject stairsToUse;
+    private String actionToTake;
 
     public WalkTask(RunepalPlugin plugin, PathfinderConfig pathfinderConfig, WorldPoint destination, ActionService actionService, GameService gameService) {
         this.plugin = plugin;
@@ -83,6 +89,7 @@ public class WalkTask implements BotTask {
         this.gameService = gameService;
         ThreadFactory shortestPathNaming = new ThreadFactoryBuilder().setNameFormat("walk-task-%d").build();
         this.pathfinderExecutor = Executors.newSingleThreadExecutor(shortestPathNaming);
+        this.scheduler = Executors.newSingleThreadScheduledExecutor();
         this.actionService = actionService;
     }
 
@@ -115,6 +122,9 @@ public class WalkTask implements BotTask {
                 break;
             case OPENING_DOOR:
                 handleDoorOpening();
+                break;
+            case USING_STAIRS:
+                handleStairs();
                 break;
             case WAITING_FOR_TRANSPORT:
                 handleTransportWait();
@@ -241,9 +251,11 @@ public class WalkTask implements BotTask {
                 distance = distance2D; // Use 2D distance instead
             }
             
-            // First check for teleports (large distance jumps, any plane)
-            if (distance > 20) {
-                log.info("Detected possible teleport from {} to {} (distance: {})", currentStep, nextStep, distance);
+            // First check for teleports - prioritize large distance OR plane change with medium distance
+            // Teleports can change planes and have varying distances depending on the type
+            if (distance > 20 || (currentStep.getPlane() != nextStep.getPlane() && distance > 10)) {
+                log.info("Detected possible teleport from {} to {} (distance: {}, plane change: {})", 
+                        currentStep, nextStep, distance, currentStep.getPlane() != nextStep.getPlane());
                 
                 // Check if we're close to the current step (teleport origin)
                 if (currentLocation.distanceTo(currentStep) <= 2) {
@@ -258,8 +270,8 @@ public class WalkTask implements BotTask {
                 }
             }
             
-            // Then check for plane changes with short distance (stairs/ladders)
-            if (currentStep.getPlane() != nextStep.getPlane() && distance <= 20) {
+            // Then check for plane changes with short distance (stairs/ladders only)
+            if (currentStep.getPlane() != nextStep.getPlane() && distance <= 10) {
                 log.info("DEBUG: Detected short-distance plane change from {} to {} (distance: {}) - this should be handled as stairs/ladder", currentStep, nextStep, distance);
                 
                   // Check if we're close to the stair location
@@ -269,18 +281,14 @@ public class WalkTask implements BotTask {
                       if (stairObject != null) {
                           String action = nextStep.getPlane() > currentStep.getPlane() ? "Climb-up" : "Climb-down";
                           log.info("Found stair object {} at {}, using action: {}", stairObject.getId(), currentStep, action);
-                          actionService.interactWithGameObject(stairObject, action);
-
-                          // Set state to wait for transport completion
-                          currentState = WalkState.WAITING_FOR_TRANSPORT;
-                          transportStartTime = System.currentTimeMillis();
-                          pathIndex++; // Move to next step
-                        return;
-                    } else {
-                        log.warn("Could not find stair object at {}, recalculating path", currentStep);
-                        currentState = WalkState.IDLE;
-                        return;
-                    }
+                          stairsToUse = stairObject;
+                          actionToTake = action;
+                          currentState = WalkState.USING_STAIRS;
+                          setRandomDelay(1, 5);
+                          return;
+                      } else {
+                            log.info("Stair object detected but is not GameObject, continuing with normal walking.");
+                      }
                 } else {
                     // Walk to the stair location first
                     log.info("Walking to stair location at {}", currentStep);
@@ -310,7 +318,7 @@ public class WalkTask implements BotTask {
                 setRandomDelay(1, 5);
                 return;
             } else {
-                log.warn("Door object detected but is not GameObject or WallObject, continuing with normal walking", doorInfo.doorLocation);
+                log.warn("Door object detected but is not GameObject or WallObject, continuing with normal walking.");
             }
         }
 
@@ -726,6 +734,7 @@ public class WalkTask implements BotTask {
             pathfinderFuture.cancel(true);
         }
         pathfinderExecutor.shutdownNow();
+        scheduler.shutdownNow();
     }
 
     @Override
@@ -758,36 +767,34 @@ public class WalkTask implements BotTask {
         }
     }
 
-//    private void handleTeleportExecution() {
-//        if (System.currentTimeMillis() - transportStartTime > TRANSPORT_TIMEOUT_MS) {
-//            log.warn("Teleport execution timed out");
-//            currentState = WalkState.FAILED;
-//            return;
-//        }
-//
-//        if (pendingTransport == null) {
-//            log.error("No pending transport for teleport execution");
-//            currentState = WalkState.WALKING;
-//            return;
-//        }
-//
-//        // For now, just continue walking as teleport implementation is complex
-//        log.info("Teleport execution not fully implemented, continuing walking");
-//        currentState = WalkState.WALKING;
-//    }
-
     private void handleDoorOpening() {
         if ((doorToOpen != null && doorToOpen instanceof GameObject) || (doorToOpen != null && doorToOpen instanceof WallObject)) {
             if (doorToOpen instanceof GameObject) {
                 actionService.interactWithGameObject((GameObject) doorToOpen, "Open");
-            } else if (doorToOpen instanceof WallObject) {
+            } else {
                 actionService.interactWithWallObject((WallObject) doorToOpen, "Open");
             }
             currentState = WalkState.WALKING;
             setRandomDelay(0, 2);
-            return;
         } else {
             log.warn("Could not open door. Recalculating path.");
+            currentState = WalkState.IDLE;
+        }
+    }
+
+    private void handleStairs() {
+        if (stairsToUse != null) {
+            if (isLumbridgeStaircase(stairsToUse)) {
+                handleLumbridgeStaircase(stairsToUse, actionToTake);
+            } else {
+                actionService.interactWithGameObject(stairsToUse, actionToTake);
+            }
+            stairsToUse = null;
+            actionToTake = null;
+            currentState = WalkState.WALKING;
+            setRandomDelay(0, 2);
+        } else {
+            log.warn("Could not use stairs. Recalculating path.");
             currentState = WalkState.IDLE;
         }
     }
@@ -929,7 +936,7 @@ public class WalkTask implements BotTask {
             executeTransport(location, WorldPointUtil.unpackWorldPoint(transport.getDestination()));
         }
     }
-    
+
     /**
      * Handle stairs or ladder interaction
      * @param transport the transport info
@@ -938,19 +945,19 @@ public class WalkTask implements BotTask {
      */
     private void handleStairsOrLadder(Transport transport, WorldPoint location, String displayInfo) {
         log.info("Handling stairs/ladder at {}: {}", location, displayInfo);
-        
+
         // Extract action from display info (e.g., "Climb-up Staircase 16671")
         String action = "Climb-up";
         if (displayInfo.contains("Climb-down")) {
             action = "Climb-down";
         }
-        
+
         // Try to find the staircase/ladder object
         GameObject stairObject = findStairObject(location, displayInfo);
         if (stairObject != null) {
             log.info("Found stair object {} at {}, using action: {}", stairObject.getId(), location, action);
             actionService.interactWithGameObject(stairObject, action);
-            
+
             // Set state to wait for transport completion
             currentState = WalkState.WAITING_FOR_TRANSPORT;
             transportStartTime = System.currentTimeMillis();
@@ -1153,5 +1160,67 @@ public class WalkTask implements BotTask {
         }
         
         return false;
+    }
+    
+    /**
+     * Check if this is a Lumbridge staircase that requires special interaction
+     * @param obj the game object to check
+     * @return true if this is a Lumbridge staircase
+     */
+    private boolean isLumbridgeStaircase(GameObject obj) {
+        if (obj == null) {
+            return false;
+        }
+        
+        // Lumbridge castle staircase IDs that require special handling
+        int[] lumbridgeStairIds = {
+            16672 // Lumbridge castle staircases
+        };
+        
+        for (int stairId : lumbridgeStairIds) {
+            if (obj.getId() == stairId) {
+                return true;
+            }
+        }
+        
+        return false;
+    }
+    
+    /**
+     * Handle Lumbridge staircase interaction with right-click menu or interface
+     * @param stairObject the stair object to interact with
+     * @param action the desired action (Climb-up or Climb-down)
+     */
+    private void handleLumbridgeStaircase(GameObject stairObject, String action) {
+        log.info("Handling Lumbridge staircase {} with action: {}", stairObject.getId(), action);
+
+        actionService.interactWithGameObject(stairObject, action);
+        
+        // Schedule key press after interface opens
+        scheduler.schedule(() -> {
+            if ("Climb-up".equals(action)) {
+                log.info("Sending key press '1' for Climb-up");
+                sendKeyPress("1");
+            } else if ("Climb-down".equals(action)) {
+                log.info("Sending key press '2' for Climb-down");
+                sendKeyPress("2");
+            }
+        }, 700, TimeUnit.MILLISECONDS); // Wait 700ms for interface to open
+    }
+    
+    /**
+     * Send a single key press
+     * @param key the key to press
+     */
+    private void sendKeyPress(String key) {
+        try {
+            actionService.sendKeyRequest("/key_hold", key);
+            // Schedule key release after short delay
+            scheduler.schedule(() -> {
+                actionService.sendKeyRequest("/key_release", key);
+            }, 50, TimeUnit.MILLISECONDS);
+        } catch (Exception e) {
+            log.warn("Error sending key press {}: {}", key, e.getMessage());
+        }
     }
 } 

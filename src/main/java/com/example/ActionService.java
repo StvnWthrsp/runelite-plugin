@@ -195,6 +195,8 @@ public class ActionService {
             log.warn("Cannot cast null spell");
             return false;
         }
+
+        // TODO: Close any open interfaces before attempting to cast a spell
         
         // Handle home teleports - these are free and always available
         if (spellName.toLowerCase().contains("home teleport")) {

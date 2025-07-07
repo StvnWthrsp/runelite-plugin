@@ -2,11 +2,15 @@ package com.example;
 
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.GameObject;
+import net.runelite.api.ItemContainer;
 import net.runelite.api.NPC;
 import net.runelite.api.ItemID;
 import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.events.GameTick;
 import net.runelite.api.gameval.AnimationID;
+import net.runelite.api.gameval.InterfaceID;
+import net.runelite.api.gameval.InventoryID;
+import net.runelite.api.widgets.Widget;
 import shortestpath.pathfinder.PathfinderConfig;
 
 import java.util.*;
@@ -31,7 +35,8 @@ public class FishingTask implements BotTask {
         COOKING,
         WAIT_COOKING,
         WALKING_TO_BANK,
-        BANKING,
+        DEPOSITING,
+        WITHDRAWING,
         WAITING_FOR_SUBTASK
     }
 
@@ -159,8 +164,11 @@ public class FishingTask implements BotTask {
             case WALKING_TO_BANK:
                 doWalkingToBank();
                 break;
-            case BANKING:
-                doBanking();
+            case DEPOSITING:
+                doDepositing();
+                break;
+            case WITHDRAWING:
+                doWithdrawing();
                 break;
             case IDLE:
                 currentState = FishingState.WALKING_TO_FISHING;
@@ -182,7 +190,7 @@ public class FishingTask implements BotTask {
         
         // Handle cooking completion detection
         if (currentState == FishingState.WAIT_COOKING && cookingStarted) {
-            if (!hasRawFish()) {
+            if (!gameService.isCurrentAnimation(COOKING_ANIMATION_ID)) {
                 finishCooking();
             }
         }
@@ -271,7 +279,7 @@ public class FishingTask implements BotTask {
         cookingRange = gameService.findNearestGameObject(KITCHEN_RANGE_ID);
         if (cookingRange == null) {
             log.warn("No cooking range found");
-            setRandomDelay(2, 5);
+            setRandomDelay(1, 2);
             return;
         }
 
@@ -279,7 +287,7 @@ public class FishingTask implements BotTask {
         // First, use raw fish on the range
         int rawFishId = getRawFishId();
         if (rawFishId != -1) {
-            actionService.sendUseItemOnObjectRequest(rawFishId, cookingRange);
+            actionService.interactWithGameObject(cookingRange, "Cook");
             cookingStarted = false;
             idleTicks = 0;
             currentState = FishingState.WAIT_COOKING;
@@ -300,7 +308,6 @@ public class FishingTask implements BotTask {
             // After a few ticks, click to start cooking all
             log.info("Clicking to cook all fish");
             actionService.sendSpacebarRequest(); // Space bar to cook all
-//            cookingStarted = true;
             idleTicks = 0;
         }
         
@@ -314,14 +321,18 @@ public class FishingTask implements BotTask {
         log.info("Finished cooking");
         cookingRange = null;
         cookingStarted = false;
-        currentState = FishingState.WALKING_TO_BANK;
+        if (hasRawFish()) {
+            currentState = FishingState.WALKING_TO_COOKING;
+        } else {
+            currentState = FishingState.WALKING_TO_BANK;
+        }
     }
 
     private void doWalkingToBank() {
         WorldPoint playerLocation = gameService.getPlayerLocation();
         if (playerLocation.distanceTo(LUMBRIDGE_BANK) <= 5) {
             log.info("Arrived at bank");
-            currentState = FishingState.BANKING;
+            currentState = FishingState.DEPOSITING;
         } else {
             log.info("Walking to Lumbridge Castle bank");
             taskManager.pushTask(new WalkTask(plugin, pathfinderConfig, LUMBRIDGE_BANK, actionService, gameService));
@@ -329,10 +340,20 @@ public class FishingTask implements BotTask {
         }
     }
 
-    private void doBanking() {
-        log.info("Banking all cooked fish");
+    private void doDepositing() {
+        log.info("Banking all items");
         taskManager.pushTask(new BankTask(plugin, actionService, gameService));
         currentState = FishingState.WAITING_FOR_SUBTASK;
+    }
+
+    private void doWithdrawing() {
+        log.info("Withdrawing small fishing net");
+        // TODO: Move withdrawing logic to BankTask
+        ItemContainer bankContainer = plugin.getClient().getItemContainer(InventoryID.BANK);
+        int smallFishingNetIndex = bankContainer.find(ItemID.SMALL_FISHING_NET);
+        actionService.sendClickRequest(gameService.getBankItemPoint(smallFishingNetIndex), true);
+        currentState = FishingState.WAITING_FOR_SUBTASK;
+        setRandomDelay(1, 2);
     }
 
     private void determineNextState() {
@@ -343,6 +364,8 @@ public class FishingTask implements BotTask {
             } else {
                 currentState = FishingState.WALKING_TO_BANK;
             }
+        } else if (!gameService.hasItem(ItemID.SMALL_FISHING_NET)) {
+            currentState = FishingState.WITHDRAWING;
         } else {
             currentState = FishingState.WALKING_TO_FISHING;
         }

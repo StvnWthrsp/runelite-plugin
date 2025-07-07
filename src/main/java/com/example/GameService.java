@@ -94,6 +94,14 @@ public class GameService {
         return getRandomPointInBounds(itemWidget.getBounds());
     }
 
+    public Point getBankItemPoint(int slot) {
+        Widget inventoryWidget = client.getWidget(InterfaceID.Bankmain.ITEMS);
+        if (inventoryWidget == null) return new Point(-1, -1);
+        Widget itemWidget = inventoryWidget.getChild(slot);
+        if (itemWidget == null) return new Point(-1, -1);
+        return getRandomPointInBounds(itemWidget.getBounds());
+    }
+
     public Point getRandomClickablePoint(NPC npc) {
         Shape clickbox = npc.getConvexHull();
         if (clickbox != null) {
