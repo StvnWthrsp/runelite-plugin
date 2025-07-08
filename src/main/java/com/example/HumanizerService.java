@@ -110,4 +110,20 @@ public class HumanizerService {
         
         return getGaussianDelay(mean, Math.max(1, stdDev), minTicks);
     }
+    
+    /**
+     * Gets a random delay within a specified range (replacing old setRandomDelay pattern).
+     * This method provides a uniform interface for all task classes to get random delays
+     * instead of duplicating the delay logic across multiple classes.
+     * 
+     * @param minTicks minimum delay in ticks
+     * @param maxTicks maximum delay in ticks
+     * @return delay in game ticks
+     */
+    public int getRandomDelay(int minTicks, int maxTicks) {
+        if (minTicks >= maxTicks) {
+            return minTicks;
+        }
+        return getRangeDelay(minTicks, maxTicks);
+    }
 } 

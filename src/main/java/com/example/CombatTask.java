@@ -25,6 +25,7 @@ public class CombatTask implements BotTask {
     private final GameService gameService;
     private final ActionService actionService;
     private final EventService eventService;
+    private final HumanizerService humanizerService;
 
     // Internal state for combat FSM
     private enum CombatState {
@@ -56,13 +57,14 @@ public class CombatTask implements BotTask {
         329   // Salmon
     };
 
-    public CombatTask(RunepalPlugin plugin, BotConfig config, TaskManager taskManager, ActionService actionService, GameService gameService, EventService eventService) {
+    public CombatTask(RunepalPlugin plugin, BotConfig config, TaskManager taskManager, ActionService actionService, GameService gameService, EventService eventService, HumanizerService humanizerService) {
         this.plugin = plugin;
         this.config = config;
         this.taskManager = taskManager;
         this.actionService = Objects.requireNonNull(actionService, "actionService cannot be null");
         this.gameService = Objects.requireNonNull(gameService, "gameService cannot be null");
         this.eventService = Objects.requireNonNull(eventService, "eventService cannot be null");
+        this.humanizerService = Objects.requireNonNull(humanizerService, "humanizerService cannot be null");
     }
 
     @Override
@@ -184,9 +186,6 @@ public class CombatTask implements BotTask {
 
     // --- FSM LOGIC ---
     
-    private void setRandomDelay(int minTicks, int maxTicks) {
-        delayTicks = plugin.getRandom().nextInt(maxTicks - minTicks + 1) + minTicks;
-    }
 
     private void doFindingNpc() {
         // Get NPC names to target from config
@@ -290,12 +289,12 @@ public class CombatTask implements BotTask {
             if (targetNpc.getHealthRatio() == 0) {
                 log.info("Target NPC defeated");
                 currentState = CombatState.LOOTING;
-                setRandomDelay(2, 3);
+                delayTicks = humanizerService.getRandomDelay(2, 3);
             } else {
                 // Lost target, find new one
                 log.info("Lost target, finding new NPC");
                 currentState = CombatState.FINDING_NPC;
-                setRandomDelay(1, 3);
+                delayTicks = humanizerService.getRandomDelay(1, 3);
             }
         } else if (localPlayer.getInteracting() == targetNpc) {
             // Still attacking the target, wait
@@ -321,7 +320,7 @@ public class CombatTask implements BotTask {
         actionService.sendClickRequest(foodPoint, false);
         
         // Wait a bit for eating animation
-        setRandomDelay(3, 5);
+        delayTicks = humanizerService.getRandomDelay(3, 5);
         
         // After eating, continue with previous activity
         if (targetNpc != null && targetNpc.getHealthRatio() > 0) {
@@ -335,7 +334,7 @@ public class CombatTask implements BotTask {
         // TODO: Implement basic loot detection and pickup
         // For now, just wait a bit and look for new targets
         log.debug("Looting phase - waiting for loot to appear");
-        setRandomDelay(3, 5);
+        delayTicks = humanizerService.getRandomDelay(3, 5);
         currentState = CombatState.FINDING_NPC;
         targetNpc = null;
         plugin.setTargetNpc(null); // Clear overlay

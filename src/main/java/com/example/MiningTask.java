@@ -28,6 +28,7 @@ public class MiningTask implements BotTask {
     private final ActionService actionService;
     private final GameService gameService;
     private final EventService eventService;
+    private final HumanizerService humanizerService;
     // Internal state for this task only
     private enum MiningState {
         IDLE,
@@ -59,7 +60,7 @@ public class MiningTask implements BotTask {
     private long xpGainedThisMine = 0;
     private boolean miningStarted = false;
 
-    public MiningTask(RunepalPlugin plugin, BotConfig config, TaskManager taskManager, PathfinderConfig pathfinderConfig, ActionService actionService, GameService gameService, EventService eventService) {
+    public MiningTask(RunepalPlugin plugin, BotConfig config, TaskManager taskManager, PathfinderConfig pathfinderConfig, ActionService actionService, GameService gameService, EventService eventService, HumanizerService humanizerService) {
         this.plugin = plugin;
         this.config = config;
         this.taskManager = taskManager;
@@ -67,6 +68,7 @@ public class MiningTask implements BotTask {
         this.actionService = Objects.requireNonNull(actionService, "actionService cannot be null");
         this.gameService = Objects.requireNonNull(gameService, "gameService cannot be null");
         this.eventService = Objects.requireNonNull(eventService, "eventService cannot be null");
+        this.humanizerService = Objects.requireNonNull(humanizerService, "humanizerService cannot be null");
     }
 
     @Override
@@ -220,9 +222,6 @@ public class MiningTask implements BotTask {
     }
 
     // --- FSM LOGIC ---
-    private void setRandomDelay(int minTicks, int maxTicks) {
-        delayTicks = plugin.getRandom().nextInt(maxTicks - minTicks + 1) + minTicks;
-    }
 
     private void doFindingRock() {
         if (gameService.isInventoryFull()) {
@@ -274,7 +273,7 @@ public class MiningTask implements BotTask {
             log.warn("Configured rock IDs: {}", Arrays.toString(rockIds));
             log.warn("Player location: {}", gameService.getPlayerLocation());
             // Wait a bit before trying again to avoid spamming
-            setRandomDelay(1, 3);
+            delayTicks = humanizerService.getRandomDelay(1, 3);
         }
     }
 
@@ -329,14 +328,14 @@ public class MiningTask implements BotTask {
                 case BANK:
                     log.info("Inventory full. Banking.");
                     // Order is reversed because we push to the top of the stack
-                    taskManager.pushTask(new WalkTask(plugin, pathfinderConfig, gameService.getPlayerLocation(), actionService, gameService));
+                    taskManager.pushTask(new WalkTask(plugin, pathfinderConfig, gameService.getPlayerLocation(), actionService, gameService, humanizerService));
                     taskManager.pushTask(new BankTask(plugin, actionService, gameService));
                     log.info("Banking to: {}", plugin.getBankCoordinates());
-                    taskManager.pushTask(new WalkTask(plugin, pathfinderConfig, plugin.getBankCoordinates(), actionService, gameService));
+                    taskManager.pushTask(new WalkTask(plugin, pathfinderConfig, plugin.getBankCoordinates(), actionService, gameService, humanizerService));
                     currentState = MiningState.WAITING_FOR_SUBTASK;
                     break;
                 case POWER_MINE:
-                    setRandomDelay(1, 3);
+                    delayTicks = humanizerService.getRandomDelay(1, 3);
                     doDropping();
                     break;
             }

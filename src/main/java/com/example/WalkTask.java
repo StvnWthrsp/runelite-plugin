@@ -61,6 +61,7 @@ public class WalkTask implements BotTask {
     private final Client client;
     private final PathfinderConfig pathfinderConfig;
     private final GameService gameService;
+    private final HumanizerService humanizerService;
 
     private WalkState currentState = WalkState.IDLE;
     private int delayTicks = 0;
@@ -81,12 +82,13 @@ public class WalkTask implements BotTask {
     private GameObject stairsToUse;
     private String actionToTake;
 
-    public WalkTask(RunepalPlugin plugin, PathfinderConfig pathfinderConfig, WorldPoint destination, ActionService actionService, GameService gameService) {
+    public WalkTask(RunepalPlugin plugin, PathfinderConfig pathfinderConfig, WorldPoint destination, ActionService actionService, GameService gameService, HumanizerService humanizerService) {
         this.plugin = plugin;
         this.client = plugin.getClient();
         this.pathfinderConfig = pathfinderConfig;
         this.destination = destination;
         this.gameService = gameService;
+        this.humanizerService = humanizerService;
         ThreadFactory shortestPathNaming = new ThreadFactoryBuilder().setNameFormat("walk-task-%d").build();
         this.pathfinderExecutor = Executors.newSingleThreadExecutor(shortestPathNaming);
         this.scheduler = Executors.newSingleThreadScheduledExecutor();
@@ -284,7 +286,7 @@ public class WalkTask implements BotTask {
                           stairsToUse = stairObject;
                           actionToTake = action;
                           currentState = WalkState.USING_STAIRS;
-                          setRandomDelay(1, 5);
+                          delayTicks = humanizerService.getRandomDelay(1, 5);
                           return;
                       } else {
                             log.info("Stair object detected but is not GameObject, continuing with normal walking.");
@@ -315,7 +317,7 @@ public class WalkTask implements BotTask {
             if ((doorToOpen != null && doorToOpen instanceof GameObject) || (doorToOpen != null && doorToOpen instanceof WallObject)) {
                 log.debug("Found door object {} at {}, attempting to open", doorToOpen.getId(), doorInfo.doorLocation);
                 currentState = WalkState.OPENING_DOOR;
-                setRandomDelay(1, 5);
+                delayTicks = humanizerService.getRandomDelay(1, 5);
                 return;
             } else {
                 log.warn("Door object detected but is not GameObject or WallObject, continuing with normal walking.");
@@ -327,15 +329,12 @@ public class WalkTask implements BotTask {
             WorldPoint target = getNextMinimapTarget();
             log.info("DEBUG: Normal walking - pathIndex: {}, target: {}, currentLocation: {}", pathIndex, target, currentLocation);
             walkTo(target);
-            setRandomDelay(3, 10);
+            delayTicks = humanizerService.getRandomDelay(3, 10);
         } else {
             log.warn("DEBUG: pathIndex {} >= path.size() {}, cannot proceed with walking", pathIndex, path.size());
         }
     }
 
-    private void setRandomDelay(int minTicks, int maxTicks) {
-        delayTicks = plugin.getRandom().nextInt(maxTicks - minTicks + 1) + minTicks;
-    }
 
     private void executeTransport(WorldPoint origin, WorldPoint destination) {
         log.info("Executing transport from {} to {}", origin, destination);
@@ -350,7 +349,7 @@ public class WalkTask implements BotTask {
             if (success) {
                 currentState = WalkState.EXECUTING_TELEPORT;
                 transportStartTime = System.currentTimeMillis();
-                setRandomDelay(5, 15); // Wait for teleport to complete
+                delayTicks = humanizerService.getRandomDelay(5, 15); // Wait for teleport to complete
             } else {
                 log.warn("Failed to execute teleport {}, falling back to walking", teleportType);
                 // Fall back to normal walking if teleport fails
@@ -413,7 +412,7 @@ public class WalkTask implements BotTask {
         }
         
         // Continue waiting for teleport to complete
-        setRandomDelay(2, 5);
+        delayTicks = humanizerService.getRandomDelay(2, 5);
     }
 
     /**
@@ -775,7 +774,7 @@ public class WalkTask implements BotTask {
                 actionService.interactWithWallObject((WallObject) doorToOpen, "Open");
             }
             currentState = WalkState.WALKING;
-            setRandomDelay(0, 2);
+            delayTicks = humanizerService.getRandomDelay(0, 2);
         } else {
             log.warn("Could not open door. Recalculating path.");
             currentState = WalkState.IDLE;
@@ -792,7 +791,7 @@ public class WalkTask implements BotTask {
             stairsToUse = null;
             actionToTake = null;
             currentState = WalkState.WALKING;
-            setRandomDelay(0, 2);
+            delayTicks = humanizerService.getRandomDelay(0, 2);
         } else {
             log.warn("Could not use stairs. Recalculating path.");
             currentState = WalkState.IDLE;
@@ -981,7 +980,7 @@ public class WalkTask implements BotTask {
         doorToOpen = findDoorObject(location);
         if (doorToOpen != null) {
             currentState = WalkState.OPENING_DOOR;
-            setRandomDelay(1, 3);
+            delayTicks = humanizerService.getRandomDelay(1, 3);
         } else {
             log.warn("Could not find door object at {}, falling back to walking", location);
             currentState = WalkState.WALKING;

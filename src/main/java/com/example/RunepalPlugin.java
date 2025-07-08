@@ -22,6 +22,10 @@ import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
 import java.util.Arrays;
 
+import com.example.services.GameStateService;
+import com.example.services.EntityService;
+import com.example.services.ClickService;
+import com.example.services.UtilityService;
 import net.runelite.api.GameObject;
 import net.runelite.api.NPC;
 import java.util.List;
@@ -129,7 +133,14 @@ public class RunepalPlugin extends Plugin
 		// Initialize core services
 		eventService = new EventService();
 		humanizerService = new HumanizerService();
-		gameService = new GameService(client, this);
+		
+		// Initialize game services in correct dependency order
+		GameStateService gameStateService = new GameStateService(client);
+		EntityService entityService = new EntityService(client, gameStateService);
+		ClickService clickService = new ClickService();
+		UtilityService utilityService = new UtilityService(client);
+		
+		gameService = new GameService(gameStateService, entityService, clickService, utilityService);
 		actionService = new ActionService(this, pipeService, gameService);
 
 		ShortestPathConfig shortestPathConfig = configManager.getConfig(ShortestPathConfig.class);
@@ -259,13 +270,13 @@ public class RunepalPlugin extends Plugin
 			BotType botType = config.botType();
 			switch (botType) {
 				case MINING_BOT:
-					taskManager.pushTask(new MiningTask(this, config, taskManager, pathfinderConfig, actionService, gameService, eventService));
+					taskManager.pushTask(new MiningTask(this, config, taskManager, pathfinderConfig, actionService, gameService, eventService, humanizerService));
 					break;
 				case COMBAT_BOT:
-					taskManager.pushTask(new CombatTask(this, config, taskManager, actionService, gameService, eventService));
+					taskManager.pushTask(new CombatTask(this, config, taskManager, actionService, gameService, eventService, humanizerService));
 					break;
 				case FISHING_BOT:
-					taskManager.pushTask(new FishingTask(this, config, taskManager, pathfinderConfig, actionService, gameService, eventService));
+					taskManager.pushTask(new FishingTask(this, config, taskManager, pathfinderConfig, actionService, gameService, eventService, humanizerService));
 					break;
 				default:
 					log.warn("Unknown bot type: {}", botType);
@@ -390,7 +401,13 @@ public class RunepalPlugin extends Plugin
 	{
 		try {
 			if (gameService == null) {
-				gameService = new GameService(client, this);
+				// Initialize game services in correct dependency order
+				GameStateService gameStateService = new GameStateService(client);
+				EntityService entityService = new EntityService(client, gameStateService);
+				ClickService clickService = new ClickService();
+				UtilityService utilityService = new UtilityService(client);
+				
+				gameService = new GameService(gameStateService, entityService, clickService, utilityService);
 			}
 			if (actionService == null) {
 				actionService = new ActionService(this, pipeService, gameService);

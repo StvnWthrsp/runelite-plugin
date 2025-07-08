@@ -87,7 +87,7 @@ public class BankTask implements BotTask {
         Widget depositInventoryButton = client.getWidget(InterfaceID.Bankmain.DEPOSITINV);
         if (depositInventoryButton != null && !depositInventoryButton.isHidden()) {
             log.info("Depositing inventory.");
-            actionService.sendClickRequest(gameService.getRandomPointInBounds(depositInventoryButton.getBounds()), true);
+            actionService.sendClickRequest(gameService.getRandomClickablePoint(depositInventoryButton), true);
             currentState = BankState.WAITING_FOR_DEPOSIT;
         }
         // TODO: Wait for inventory to be empty.

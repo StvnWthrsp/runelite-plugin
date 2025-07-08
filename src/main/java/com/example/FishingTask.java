@@ -25,6 +25,7 @@ public class FishingTask implements BotTask {
     private final ActionService actionService;
     private final GameService gameService;
     private final EventService eventService;
+    private final HumanizerService humanizerService;
 
     private enum FishingState {
         IDLE,
@@ -72,7 +73,7 @@ public class FishingTask implements BotTask {
 
     public FishingTask(RunepalPlugin plugin, BotConfig config, TaskManager taskManager, 
                       PathfinderConfig pathfinderConfig, ActionService actionService, 
-                      GameService gameService, EventService eventService) {
+                      GameService gameService, EventService eventService, HumanizerService humanizerService) {
         this.plugin = plugin;
         this.config = config;
         this.taskManager = taskManager;
@@ -80,6 +81,7 @@ public class FishingTask implements BotTask {
         this.actionService = Objects.requireNonNull(actionService, "actionService cannot be null");
         this.gameService = Objects.requireNonNull(gameService, "gameService cannot be null");
         this.eventService = Objects.requireNonNull(eventService, "eventService cannot be null");
+        this.humanizerService = Objects.requireNonNull(humanizerService, "humanizerService cannot be null");
     }
 
     @Override
@@ -196,9 +198,6 @@ public class FishingTask implements BotTask {
         }
     }
 
-    private void setRandomDelay(int minTicks, int maxTicks) {
-        delayTicks = plugin.getRandom().nextInt(maxTicks - minTicks + 1) + minTicks;
-    }
 
     private void doWalkingToFishing() {
         WorldPoint playerLocation = gameService.getPlayerLocation();
@@ -207,7 +206,7 @@ public class FishingTask implements BotTask {
             currentState = FishingState.FISHING;
         } else {
             log.info("Walking to Lumbridge Swamp fishing area");
-            taskManager.pushTask(new WalkTask(plugin, pathfinderConfig, LUMBRIDGE_SWAMP_FISHING, actionService, gameService));
+            taskManager.pushTask(new WalkTask(plugin, pathfinderConfig, LUMBRIDGE_SWAMP_FISHING, actionService, gameService, humanizerService));
             currentState = FishingState.WAITING_FOR_SUBTASK;
         }
     }
@@ -223,7 +222,7 @@ public class FishingTask implements BotTask {
         fishingSpot = gameService.findNearestNpc(FISHING_SPOT_ID);
         if (fishingSpot == null) {
             log.warn("No fishing spot found");
-            setRandomDelay(2, 5);
+            delayTicks = humanizerService.getRandomDelay(2, 5);
             return;
         }
 
@@ -263,7 +262,7 @@ public class FishingTask implements BotTask {
             currentState = FishingState.COOKING;
         } else {
             log.info("Walking to Lumbridge Castle kitchen");
-            taskManager.pushTask(new WalkTask(plugin, pathfinderConfig, LUMBRIDGE_KITCHEN_RANGE, actionService, gameService));
+            taskManager.pushTask(new WalkTask(plugin, pathfinderConfig, LUMBRIDGE_KITCHEN_RANGE, actionService, gameService, humanizerService));
             currentState = FishingState.WAITING_FOR_SUBTASK;
         }
     }
@@ -279,7 +278,7 @@ public class FishingTask implements BotTask {
         cookingRange = gameService.findNearestGameObject(KITCHEN_RANGE_ID);
         if (cookingRange == null) {
             log.warn("No cooking range found");
-            setRandomDelay(1, 2);
+            delayTicks = humanizerService.getRandomDelay(1, 2);
             return;
         }
 
@@ -335,7 +334,7 @@ public class FishingTask implements BotTask {
             currentState = FishingState.DEPOSITING;
         } else {
             log.info("Walking to Lumbridge Castle bank");
-            taskManager.pushTask(new WalkTask(plugin, pathfinderConfig, LUMBRIDGE_BANK, actionService, gameService));
+            taskManager.pushTask(new WalkTask(plugin, pathfinderConfig, LUMBRIDGE_BANK, actionService, gameService, humanizerService));
             currentState = FishingState.WAITING_FOR_SUBTASK;
         }
     }
@@ -353,7 +352,7 @@ public class FishingTask implements BotTask {
         int smallFishingNetIndex = bankContainer.find(ItemID.SMALL_FISHING_NET);
         actionService.sendClickRequest(gameService.getBankItemPoint(smallFishingNetIndex), true);
         currentState = FishingState.WAITING_FOR_SUBTASK;
-        setRandomDelay(1, 2);
+        delayTicks = humanizerService.getRandomDelay(1, 2);
     }
 
     private void determineNextState() {
