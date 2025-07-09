@@ -55,6 +55,8 @@ public class WalkTask implements BotTask {
         FINISHED
     }
 
+    private static final int RETRY_LIMIT = 5;
+
     @Getter
     private final WorldPoint destination;
     private final RunepalPlugin plugin;
@@ -63,7 +65,7 @@ public class WalkTask implements BotTask {
     private final GameService gameService;
     private final HumanizerService humanizerService;
 
-    private WalkState currentState = WalkState.IDLE;
+    private WalkState currentState = null;
     private int delayTicks = 0;
     private int retries = 0;
     private List<WorldPoint> path;
@@ -187,51 +189,51 @@ public class WalkTask implements BotTask {
             return;
         }
 
-        // Check if we're already at the destination
+        // Check if we're already at the destination, or not at destination after reaching end of path
         if (currentLocation.equals(destination)) {
             log.info("Already at destination.");
             currentState = WalkState.FINISHED;
             return;
         }
-
-        // Update path index based on current location
-        log.info("DEBUG: Before updatePathIndex - pathIndex: {}, currentLocation: {}", pathIndex, currentLocation);
-        updatePathIndex(currentLocation);
-        log.info("DEBUG: After updatePathIndex - pathIndex: {}", pathIndex);
-
         if (pathIndex >= path.size()) {
             log.warn("Reached end of path but not at destination. Recalculating...");
             currentState = WalkState.IDLE;
             return;
         }
 
+        // Update path index based on current location
+        log.debug("DEBUG: Before updatePathIndex - pathIndex: {}, currentLocation: {}", pathIndex, currentLocation);
+        updatePathIndex(currentLocation);
+        log.debug("DEBUG: After updatePathIndex - pathIndex: {}", pathIndex);
+
+        // TODO: Rewrite transport steps using shortest-path Transport information. See getAllTransportPointsInPath().
         // Check for transport steps using proper node detection
-        log.info("DEBUG: Checking for transport step at pathIndex {}, isTransportStep: {}", pathIndex, isTransportStep(pathIndex));
-        if (pathIndex < path.size() && isTransportStep(pathIndex)) {
-            WorldPoint currentStep = path.get(pathIndex);
-            Transport transport = getTransportInfo(pathIndex);
-            
-            log.info("DEBUG: Transport info - type: {}, displayInfo: {}, transport: {}", 
-                    transport != null ? transport.getType() : "null", 
-                    transport != null ? transport.getDisplayInfo() : "null", 
-                    transport != null ? "not null" : "null");
-            
-            if (transport != null) {
-                log.info("Detected transport step: {} at {}", transport.getDisplayInfo(), currentStep);
-                
-                // Check if we're close to the transport origin
-                if (currentLocation.distanceTo(currentStep) <= 2) {
-                    log.info("At transport origin, executing transport: {}", transport.getDisplayInfo());
-                    executeTransportInteraction(transport, currentStep);
-                    return;
-                } else {
-                    // Walk to the transport origin first
-                    log.info("Walking to transport origin at {}", currentStep);
-                    walkTo(currentStep);
-                    return;
-                }
-            }
-        }
+//        log.info("DEBUG: Checking for transport step at pathIndex {}, isTransportStep: {}", pathIndex, isTransportStep(pathIndex));
+//        if (pathIndex < path.size() && isTransportStep(pathIndex)) {
+//            WorldPoint currentStep = path.get(pathIndex);
+//            Transport transport = getTransportInfo(pathIndex);
+//
+//            log.info("DEBUG: Transport info - type: {}, displayInfo: {}, transport: {}",
+//                    transport != null ? transport.getType() : "null",
+//                    transport != null ? transport.getDisplayInfo() : "null",
+//                    transport != null ? "not null" : "null");
+//
+//            if (transport != null) {
+//                log.info("Detected transport step: {} at {}", transport.getDisplayInfo(), currentStep);
+//
+//                // Check if we're close to the transport origin
+//                if (currentLocation.distanceTo(currentStep) <= 2) {
+//                    log.info("At transport origin, executing transport: {}", transport.getDisplayInfo());
+//                    executeTransportInteraction(transport, currentStep);
+//                    return;
+//                } else {
+//                    // Walk to the transport origin first
+//                    log.info("Walking to transport origin at {}", currentStep);
+//                    walkTo(currentStep);
+//                    return;
+//                }
+//            }
+//        }
         
         // Legacy detection for backwards compatibility
         if (pathIndex + 1 < path.size()) {
@@ -240,7 +242,7 @@ public class WalkTask implements BotTask {
             int distance = currentStep.distanceTo(nextStep);
             
             // DEBUG: Add detailed logging for distance calculation
-            log.info("DEBUG: Path step {} -> {}, planes: {} -> {}, calculated distance: {}", 
+            log.debug("DEBUG: Path step {} -> {}, planes: {} -> {}, calculated distance: {}",
                     currentStep, nextStep, currentStep.getPlane(), nextStep.getPlane(), distance);
             
             // Check for broken distance calculation (Integer.MAX_VALUE indicates bug)
@@ -302,6 +304,8 @@ public class WalkTask implements BotTask {
         }
 
         // Check for doors blocking our path using collision data
+        log.info("Current location: {}", currentLocation);
+        log.info("pathIndex location: {}", path.get(pathIndex));
         DoorInfo doorInfo = findDoorBlockingPath(currentLocation);
         if (doorInfo != null) {
             log.info("Door detected at {} blocking path to {}", doorInfo.doorLocation, doorInfo.targetLocation);
@@ -344,6 +348,15 @@ public class WalkTask implements BotTask {
         String teleportType = determineTeleportType(destination);
         
         if (teleportType != null) {
+            // Ensure spellbook is open
+            Widget magicTab = plugin.getClient().getWidget(InterfaceID.MagicSpellbook.UNIVERSE); // Standard spellbook
+            if (magicTab == null || magicTab.isHidden()) {
+                log.warn("Could not find magic interface, attempting to open it.");
+                actionService.openMagicInterface();
+                delayTicks = humanizerService.getShortDelay();
+                return;
+            }
+
             log.info("Using teleport: {}", teleportType);
             boolean success = actionService.castSpell(teleportType);
             
@@ -420,9 +433,9 @@ public class WalkTask implements BotTask {
      * Finds a door that is blocking our path by checking collision data
      */
     private DoorInfo findDoorBlockingPath(WorldPoint currentLocation) {
-        log.info("Finding door blocking path from {} to {}", currentLocation, path.get(pathIndex));
+        log.debug("Finding door blocking path from {} to {}", currentLocation, path.get(pathIndex));
         // Look ahead in our path to find where we might be blocked
-        for (int i = pathIndex; i < Math.min(pathIndex + 10, path.size()); i++) {
+        for (int i = pathIndex; i < Math.min(pathIndex + 15, path.size()); i++) {
             WorldPoint pathPoint = path.get(i);
             log.trace("Checking if movement between {} and {} is blocked by a door", currentLocation, pathPoint);
             // Check if we can move from current point to this path point
@@ -586,7 +599,7 @@ public class WalkTask implements BotTask {
             11707, 11708, 11709, 11710, 11711, 11712, 11713, 11714, 11715, 11716, // Fancy doors
             9398, 9399, 9400, 9401, 9402, 9403, 9404, 9405, 9406, 9407, // Door variations
             24306, 24307, 24308, 24309, 24310, 24311, 24312, 24313, 24314, 24315, // More door variations
-            ObjectID.FAI_VARROCK_DOOR, 2398, 11780, 50048
+            ObjectID.FAI_VARROCK_DOOR, ObjectID.ELFDOOR, 11780, 50048
         };
         
         for (int doorId : doorIds) {
@@ -620,19 +633,19 @@ public class WalkTask implements BotTask {
         int closestIndex = pathIndex;
         int closestDistance = Integer.MAX_VALUE;
         
-        log.info("DEBUG: updatePathIndex - currentLocation: {}, pathIndex: {}, path.size(): {}", currentLocation, pathIndex, path.size());
+        log.debug("DEBUG: updatePathIndex - currentLocation: {}, pathIndex: {}, path.size(): {}", currentLocation, pathIndex, path.size());
         
         // Look for the closest point in the path ahead of us (expanded range)
         for (int i = pathIndex; i < Math.min(pathIndex + 15, path.size()); i++) {
             int distance = path.get(i).distanceTo(currentLocation);
-            log.info("DEBUG: Path step {}: {}, distance: {}", i, path.get(i), distance);
+            log.debug("DEBUG: Path step {}: {}, distance: {}", i, path.get(i), distance);
             if (distance < closestDistance) {
                 closestDistance = distance;
                 closestIndex = i;
             }
         }
         
-        log.info("DEBUG: Closest index: {}, closest distance: {}, current pathIndex: {}", closestIndex, closestDistance, pathIndex);
+        log.debug("DEBUG: Closest index: {}, closest distance: {}, current pathIndex: {}", closestIndex, closestDistance, pathIndex);
         
         // More aggressive update conditions:
         // 1. If we're very close (distance <= 2) and it's a later step, update
@@ -640,9 +653,9 @@ public class WalkTask implements BotTask {
         if ((closestDistance <= 2 && closestIndex > pathIndex) || 
             (closestDistance <= 5 && closestIndex > pathIndex + 3)) {
             pathIndex = closestIndex;
-            log.info("DEBUG: Updated path index to {}, current location: {}", pathIndex, path.get(pathIndex));
+            log.debug("DEBUG: Updated path index to {}, current location: {}", pathIndex, path.get(pathIndex));
         } else {
-            log.info("DEBUG: No path index update - closestDistance: {}, closestIndex: {}, pathIndex: {}", closestDistance, closestIndex, pathIndex);
+            log.debug("DEBUG: No path index update - closestDistance: {}, closestIndex: {}, pathIndex: {}", closestDistance, closestIndex, pathIndex);
         }
     }
 
@@ -753,9 +766,10 @@ public class WalkTask implements BotTask {
     }
 
     public void walkTo(WorldPoint worldPoint) {
-        if (retries > 4) {
+        if (retries >= RETRY_LIMIT) {
             log.warn("Recalculating path after 5 failures.");
             currentState = WalkState.IDLE;
+            retries = 0;
             return;
         }
         LocalPoint localPoint = LocalPoint.fromWorld(client.getWorldView(-1), worldPoint);
@@ -1229,5 +1243,35 @@ public class WalkTask implements BotTask {
         } catch (Exception e) {
             log.warn("Error sending key press {}: {}", key, e.getMessage());
         }
+    }
+
+    /**
+     * Get all the transport points along a path
+     * @param path the path from a pathfinder
+     * @return a list of world points that are transport origins along the path
+     */
+    private List<WorldPoint> getAllTransportPointsInPath(List<WorldPoint> path) {
+        List<WorldPoint> transportPoints = new ArrayList<>();
+        int packedPoint;
+        int i = 0;
+        for (WorldPoint point : path) {
+            packedPoint = WorldPointUtil.packWorldPoint(point);
+            WorldPoint originPoint;
+            WorldPoint destinationPoint;
+            if (pathfinderConfig.getTransports().containsKey(packedPoint)) {
+                Set<Transport> transportSet = pathfinderConfig.getTransports().get(packedPoint);
+                for (Transport transport : transportSet) {
+                    originPoint = WorldPointUtil.unpackWorldPoint(transport.getOrigin());
+                    destinationPoint = WorldPointUtil.unpackWorldPoint(transport.getDestination());
+                    if (originPoint.equals(path.get(i)) && destinationPoint.equals(path.get(i+1))) {
+                        log.info("Transport from {} to {}, click object: {}", path.get(i), path.get(i+1), transport.getObjectID());
+                        transportPoints.add(point);
+                    }
+                }
+            }
+            i++;
+        }
+        log.info("Finding transports done. All transports: {}", transportPoints);
+        return transportPoints;
     }
 } 

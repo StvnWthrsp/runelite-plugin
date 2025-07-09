@@ -12,6 +12,7 @@ import net.runelite.api.ItemID;
 import net.runelite.api.WallObject;
 import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.gameval.InterfaceID.MagicSpellbook;
+import net.runelite.client.callback.ClientThread;
 import shortestpath.Transport;
 
 import javax.inject.Inject;
@@ -195,8 +196,6 @@ public class ActionService {
             log.warn("Cannot cast null spell");
             return false;
         }
-
-        // TODO: Close any open interfaces before attempting to cast a spell
         
         // Handle home teleports - these are free and always available
         if (spellName.toLowerCase().contains("home teleport")) {
@@ -227,42 +226,25 @@ public class ActionService {
      * @return true if casting was initiated
      */
     private boolean castHomeTeleport(String spellName) {
+        // TODO: This retrieves widget info from the client. It works since it will run in client thread. But does it make sense in ActionService?
         log.info("Casting home teleport: {}", spellName);
-        
-        // Home teleports can be cast by:
-        // 1. Opening magic interface
-        // 2. Clicking on home teleport spell (usually at fixed positions)
-        // 3. Or using hotkeys if configured
-        
+
         try {
-            // Try opening the magic interface first
-            // Magic interface widget ID varies by client mode
-            Widget magicTab = plugin.getClient().getWidget(InterfaceID.MagicSpellbook.UNIVERSE); // Standard spellbook
-            if (magicTab == null) {
-                log.warn("Could not find magic interface.");
+            Widget homeTeleportSpell = findHomeTeleportWidget();
+            if (homeTeleportSpell != null) {
+                Point spellPoint = new Point(
+                    homeTeleportSpell.getCanvasLocation().getX() + homeTeleportSpell.getWidth() / 2,
+                    homeTeleportSpell.getCanvasLocation().getY() + homeTeleportSpell.getHeight() / 2
+                );
+                sendClickRequest(spellPoint, true);
+                log.info("Clicked home teleport spell");
+                return true;
             }
-            if (magicTab != null && !magicTab.isHidden()) {
-                // Magic interface is already open, look for home teleport
-                Widget homeTeleportSpell = findHomeTeleportWidget();
-                if (homeTeleportSpell != null) {
-                    Point spellPoint = new Point(
-                        homeTeleportSpell.getCanvasLocation().getX() + homeTeleportSpell.getWidth() / 2,
-                        homeTeleportSpell.getCanvasLocation().getY() + homeTeleportSpell.getHeight() / 2
-                    );
-                    sendClickRequest(spellPoint, true);
-                    log.info("Clicked home teleport spell");
-                    return true;
-                }
-            }
-            
-            // If magic interface isn't open, try to open it first
-            // Click on magic tab (F6 hotkey or tab click)
-            return openMagicInterfaceAndCastHome();
-            
         } catch (Exception e) {
             log.error("Error casting home teleport: {}", e.getMessage());
             return false;
         }
+        return true;
     }
     
     /**
@@ -296,42 +278,35 @@ public class ActionService {
         if (homeSpell != null && !homeSpell.isHidden()) {
             return homeSpell;
         }
-
+        log.info("Failed to find home teleport widget");
         return null;
     }
     
     /**
      * Open magic interface and cast home teleport
-     * @return true if successful
      */
-    private boolean openMagicInterfaceAndCastHome() {
-        // Try clicking on the magic tab first
-        Widget magicTab = plugin.getClient().getWidget(164, 1);
-        if (magicTab == null) {
-            // Try using F6 hotkey to open magic
-            log.info("Attempting to open magic interface with F6 hotkey");
+    public void openMagicInterface() {
+        int delay = 100;
+        try {
+            sendKeyRequest("/key_hold", "esc");
+            scheduler.schedule(() -> {
+                sendKeyRequest("/key_release", "esc");
+            }, delay, TimeUnit.MILLISECONDS);
+        } catch (Exception e) {
+            log.warn("Error sending key press {}: {}", "esc", e.getMessage());
+        }
+
+        delay += 600;
+
+        // Try using F6 hotkey to open spellbook
+        try {
             sendKeyRequest("/key_hold", "F6");
-            
-            // Schedule the home teleport click after a short delay
             scheduler.schedule(() -> {
                 sendKeyRequest("/key_release", "F6");
-                Widget homeTeleportSpell = findHomeTeleportWidget();
-                if (homeTeleportSpell != null) {
-                    Point spellPoint = new Point(
-                        homeTeleportSpell.getCanvasLocation().getX() + homeTeleportSpell.getWidth() / 2,
-                        homeTeleportSpell.getCanvasLocation().getY() + homeTeleportSpell.getHeight() / 2
-                    );
-                    sendClickRequest(spellPoint, true);
-                    log.info("Clicked home teleport after opening magic interface");
-                } else {
-                    log.warn("Could not find home teleport widget after opening magic interface");
-                }
-            }, 200, TimeUnit.MILLISECONDS);
-            
-            return true;
+            }, delay, TimeUnit.MILLISECONDS);
+        } catch (Exception e) {
+            log.warn("Error sending key press {}: {}", "F6", e.getMessage());
         }
-        
-        return false;
     }
     
     /**
