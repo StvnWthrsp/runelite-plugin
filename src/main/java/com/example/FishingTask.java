@@ -257,9 +257,10 @@ public class FishingTask implements BotTask {
 
     private void doWalkingToCooking() {
         WorldPoint playerLocation = gameService.getPlayerLocation();
-        if (playerLocation.distanceTo(LUMBRIDGE_KITCHEN_RANGE) <= 10) {
+        if (playerLocation.distanceTo(LUMBRIDGE_KITCHEN_RANGE) <= 5) {
             log.info("Arrived at kitchen");
             currentState = FishingState.COOKING;
+            delayTicks = humanizerService.getMediumDelay();
         } else {
             log.info("Walking to Lumbridge Castle kitchen");
             taskManager.pushTask(new WalkTask(plugin, pathfinderConfig, LUMBRIDGE_KITCHEN_RANGE, actionService, gameService, humanizerService));
