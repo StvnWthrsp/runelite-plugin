@@ -20,17 +20,19 @@ import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
-import java.util.Arrays;
+
+import java.util.*;
 
 import com.example.services.GameStateService;
 import com.example.services.EntityService;
 import com.example.services.ClickService;
 import com.example.services.UtilityService;
+import com.example.core.PluginCoordinator;
+import com.example.core.SessionTracker;
+import com.example.core.ConfigurationHelper;
+import com.example.core.EventManager;
 import net.runelite.api.GameObject;
 import net.runelite.api.NPC;
-import java.util.List;
-import java.util.Random;
-import java.util.ArrayList;
 import net.runelite.client.ui.ClientToolbar;
 import net.runelite.client.ui.NavigationButton;
 import net.runelite.client.util.ImageUtil;
@@ -38,6 +40,7 @@ import net.runelite.client.util.ImageUtil;
 import java.awt.image.BufferedImage;
 import net.runelite.client.ui.overlay.OverlayManager;
 import shortestpath.ShortestPathConfig;
+import shortestpath.Transport;
 import shortestpath.pathfinder.PathfinderConfig;
 import net.runelite.api.coords.WorldPoint;
 
@@ -72,14 +75,18 @@ public class RunepalPlugin extends Plugin
 	@Getter
 	private EventService eventService = null;
 
+	// Core coordinator services
+	private PluginCoordinator pluginCoordinator;
+	private SessionTracker sessionTracker;
+	private ConfigurationHelper configHelper;
+	private EventManager eventManager;
+
 	// Debugging and tracking variables
 	@Getter
 	private GameObject targetRock = null;
 	@Setter
 	@Getter
 	private NPC targetNpc = null;
-	private long sessionStartXp = 0;
-	private Instant sessionStartTime = null;
 
 	@Inject
 	private MouseIndicatorOverlay mouseIndicatorOverlay;
@@ -149,12 +156,15 @@ public class RunepalPlugin extends Plugin
 			pathfinderConfig.refresh();
 		}
 
+		// Initialize coordinator services
+		sessionTracker = new SessionTracker(client);
+		configHelper = new ConfigurationHelper(config);
+		eventManager = new EventManager(eventService);
+		pluginCoordinator = new PluginCoordinator(taskManager, config, configManager, this, 
+				pipeService, actionService, gameService, eventService, humanizerService, pathfinderConfig);
+
 		// Initialize session tracking
-		if (client.getLocalPlayer() != null)
-		{
-			sessionStartXp = client.getSkillExperience(Skill.MINING);
-			sessionStartTime = Instant.now();
-		}
+		sessionTracker.initializeSession();
 
 		// Don't initialize pipe service automatically - user must click Connect
 		log.info("Runepal initialized. Use the 'Connect' button to connect to the automation server.");
@@ -173,8 +183,8 @@ public class RunepalPlugin extends Plugin
 		taskManager.clearTasks();
 
 		// Clean up services
-		if (eventService != null) {
-			eventService.clearAllSubscribers();
+		if (eventManager != null) {
+			eventManager.clearAllSubscribers();
 		}
 
 		// Disconnect from pipe service
@@ -193,10 +203,8 @@ public class RunepalPlugin extends Plugin
 			}
 
 			// Initialize session tracking if not already done
-			if (sessionStartTime == null)
-			{
-				sessionStartXp = client.getSkillExperience(Skill.MINING);
-				sessionStartTime = Instant.now();
+			if (sessionTracker != null) {
+				sessionTracker.initializeSession();
 			}
 		}
 		else if (gameStateChanged.getGameState() == GameState.LOGIN_SCREEN)
@@ -211,29 +219,29 @@ public class RunepalPlugin extends Plugin
 		}
 		
 		// Publish game state change event
-		if (eventService != null) {
-			eventService.publish(gameStateChanged);
+		if (eventManager != null) {
+			eventManager.onGameStateChanged(gameStateChanged);
 		}
 	}
 
 	@Subscribe
 	public void onAnimationChanged(AnimationChanged animationChanged) {
-		if (eventService != null) {
-			eventService.publish(animationChanged);
+		if (eventManager != null) {
+			eventManager.onAnimationChanged(animationChanged);
 		}
 	}
 
 	@Subscribe
 	public void onStatChanged(StatChanged statChanged) {
-		if (eventService != null) {
-			eventService.publish(statChanged);
+		if (eventManager != null) {
+			eventManager.onStatChanged(statChanged);
 		}
 	}
 
 	@Subscribe
 	public void onInteractingChanged(InteractingChanged interactingChanged) {
-		if (eventService != null) {
-			eventService.publish(interactingChanged);
+		if (eventManager != null) {
+			eventManager.onInteractingChanged(interactingChanged);
 		}
 	}
 
@@ -246,61 +254,37 @@ public class RunepalPlugin extends Plugin
 	@Subscribe
 	public void onGameTick(GameTick gameTick) {
 		// Publish game tick event to the event service
-		if (eventService != null) {
-			eventService.publish(gameTick);
+		if (eventManager != null) {
+			eventManager.onGameTick(gameTick);
 		}
 
+		// Update UI
+		updateUI();
+
+		// Delegate to coordinator
+		if (pluginCoordinator != null) {
+			pluginCoordinator.handleGameTick();
+			currentState = pluginCoordinator.getCurrentState();
+		}
+	}
+
+	public void stopBot() {
+		if (pluginCoordinator != null) {
+			pluginCoordinator.stopBot();
+		} else {
+			configManager.setConfiguration("runepal", "startBot", false);
+		}
+	}
+
+	/**
+	 * Update the UI panel with current status.
+	 */
+	private void updateUI() {
 		if (panel != null) {
 			panel.setStatus(currentState);
 			panel.setButtonText(config.startBot() ? "Stop" : "Start");
 			panel.updateConnectionStatus();
 		}
-
-		boolean isRunning = config.startBot();
-
-		if (isRunning && !wasRunning) {
-			if (!isAutomationConnected()) {
-				log.warn("Cannot start bot: Automation server not connected. Please click 'Connect' first.");
-				stopBot();
-				return;
-			}
-			log.info("Bot starting...");
-
-			// Start the appropriate task based on bot type
-			BotType botType = config.botType();
-			switch (botType) {
-				case MINING_BOT:
-					taskManager.pushTask(new MiningTask(this, config, taskManager, pathfinderConfig, actionService, gameService, eventService, humanizerService));
-					break;
-				case COMBAT_BOT:
-					taskManager.pushTask(new CombatTask(this, config, taskManager, actionService, gameService, eventService, humanizerService));
-					break;
-				case FISHING_BOT:
-					taskManager.pushTask(new FishingTask(this, config, taskManager, pathfinderConfig, actionService, gameService, eventService, humanizerService));
-					break;
-				default:
-					log.warn("Unknown bot type: {}", botType);
-					stopBot();
-					return;
-			}
-
-			wasRunning = true;
-		}
-
-		if (!isRunning && wasRunning) {
-			log.info("Bot stopping...");
-			taskManager.clearTasks();
-			currentState = "IDLE";
-			wasRunning = false;
-		}
-
-		if (isRunning) {
-			taskManager.onLoop();
-		}
-	}
-
-	public void stopBot() {
-		configManager.setConfiguration("runepal", "startBot", false);
 	}
 
 	// --- Public Helper Methods for Tasks ---
@@ -308,55 +292,15 @@ public class RunepalPlugin extends Plugin
 	// between multiple bots.
 
 	public int[] getRockIds() {
-		String[] rockTypes = config.rockTypes().split(",");
-		List<Integer> idList = new ArrayList<>();
-		for (String rockType : rockTypes) {
-			switch (rockType) {
-				case "Copper":
-					idList.addAll(RockOres.COPPER.getRockIds());
-					break;
-				case "Tin":
-					idList.addAll(RockOres.TIN.getRockIds());
-					break;
-				case "Iron":
-					idList.addAll(RockOres.IRON.getRockIds());
-					break;
-				case "Coal":
-					idList.addAll(RockOres.COAL.getRockIds());
-					break;
-				case "Mithril":
-					idList.addAll(RockOres.MITHRIL.getRockIds());
-					break;
-				case "Adamantite":
-					idList.addAll(RockOres.ADAMANTITE.getRockIds());
-					break;
-				case "Runite":
-					idList.addAll(RockOres.RUNITE.getRockIds());
-					break;
-			}
-		}
-		return idList.stream().mapToInt(Integer::intValue).toArray();
+		return configHelper != null ? configHelper.getRockIds() : new int[0];
 	}
 
 	public int[] getOreIds() {
-		// A simple map from rock ID to ore ID. This could be improved.
-		return Arrays.stream(getRockIds())
-				.map(RockOres::getOreForRock)
-				.filter(oreId -> oreId != -1)
-				.toArray();
+		return configHelper != null ? configHelper.getOreIds() : new int[0];
 	}
 
 	public WorldPoint getBankCoordinates() {
-		String bankName = config.miningBank();
-		log.info("Bank name: {}", bankName);
-		switch (bankName) {
-			case "VARROCK_EAST":
-				return Banks.VARROCK_EAST.getBankCoordinates();
-			case "INTERIOR_TEST":
-				return Banks.INTERIOR_TEST.getBankCoordinates();
-			default:
-				return null;
-		}
+		return configHelper != null ? configHelper.getBankCoordinates() : null;
 	}
 
 	// --- Public Getters/Setters for Panel and Overlays ---
@@ -368,37 +312,32 @@ public class RunepalPlugin extends Plugin
 		rockOverlay.setTarget(rock);
 	}
 
-	public long getSessionXpGained()
-	{
-		if (sessionStartTime == null) return 0;
-		return client.getSkillExperience(Skill.MINING) - sessionStartXp;
+	public long getSessionXpGained() {
+		return sessionTracker != null ? sessionTracker.getSessionXpGained() : 0;
 	}
 
-	public Duration getSessionRuntime()
-	{
-		if (sessionStartTime == null) return Duration.ZERO;
-		return Duration.between(sessionStartTime, Instant.now());
+	public Duration getSessionRuntime() {
+		return sessionTracker != null ? sessionTracker.getSessionRuntime() : Duration.ZERO;
 	}
 
 	public String getXpPerHour() {
-		Duration runtime = getSessionRuntime();
-		long xpGained = getSessionXpGained();
-		if (runtime.isZero() || xpGained == 0) {
-			return "0";
+		return sessionTracker != null ? sessionTracker.getXpPerHour() : "0";
+	}
+
+	public boolean isAutomationConnected() {
+		return pluginCoordinator != null ? pluginCoordinator.isAutomationConnected() : pipeService.isConnected();
+	}
+
+	public boolean connectAutomation() {
+		if (pluginCoordinator != null) {
+			boolean connected = pluginCoordinator.connectAutomation();
+			if (panel != null) {
+				panel.updateConnectionStatus();
+			}
+			return connected;
 		}
-		long seconds = runtime.getSeconds();
-		double xpPerSecond = (double) xpGained / seconds;
-		long xpPerHour = (long) (xpPerSecond * 3600);
-		return String.format("%,d", xpPerHour);
-	}
-
-	public boolean isAutomationConnected()
-	{
-		return pipeService.isConnected();
-	}
-
-	public boolean connectAutomation()
-	{
+		
+		// Fallback to old logic if coordinator not available
 		try {
 			if (gameService == null) {
 				// Initialize game services in correct dependency order
@@ -413,35 +352,34 @@ public class RunepalPlugin extends Plugin
 				actionService = new ActionService(this, pipeService, gameService);
 			}
 			if (pipeService.connect()) {
-				// After connecting, send a "connect" command to the Python server
-				// to initialize the RemoteInput client.
 				if (pipeService.sendConnect()) {
 					log.info("Successfully connected and initialized automation server.");
-					panel.updateConnectionStatus();
+					if (panel != null) panel.updateConnectionStatus();
 					return true;
 				} else {
 					log.error("Connected to pipe, but failed to send connect command.");
 					pipeService.disconnect();
-					panel.updateConnectionStatus();
+					if (panel != null) panel.updateConnectionStatus();
 					return false;
 				}
 			} else {
 				log.error("Failed to establish connection with automation server.");
-				panel.updateConnectionStatus();
+				if (panel != null) panel.updateConnectionStatus();
 				return false;
 			}
 		} catch (Exception e) {
 			log.error("Error connecting to automation server: {}", e.getMessage(), e);
 			pipeService.disconnect();
-			panel.updateConnectionStatus();
+			if (panel != null) panel.updateConnectionStatus();
 			return false;
 		}
 	}
 
-	public boolean reconnectAutomation()
-	{
-		log.info("Attempting to reconnect to the automation server...");
-		pipeService.disconnect();
-		return connectAutomation();
+	public boolean reconnectAutomation() {
+		return pluginCoordinator != null ? pluginCoordinator.reconnectAutomation() : connectAutomation();
+	}
+
+	public Map<Integer, Set<Transport>> getTransports() {
+		return pathfinderConfig.getTransports();
 	}
 } 

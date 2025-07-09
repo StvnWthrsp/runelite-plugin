@@ -27,6 +27,11 @@ import net.runelite.api.CollisionDataFlag;
 import net.runelite.api.TileObject;
 import net.runelite.api.WallObject;
 
+import com.example.walking.TransportHandler;
+import com.example.walking.DoorHandler;
+import com.example.walking.StairsHandler;
+import com.example.walking.PathHandler;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
@@ -66,12 +71,19 @@ public class WalkTask implements BotTask {
     private WalkState currentState = WalkState.IDLE;
     private int delayTicks = 0;
     private List<WorldPoint> path;
+    private List<WorldPoint> transportPoints;
     private List<Node> nodePath;
     private Pathfinder pathfinder;
     private Future<?> pathfinderFuture;
     private final ExecutorService pathfinderExecutor;
     private final ScheduledExecutorService scheduler;
     private final ActionService actionService;
+    
+    // Walking handlers
+    private final TransportHandler transportHandler;
+    private final DoorHandler doorHandler;
+    private final StairsHandler stairsHandler;
+    private final PathHandler pathHandler;
     
     // Transport execution state
     private Object pendingTransport;
@@ -93,6 +105,12 @@ public class WalkTask implements BotTask {
         this.pathfinderExecutor = Executors.newSingleThreadExecutor(shortestPathNaming);
         this.scheduler = Executors.newSingleThreadScheduledExecutor();
         this.actionService = actionService;
+        
+        // Initialize walking handlers
+        this.transportHandler = new TransportHandler(client, gameService, actionService, humanizerService);
+        this.doorHandler = new DoorHandler(client, gameService, actionService, humanizerService);
+        this.stairsHandler = new StairsHandler(client, gameService, actionService, humanizerService);
+        this.pathHandler = new PathHandler(client, gameService, actionService, humanizerService);
     }
 
     @Override
@@ -174,6 +192,7 @@ public class WalkTask implements BotTask {
         this.nodePath = getNodePath();
         
         log.info("Enhanced path calculated with {} steps (including potential teleports/doors).", this.path.size());
+        transportPoints = getAllTransportPointsInPath(path);
         currentState = WalkState.WALKING;
         pathIndex = 0;
     }
@@ -194,9 +213,7 @@ public class WalkTask implements BotTask {
         }
 
         // Update path index based on current location
-        log.info("DEBUG: Before updatePathIndex - pathIndex: {}, currentLocation: {}", pathIndex, currentLocation);
-        updatePathIndex(currentLocation);
-        log.info("DEBUG: After updatePathIndex - pathIndex: {}", pathIndex);
+        pathIndex = pathHandler.updatePathIndex(currentLocation, path, pathIndex);
 
         if (pathIndex >= path.size()) {
             log.warn("Reached end of path but not at destination. Recalculating...");
@@ -204,134 +221,25 @@ public class WalkTask implements BotTask {
             return;
         }
 
-        // Check for transport steps using proper node detection
-        log.info("DEBUG: Checking for transport step at pathIndex {}, isTransportStep: {}", pathIndex, isTransportStep(pathIndex));
-        if (pathIndex < path.size() && isTransportStep(pathIndex)) {
-            WorldPoint currentStep = path.get(pathIndex);
-            Transport transport = getTransportInfo(pathIndex);
-            
-            log.info("DEBUG: Transport info - type: {}, displayInfo: {}, transport: {}", 
-                    transport != null ? transport.getType() : "null", 
-                    transport != null ? transport.getDisplayInfo() : "null", 
-                    transport != null ? "not null" : "null");
-            
-            if (transport != null) {
-                log.info("Detected transport step: {} at {}", transport.getDisplayInfo(), currentStep);
-                
-                // Check if we're close to the transport origin
-                if (currentLocation.distanceTo(currentStep) <= 2) {
-                    log.info("At transport origin, executing transport: {}", transport.getDisplayInfo());
-                    executeTransportInteraction(transport, currentStep);
-                    return;
-                } else {
-                    // Walk to the transport origin first
-                    log.info("Walking to transport origin at {}", currentStep);
-                    walkTo(currentStep);
-                    return;
-                }
-            }
+        // Delegate to specialized handlers
+        if (transportHandler.handleTransportStep(path, pathIndex, currentLocation)) {
+            log.info("Transport handler returned true");
+            return;
         }
         
-        // Legacy detection for backwards compatibility
-        if (pathIndex + 1 < path.size()) {
-            WorldPoint currentStep = path.get(pathIndex);
-            WorldPoint nextStep = path.get(pathIndex + 1);
-            int distance = currentStep.distanceTo(nextStep);
-            
-            // DEBUG: Add detailed logging for distance calculation
-            log.info("DEBUG: Path step {} -> {}, planes: {} -> {}, calculated distance: {}", 
-                    currentStep, nextStep, currentStep.getPlane(), nextStep.getPlane(), distance);
-            
-            // Check for broken distance calculation (Integer.MAX_VALUE indicates bug)
-              if (distance == Integer.MAX_VALUE) {
-                  log.warn("DEBUG: Distance calculation returned MAX_VALUE - this indicates a bug in distance calculation between planes");
-                // Calculate 2D distance manually for plane changes
-                int dx = Math.abs(nextStep.getX() - currentStep.getX());
-                int dy = Math.abs(nextStep.getY() - currentStep.getY());
-                int distance2D = (int) Math.sqrt(dx * dx + dy * dy);
-                log.info("DEBUG: Manual 2D distance calculation: {}", distance2D);
-                distance = distance2D; // Use 2D distance instead
-            }
-            
-            // First check for teleports - prioritize large distance OR plane change with medium distance
-            // Teleports can change planes and have varying distances depending on the type
-            if (distance > 20 || (currentStep.getPlane() != nextStep.getPlane() && distance > 10)) {
-                log.info("Detected possible teleport from {} to {} (distance: {}, plane change: {})", 
-                        currentStep, nextStep, distance, currentStep.getPlane() != nextStep.getPlane());
-                
-                // Check if we're close to the current step (teleport origin)
-                if (currentLocation.distanceTo(currentStep) <= 2) {
-                    log.info("At teleport origin, executing transport to {}", nextStep);
-                    executeTransport(currentStep, nextStep);
-                    return;
-                } else {
-                    // Walk to the teleport origin first
-                    log.info("Walking to teleport origin at {}", currentStep);
-                    walkTo(currentStep);
-                    return;
-                }
-            }
-            
-            // Then check for plane changes with short distance (stairs/ladders only)
-            if (currentStep.getPlane() != nextStep.getPlane() && distance <= 10) {
-                log.info("DEBUG: Detected short-distance plane change from {} to {} (distance: {}) - this should be handled as stairs/ladder", currentStep, nextStep, distance);
-                
-                  // Check if we're close to the stair location
-                  if (currentLocation.distanceTo(currentStep) <= 2) {
-                      log.info("At stair location, looking for stairs/ladder object");
-                      GameObject stairObject = findStairObjectGeneric(currentStep);
-                      if (stairObject != null) {
-                          String action = nextStep.getPlane() > currentStep.getPlane() ? "Climb-up" : "Climb-down";
-                          log.info("Found stair object {} at {}, using action: {}", stairObject.getId(), currentStep, action);
-                          stairsToUse = stairObject;
-                          actionToTake = action;
-                          currentState = WalkState.USING_STAIRS;
-                          delayTicks = humanizerService.getRandomDelay(1, 5);
-                          return;
-                      } else {
-                            log.info("Stair object detected but is not GameObject, continuing with normal walking.");
-                      }
-                } else {
-                    // Walk to the stair location first
-                    log.info("Walking to stair location at {}", currentStep);
-                    walkTo(currentStep);
-                    return;
-                }
-            }
+        if (stairsHandler.handleStairsStep(path, pathIndex, currentLocation)) {
+            log.info("Stair handler returned true");
+            return;
+        }
+        
+        if (doorHandler.handleDoorStep(path, pathIndex, currentLocation)) {
+            log.info("Door handler returned true");
+            return;
         }
 
-        // Check for doors blocking our path using collision data
-        DoorInfo doorInfo = findDoorBlockingPath(currentLocation);
-        if (doorInfo != null) {
-            log.info("Door detected at {} blocking path to {}", doorInfo.doorLocation, doorInfo.targetLocation);
-            
-            // Walk to the door first if we're not adjacent
-            if (currentLocation.distanceTo(doorInfo.doorLocation) > 1) {
-                log.info("Walking to door at {}, stopping at {}", doorInfo.doorLocation, doorInfo.lastUnblockedPoint);
-                walkTo(doorInfo.lastUnblockedPoint);
-                return;
-            }
-            
-            // We're adjacent to the door, try to interact with it
-            doorToOpen = findDoorObject(doorInfo.doorLocation);
-            if ((doorToOpen != null && doorToOpen instanceof GameObject) || (doorToOpen != null && doorToOpen instanceof WallObject)) {
-                log.debug("Found door object {} at {}, attempting to open", doorToOpen.getId(), doorInfo.doorLocation);
-                currentState = WalkState.OPENING_DOOR;
-                delayTicks = humanizerService.getRandomDelay(1, 5);
-                return;
-            } else {
-                log.warn("Door object detected but is not GameObject or WallObject, continuing with normal walking.");
-            }
-        }
-
-        // Normal walking - proceed to next point in path
-        if (pathIndex < path.size()) {
-            WorldPoint target = getNextMinimapTarget();
-            log.info("DEBUG: Normal walking - pathIndex: {}, target: {}, currentLocation: {}", pathIndex, target, currentLocation);
-            walkTo(target);
+        // Handle normal walking
+        if (pathHandler.handleNormalWalking(path, pathIndex, currentLocation)) {
             delayTicks = humanizerService.getRandomDelay(3, 10);
-        } else {
-            log.warn("DEBUG: pathIndex {} >= path.size() {}, cannot proceed with walking", pathIndex, path.size());
         }
     }
 
@@ -619,7 +527,7 @@ public class WalkTask implements BotTask {
         int closestIndex = pathIndex;
         int closestDistance = Integer.MAX_VALUE;
         
-        log.info("DEBUG: updatePathIndex - currentLocation: {}, pathIndex: {}, path.size(): {}", currentLocation, pathIndex, path.size());
+        log.debug("DEBUG: updatePathIndex - currentLocation: {}, pathIndex: {}, path.size(): {}", currentLocation, pathIndex, path.size());
         
         // Look for the closest point in the path ahead of us (expanded range)
         for (int i = pathIndex; i < Math.min(pathIndex + 15, path.size()); i++) {
@@ -631,7 +539,7 @@ public class WalkTask implements BotTask {
             }
         }
         
-        log.info("DEBUG: Closest index: {}, closest distance: {}, current pathIndex: {}", closestIndex, closestDistance, pathIndex);
+        log.debug("DEBUG: Closest index: {}, closest distance: {}, current pathIndex: {}", closestIndex, closestDistance, pathIndex);
         
         // More aggressive update conditions:
         // 1. If we're very close (distance <= 2) and it's a later step, update
@@ -639,15 +547,15 @@ public class WalkTask implements BotTask {
         if ((closestDistance <= 2 && closestIndex > pathIndex) || 
             (closestDistance <= 5 && closestIndex > pathIndex + 3)) {
             pathIndex = closestIndex;
-            log.info("DEBUG: Updated path index to {}, current location: {}", pathIndex, path.get(pathIndex));
+            log.debug("DEBUG: Updated path index to {}, current location: {}", pathIndex, path.get(pathIndex));
         } else {
-            log.info("DEBUG: No path index update - closestDistance: {}, closestIndex: {}, pathIndex: {}", closestDistance, closestIndex, pathIndex);
+            log.debug("DEBUG: No path index update - closestDistance: {}, closestIndex: {}, pathIndex: {}", closestDistance, closestIndex, pathIndex);
         }
     }
 
     private WorldPoint getNextMinimapTarget() {
         WorldPoint currentLocation = gameService.getPlayerLocation();
-        log.info("DEBUG: getNextMinimapTarget - pathIndex: {}, path.size(): {}, currentLocation: {}", pathIndex, path.size(), currentLocation);
+        log.debug("DEBUG: getNextMinimapTarget - pathIndex: {}, path.size(): {}, currentLocation: {}", pathIndex, path.size(), currentLocation);
         
         // Start from furthest points and work backwards, but skip points we're already very close to
         for (int i = path.size() - 1; i >= pathIndex; i--) {
@@ -656,12 +564,12 @@ public class WalkTask implements BotTask {
             
             // Skip points we're already very close to (avoid clicking current location)
             if (distanceToPoint <= 1) {
-                log.info("DEBUG: Skipping target at index {} (too close, distance: {}): {}", i, distanceToPoint, point);
+                log.debug("DEBUG: Skipping target at index {} (too close, distance: {}): {}", i, distanceToPoint, point);
                 continue;
             }
             
             if (isPointOnMinimap(point)) {
-                log.info("DEBUG: Selected minimap target at index {} (distance: {}): {}", i, distanceToPoint, point);
+                log.debug("DEBUG: Selected minimap target at index {} (distance: {}): {}", i, distanceToPoint, point);
                 return point;
             }
         }
@@ -669,18 +577,18 @@ public class WalkTask implements BotTask {
         // Fallback to next path step if we can't find a distant minimap target
         if (pathIndex + 1 < path.size()) {
             WorldPoint fallback = path.get(pathIndex + 1);
-            log.info("DEBUG: Using fallback target at pathIndex+1 {}: {}", pathIndex + 1, fallback);
+            log.debug("DEBUG: Using fallback target at pathIndex+1 {}: {}", pathIndex + 1, fallback);
             return fallback;
         }
         
         // Last resort - current path position
         if (pathIndex < path.size()) {
             WorldPoint lastResort = path.get(pathIndex);
-            log.info("DEBUG: Using last resort target at pathIndex {}: {}", pathIndex, lastResort);
+            log.debug("DEBUG: Using last resort target at pathIndex {}: {}", pathIndex, lastResort);
             return lastResort;
         }
         
-        log.warn("DEBUG: No minimap target found - pathIndex: {}, path.size(): {}", pathIndex, path.size());
+        log.warn("WARN: No minimap target found - pathIndex: {}, path.size(): {}", pathIndex, path.size());
         return null;
     }
 
@@ -1221,5 +1129,35 @@ public class WalkTask implements BotTask {
         } catch (Exception e) {
             log.warn("Error sending key press {}: {}", key, e.getMessage());
         }
+    }
+
+    /**
+     * Get all the transport points along a path
+     * @param path the path from a pathfinder
+     * @return a list of world points that are transport origins along the path
+     */
+    private List<WorldPoint> getAllTransportPointsInPath(List<WorldPoint> path) {
+        List<WorldPoint> transportPoints = new ArrayList<>();
+        int packedPoint;
+        int i = 0;
+        for (WorldPoint point : path) {
+            packedPoint = WorldPointUtil.packWorldPoint(point);
+            WorldPoint originPoint;
+            WorldPoint destinationPoint;
+            if (plugin.getTransports().containsKey(packedPoint)) {
+                Set<Transport> transportSet = plugin.getTransports().get(packedPoint);
+                for (Transport transport : transportSet) {
+                    originPoint = WorldPointUtil.unpackWorldPoint(transport.getOrigin());
+                    destinationPoint = WorldPointUtil.unpackWorldPoint(transport.getDestination());
+                    if (originPoint.equals(path.get(i)) && destinationPoint.equals(path.get(i+1))) {
+                        log.info("Transport from {} to {}, click object: {}", path.get(i), path.get(i+1), transport.getObjectID());
+                        transportPoints.add(point);
+                    }
+                }
+            }
+            i++;
+        }
+        log.info("Finding transports done. All transports: {}", transportPoints);
+        return transportPoints;
     }
 } 

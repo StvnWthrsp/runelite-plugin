@@ -33,8 +33,6 @@ public class FishingTask implements BotTask {
         FISHING,
         WAIT_FISHING,
         WALKING_TO_COOKING,
-        COOKING,
-        WAIT_COOKING,
         WALKING_TO_BANK,
         DEPOSITING,
         WITHDRAWING,
@@ -67,9 +65,7 @@ public class FishingTask implements BotTask {
     private int delayTicks = 0;
     private int idleTicks = 0;
     private NPC fishingSpot = null;
-    private GameObject cookingRange = null;
     private boolean fishingStarted = false;
-    private boolean cookingStarted = false;
 
     public FishingTask(RunepalPlugin plugin, BotConfig config, TaskManager taskManager, 
                       PathfinderConfig pathfinderConfig, ActionService actionService, 
@@ -87,11 +83,6 @@ public class FishingTask implements BotTask {
     @Override
     public void onStart() {
         log.info("Starting Fishing Task.");
-        if (this.currentState == FishingState.WAITING_FOR_SUBTASK) {
-            log.info("Returned from subtask. Determining next step.");
-        } else {
-            log.info("Task just started. Determining next step.");
-        }
         determineNextState();
         this.eventService.subscribe(GameTick.class, this::onGameTick);
     }
@@ -100,7 +91,6 @@ public class FishingTask implements BotTask {
     public void onStop() {
         log.info("Stopping Fishing Task.");
         this.fishingSpot = null;
-        this.cookingRange = null;
         this.eventService.unsubscribe(GameTick.class, this::onGameTick);
     }
 
@@ -157,12 +147,6 @@ public class FishingTask implements BotTask {
             case WALKING_TO_COOKING:
                 doWalkingToCooking();
                 break;
-            case COOKING:
-                doCooking();
-                break;
-            case WAIT_COOKING:
-                doWaitCooking();
-                break;
             case WALKING_TO_BANK:
                 doWalkingToBank();
                 break;
@@ -190,12 +174,6 @@ public class FishingTask implements BotTask {
             }
         }
         
-        // Handle cooking completion detection
-        if (currentState == FishingState.WAIT_COOKING && cookingStarted) {
-            if (!gameService.isCurrentAnimation(COOKING_ANIMATION_ID)) {
-                finishCooking();
-            }
-        }
     }
 
 
@@ -258,8 +236,12 @@ public class FishingTask implements BotTask {
     private void doWalkingToCooking() {
         WorldPoint playerLocation = gameService.getPlayerLocation();
         if (playerLocation.distanceTo(LUMBRIDGE_KITCHEN_RANGE) <= 10) {
-            log.info("Arrived at kitchen");
-            currentState = FishingState.COOKING;
+            log.info("Arrived at kitchen, starting cooking task");
+            CookingTask cookingTask = new CookingTask(plugin, actionService, gameService, eventService, humanizerService,
+                    LUMBRIDGE_KITCHEN_RANGE, KITCHEN_RANGE_ID,
+                    new int[]{RAW_SHRIMP_ID, RAW_ANCHOVIES_ID});
+            taskManager.pushTask(cookingTask);
+            currentState = FishingState.WAITING_FOR_SUBTASK;
         } else {
             log.info("Walking to Lumbridge Castle kitchen");
             taskManager.pushTask(new WalkTask(plugin, pathfinderConfig, LUMBRIDGE_KITCHEN_RANGE, actionService, gameService, humanizerService));
@@ -267,65 +249,6 @@ public class FishingTask implements BotTask {
         }
     }
 
-    private void doCooking() {
-        if (!hasRawFish()) {
-            log.info("No raw fish to cook, moving to bank");
-            currentState = FishingState.WALKING_TO_BANK;
-            return;
-        }
-
-        // Find cooking range
-        cookingRange = gameService.findNearestGameObject(KITCHEN_RANGE_ID);
-        if (cookingRange == null) {
-            log.warn("No cooking range found");
-            delayTicks = humanizerService.getRandomDelay(1, 2);
-            return;
-        }
-
-        log.info("Starting cooking process");
-        // First, use raw fish on the range
-        int rawFishId = getRawFishId();
-        if (rawFishId != -1) {
-            actionService.interactWithGameObject(cookingRange, "Cook");
-            cookingStarted = false;
-            idleTicks = 0;
-            currentState = FishingState.WAIT_COOKING;
-        }
-    }
-
-    private void doWaitCooking() {
-        // Check if we're currently performing the cooking animation
-        if (gameService.isCurrentAnimation(COOKING_ANIMATION_ID)) {
-            cookingStarted = true;
-            idleTicks = 0; // Reset idle counter if we see a cooking animation
-        } else {
-            idleTicks++; // Only increment idle ticks if not cooking
-        }
-        
-        // Check if cooking interface appeared or we're in cooking animation
-        if (idleTicks > 3 && !cookingStarted) {
-            // After a few ticks, click to start cooking all
-            log.info("Clicking to cook all fish");
-            actionService.sendSpacebarRequest(); // Space bar to cook all
-            idleTicks = 0;
-        }
-        
-        if (idleTicks > 30) { // 30 ticks = 18 seconds timeout
-            log.warn("Cooking seems to have failed or finished. Checking inventory.");
-            finishCooking();
-        }
-    }
-
-    private void finishCooking() {
-        log.info("Finished cooking");
-        cookingRange = null;
-        cookingStarted = false;
-        if (hasRawFish()) {
-            currentState = FishingState.WALKING_TO_COOKING;
-        } else {
-            currentState = FishingState.WALKING_TO_BANK;
-        }
-    }
 
     private void doWalkingToBank() {
         WorldPoint playerLocation = gameService.getPlayerLocation();
@@ -357,6 +280,11 @@ public class FishingTask implements BotTask {
 
     private void determineNextState() {
         // After completing a subtask, determine what to do next
+        if (this.currentState == FishingState.WAITING_FOR_SUBTASK) {
+            log.debug("DEBUG: Returned from subtask. Determining next step.");
+        } else {
+            log.debug("DEBUG: Task just started. Determining next step.");
+        }
         if (gameService.isInventoryFull()) {
             if (hasRawFish()) {
                 currentState = FishingState.WALKING_TO_COOKING;
