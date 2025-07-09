@@ -65,6 +65,7 @@ public class WalkTask implements BotTask {
 
     private WalkState currentState = WalkState.IDLE;
     private int delayTicks = 0;
+    private int retries = 0;
     private List<WorldPoint> path;
     private List<Node> nodePath;
     private Pathfinder pathfinder;
@@ -752,6 +753,11 @@ public class WalkTask implements BotTask {
     }
 
     public void walkTo(WorldPoint worldPoint) {
+        if (retries > 4) {
+            log.warn("Recalculating path after 5 failures.");
+            currentState = WalkState.IDLE;
+            return;
+        }
         LocalPoint localPoint = LocalPoint.fromWorld(client.getWorldView(-1), worldPoint);
         if (localPoint != null) {
             net.runelite.api.Point minimapPoint = Perspective.localToMinimap(client, localPoint);
@@ -760,9 +766,11 @@ public class WalkTask implements BotTask {
                 actionService.sendClickRequest(new java.awt.Point(minimapPoint.getX(), minimapPoint.getY()), true);
             } else {
                 log.warn("Cannot walk to {}: not visible on minimap.", worldPoint);
+                retries++;
             }
         } else {
             log.warn("Cannot walk to {}: not in scene.", worldPoint);
+            retries++;
         }
     }
 
@@ -790,7 +798,7 @@ public class WalkTask implements BotTask {
             }
             stairsToUse = null;
             actionToTake = null;
-            currentState = WalkState.WALKING;
+            currentState = WalkState.IDLE;
             delayTicks = humanizerService.getRandomDelay(0, 2);
         } else {
             log.warn("Could not use stairs. Recalculating path.");
