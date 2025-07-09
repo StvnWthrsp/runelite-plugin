@@ -167,6 +167,16 @@ public class PipeService {
         KeyCommand command = new KeyCommand("key_release", key);
         return sendCommand(command);
     }
+
+    
+    /**
+     * Send an exit command to kill the injected client.
+     * @return true if sent successfully
+     */
+    public boolean sendExit() {
+        ExitCommand command = new ExitCommand();
+        return sendCommand(command);
+    }
     
     // Command classes for JSON serialization
     @SuppressWarnings("unused")
@@ -209,5 +219,10 @@ public class PipeService {
             this.action = action;
             this.key = key;
         }
+    }
+
+    @SuppressWarnings("unused")
+    private static class ExitCommand {
+        public final String action = "exit";
     }
 } 

@@ -102,6 +102,7 @@ class PipeServer:
             except pywintypes.error as e:
                 if e.winerror == 109:  # ERROR_BROKEN_PIPE
                     log.info("Client disconnected.")
+                    automation_manager.kill_client()
                     break
                 else:
                     log.error(f"Read error: {e}")
@@ -135,6 +136,8 @@ class PipeServer:
                 self._handle_key_hold(command)
             elif action == 'key_release':
                 self._handle_key_release(command)
+            elif action == 'exit':
+                self._handle_exit()
             else:
                 log.warning(f"Unknown action: {action}")
                 
@@ -232,6 +235,11 @@ class PipeServer:
         except Exception as e:
             log.error(f"Key release command failed: {e}")
     
+    def _handle_exit(self):
+        """Handle exit command."""
+        automation_manager.kill_client()
+        log.info("Exit command processed successfully.")
+    
     def stop(self):
         """Stop the named pipe server."""
         self.running = False
@@ -254,6 +262,7 @@ def main():
     finally:
         server.stop()
         automation_manager.disconnect()
+        automation_manager.kill_client()
         log.info("Server shutdown complete.")
 
 if __name__ == "__main__":

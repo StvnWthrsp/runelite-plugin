@@ -201,6 +201,13 @@ class Automation:
         if self.client:
             self.client.release_key(vk_code)
 
+    def kill_client(self):
+        """Kills the client connection."""
+        if self.client:
+            print("Killing client...")
+            self.client.kill_client()
+            self.client = None
+
     def _wind_mouse_move(self, start_x, start_y, dest_x, dest_y, G_0=9, W_0=3, M_0=15, D_0=12):
         '''
         WindMouse algorithm. Calls the move_mouse kwarg with each new step.

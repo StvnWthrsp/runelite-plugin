@@ -145,9 +145,6 @@ public class RunepalPlugin extends Plugin
 
 		ShortestPathConfig shortestPathConfig = configManager.getConfig(ShortestPathConfig.class);
 		pathfinderConfig = new PathfinderConfig(client, shortestPathConfig);
-		if (client.getGameState() == GameState.LOGGED_IN) {
-			pathfinderConfig.refresh();
-		}
 
 		// Initialize session tracking
 		if (client.getLocalPlayer() != null)
@@ -163,7 +160,7 @@ public class RunepalPlugin extends Plugin
 	@Override
 	protected void shutDown() throws Exception
 	{
-		log.info("General Bot stopped!");
+		log.info("Runepal stopped!");
 		clientToolbar.removeNavigation(navButton);
 		overlayManager.remove(mouseIndicatorOverlay);
 		overlayManager.remove(rockOverlay);
@@ -177,8 +174,9 @@ public class RunepalPlugin extends Plugin
 			eventService.clearAllSubscribers();
 		}
 
-		// Disconnect from pipe service
-		pipeService.disconnect();
+		// Kill the client
+		pipeService.sendExit();
+		
 	}
 
 	@Subscribe
@@ -187,10 +185,6 @@ public class RunepalPlugin extends Plugin
 		if (gameStateChanged.getGameState() == GameState.LOGGED_IN)
 		{
 			log.info("Runepal is running - player logged in.");
-
-			if (pathfinderConfig != null) {
-				pathfinderConfig.refresh();
-			}
 
 			// Initialize session tracking if not already done
 			if (sessionStartTime == null)
