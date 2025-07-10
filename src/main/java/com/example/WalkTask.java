@@ -1,17 +1,16 @@
 package com.example;
 
+import com.example.entity.Interactable;
+import com.example.entity.NpcEntity;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
-import net.runelite.api.Client;
+import net.runelite.api.*;
 import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.gameval.ObjectID;
-import net.runelite.api.Perspective;
-import net.runelite.api.Point;
 import net.runelite.api.coords.LocalPoint;
 import net.runelite.api.widgets.Widget;
-import net.runelite.api.GameObject;
 import shortestpath.WorldPointUtil;
 import shortestpath.pathfinder.Pathfinder;
 import shortestpath.pathfinder.PathfinderConfig;
@@ -19,19 +18,8 @@ import shortestpath.pathfinder.TransportNode;
 import shortestpath.pathfinder.Node;
 import shortestpath.Transport;
 import shortestpath.TransportType;
-import net.runelite.api.Scene;
-import net.runelite.api.Tile;
-import net.runelite.api.Constants;
-import net.runelite.api.CollisionData;
-import net.runelite.api.CollisionDataFlag;
-import net.runelite.api.TileObject;
-import net.runelite.api.WallObject;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -50,6 +38,7 @@ public class WalkTask implements BotTask {
         EXECUTING_TELEPORT,
         OPENING_DOOR,
         USING_STAIRS,
+        USING_TRANSPORT,
         WAITING_FOR_TRANSPORT,
         FAILED,
         FINISHED
@@ -69,6 +58,8 @@ public class WalkTask implements BotTask {
     private int delayTicks = 0;
     private int retries = 0;
     private List<WorldPoint> path;
+    private List<WorldPoint> transportPoints = new ArrayList<>();
+    private List<Transport> transportsInPath = new ArrayList<>();;
     private List<Node> nodePath;
     private Pathfinder pathfinder;
     private Future<?> pathfinderFuture;
@@ -83,6 +74,7 @@ public class WalkTask implements BotTask {
     private int pathIndex = 0;
     private TileObject doorToOpen;
     private GameObject stairsToUse;
+    private GameObject transportToUse;
     private String actionToTake;
 
     public WalkTask(RunepalPlugin plugin, PathfinderConfig pathfinderConfig, WorldPoint destination, ActionService actionService, GameService gameService, HumanizerService humanizerService) {
@@ -131,11 +123,25 @@ public class WalkTask implements BotTask {
             case USING_STAIRS:
                 handleStairs();
                 break;
+            case USING_TRANSPORT:
+                handleTransport();
+                break;
             case WAITING_FOR_TRANSPORT:
                 handleTransportWait();
                 break;
             default:
                 break;
+        }
+    }
+
+    private void handleTransport() {
+        if ((transportToUse != null)) {
+            actionService.interactWithGameObject(transportToUse, "whatever");
+            currentState = WalkState.WALKING;
+            delayTicks = humanizerService.getRandomDelay(0, 2);
+        } else {
+            log.warn("Could not use transport. Recalculating path.");
+            currentState = WalkState.IDLE;
         }
     }
 
@@ -172,6 +178,8 @@ public class WalkTask implements BotTask {
         this.path = resultPath.stream()
                 .map(WorldPointUtil::unpackWorldPoint)
                 .collect(Collectors.toList());
+
+        getAllTransportPointsInPath(this.path);
         
         // Store the node path for proper transport detection
         this.nodePath = getNodePath();
@@ -234,6 +242,37 @@ public class WalkTask implements BotTask {
 //                }
 //            }
 //        }
+
+        Transport transportToUse = findTransportInPath(currentLocation);
+        if (transportToUse != null) {
+            log.info("Transport located: {}", transportToUse.getObjectID());
+            WorldPoint originPoint = WorldPointUtil.unpackWorldPoint(transportToUse.getOrigin());
+            if (currentLocation.distanceTo(originPoint) > 1) {
+                walkTo(originPoint);
+                return;
+            }
+//            Interactable selectedEntity = gameService.findNearest(interactable -> {
+//                if (!(interactable instanceof GameObject)) {
+//                    return false;
+//                }
+//
+//                GameObject gameObject = (GameObject) interactable;
+//                if (gameObject.getId() == transportToUse.getObjectID()) {
+//                    return true;
+//                }
+//                return false;
+//            });
+            GameObject transportObject = gameService.findNearestGameObject(transportToUse.getObjectID());
+            if (transportObject != null) {
+                this.transportToUse = transportObject;
+                currentState = WalkState.USING_TRANSPORT;
+                delayTicks = humanizerService.getRandomDelay(1, 5);
+                return;
+            } else {
+                log.warn("Transport detected but could not find object, continuing with normal walking.");
+            }
+            return;
+        }
         
         // Legacy detection for backwards compatibility
         if (pathIndex + 1 < path.size()) {
@@ -440,7 +479,7 @@ public class WalkTask implements BotTask {
             log.trace("Checking if movement between {} and {} is blocked by a door", currentLocation, pathPoint);
             // Check if we can move from current point to this path point
             if (isMovementBlockedByDoor(currentLocation, pathPoint)) {
-                log.debug("Movement between current location{} and {} is blocked by a door", currentLocation, pathPoint);
+                log.debug("Movement between current location {} and {} is blocked by a door", currentLocation, pathPoint);
                 log.debug("Last reachable point: {}", currentLocation);
                 return new DoorInfo(pathPoint, pathPoint, currentLocation);
             }
@@ -626,6 +665,32 @@ public class WalkTask implements BotTask {
             this.targetLocation = targetLocation;
             this.lastUnblockedPoint = lastUnblockedPoint;
         }
+    }
+
+    /**
+     * Finds a transport in oor path
+     */
+    private Transport findTransportInPath(WorldPoint currentLocation) {
+        for (int i = pathIndex; i < Math.min(pathIndex + 15, path.size()); i++) {
+            WorldPoint pathPoint = path.get(i);
+            log.trace("Checking if movement between {} and {} is a transport", currentLocation, pathPoint);
+            // Check if we can move from current point to this path point
+            if (transportPoints.contains(pathPoint)) {
+                log.debug("Last reachable point: {}", currentLocation);
+                return transportsInPath.get(transportPoints.indexOf(pathPoint));
+            }
+
+            // Also check the previous point to this point
+            if (i > 0) {
+                WorldPoint prevPoint = path.get(i - 1);
+                if (transportPoints.contains(prevPoint)) {
+                    log.debug("Last reachable point: {}", path.get(i - 1));
+                    return transportsInPath.get(transportPoints.indexOf(prevPoint));
+                }
+            }
+        }
+
+        return null;
     }
 
     private void updatePathIndex(WorldPoint currentLocation) {
@@ -1246,12 +1311,10 @@ public class WalkTask implements BotTask {
     }
 
     /**
-     * Get all the transport points along a path
+     * Get all the transport points along a path, populating the class variables
      * @param path the path from a pathfinder
-     * @return a list of world points that are transport origins along the path
      */
-    private List<WorldPoint> getAllTransportPointsInPath(List<WorldPoint> path) {
-        List<WorldPoint> transportPoints = new ArrayList<>();
+    private void getAllTransportPointsInPath(List<WorldPoint> path) {
         int packedPoint;
         int i = 0;
         for (WorldPoint point : path) {
@@ -1265,6 +1328,7 @@ public class WalkTask implements BotTask {
                     destinationPoint = WorldPointUtil.unpackWorldPoint(transport.getDestination());
                     if (originPoint.equals(path.get(i)) && destinationPoint.equals(path.get(i+1))) {
                         log.info("Transport from {} to {}, click object: {}", path.get(i), path.get(i+1), transport.getObjectID());
+                        transportsInPath.add(transport);
                         transportPoints.add(point);
                     }
                 }
@@ -1272,6 +1336,5 @@ public class WalkTask implements BotTask {
             i++;
         }
         log.info("Finding transports done. All transports: {}", transportPoints);
-        return transportPoints;
     }
 } 
