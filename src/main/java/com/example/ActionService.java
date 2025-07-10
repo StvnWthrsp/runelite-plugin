@@ -342,7 +342,7 @@ public class ActionService {
      * @return true if the interaction was initiated
      */
     public boolean interactWithGameObject(GameObject gameObject, String action) {
-
+        // TODO: Add a move argument, we might not always want to move the mouse
         if (gameObject == null) {
             log.warn("Cannot interact with null game object");
             return false;
@@ -351,6 +351,7 @@ public class ActionService {
         Point clickPoint = gameService.getRandomClickablePoint(gameObject);
         if (clickObstructionChecker.isClickObstructed(clickPoint)) {
             log.warn("Click point is obstructed");
+            // TODO: Rotate the camera so we can try again
             return false;
         }
         if (clickPoint.x == -1) {
@@ -375,6 +376,7 @@ public class ActionService {
         Point clickPoint = gameService.getRandomClickablePoint(wallObject);
         if (clickObstructionChecker.isClickObstructed(clickPoint)) {
             log.warn("Click point is obstructed");
+            // TODO: Rotate the camera so we can try again
             return false;
         }
         if (clickPoint.x == -1) {
@@ -405,15 +407,30 @@ public class ActionService {
 
     public void sendClickRequest(Point point, boolean move) {
         log.info("Sending click request to point: {}, move: {}", point, move);
+        if (!move) {
+            if (!pipeService.sendClick(0, 0, false)) {
+                log.warn("Failed to send click command via pipe");
+                plugin.stopBot();
+            }
+            return;
+        }
 		if (point == null || point.x == -1) {
 			log.warn("Invalid point provided to sendClickRequest.");
 			return;
 		}
-        if (!pipeService.sendClick(point.x, point.y, move)) {
+        if (!pipeService.sendClick(point.x, point.y, true)) {
             log.warn("Failed to send click command via pipe");
             plugin.stopBot();
         }
 	}
+
+    public void sendRightClickRequest() {
+        log.info("Sending right click request");
+        if (!pipeService.sendRightClick(0, 0, false)) {
+            log.warn("Failed to send click command via pipe");
+            plugin.stopBot();
+        }
+    }
 
     public void sendMouseMoveRequest(Point point) {
 		if (point == null || point.x == -1) {

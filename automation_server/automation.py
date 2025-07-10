@@ -136,25 +136,30 @@ class Automation:
         self._ensure_connected()
         if self.client:
             self.move_mouse(x, y)
-            time.sleep(random.uniform(0.02, 0.05))
+            time.sleep(random.gauss(mu=0.035, sigma=0.015))
             self.client.hold_mouse(1) # 1 for left-click
-            time.sleep(random.uniform(0.03, 0.07))
+            time.sleep(random.gauss(mu=0.05, sigma=0.02))
             self.client.release_mouse(1)
 
-    def click(self, x: int, y: int):
+    def click(self):
         """
-        Moves the mouse to the specified coordinates and performs a left-click.
-
-        Args:
-            x: The x-coordinate (relative to the client window).
-            y: The y-coordinate (relative to the client window).
+        Performs a left-click.
         """
         self._ensure_connected()
         if self.client:
-            time.sleep(random.uniform(0.02, 0.05))
             self.client.hold_mouse(1) # 1 for left-click
-            time.sleep(random.uniform(0.03, 0.07))
+            time.sleep(random.gauss(mu=0.05, sigma=0.02))
             self.client.release_mouse(1)
+    
+    def right_click(self):
+        """
+        Performs a right-click.
+        """
+        self._ensure_connected()
+        if self.client:
+            self.client.hold_mouse(0) # 2 for right-click
+            time.sleep(random.gauss(mu=0.05, sigma=0.02))
+            self.client.release_mouse(0)
 
     def _get_vk_code(self, key: str):
         key_lower = key.lower()

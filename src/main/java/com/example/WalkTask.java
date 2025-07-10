@@ -11,6 +11,7 @@ import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.gameval.ObjectID;
 import net.runelite.api.coords.LocalPoint;
 import net.runelite.api.widgets.Widget;
+import net.runelite.client.util.Text;
 import shortestpath.WorldPointUtil;
 import shortestpath.pathfinder.Pathfinder;
 import shortestpath.pathfinder.PathfinderConfig;
@@ -74,7 +75,8 @@ public class WalkTask implements BotTask {
     private int pathIndex = 0;
     private TileObject doorToOpen;
     private GameObject stairsToUse;
-    private GameObject transportToUse;
+    private Transport transportToUse;
+    private GameObject transportObject;
     private String actionToTake;
 
     public WalkTask(RunepalPlugin plugin, PathfinderConfig pathfinderConfig, WorldPoint destination, ActionService actionService, GameService gameService, HumanizerService humanizerService) {
@@ -135,8 +137,35 @@ public class WalkTask implements BotTask {
     }
 
     private void handleTransport() {
-        if ((transportToUse != null)) {
-            actionService.interactWithGameObject(transportToUse, "whatever");
+        if ((transportObject != null)) {
+            // TODO: More efficient to check if mouse is in clickable area, or check menu entries?
+            // TODO: Maybe a helper is needed for checking if a menu entry is in the list
+
+            // Get the menu entries that are present on hover
+            MenuEntry[] menuEntries = client.getMenu().getMenuEntries();
+
+            // If there is no menu or the wrong object is targeted, move the mouse to hover over the object
+            if (menuEntries.length == 0) {
+                actionService.sendMouseMoveRequest(gameService.getRandomClickablePoint(transportObject));
+                delayTicks = humanizerService.getShortDelay();
+                return;
+            } else if (!Text.removeTags(menuEntries[menuEntries.length - 1].getTarget()).equals(transportToUse.getMenuTarget())) {
+                actionService.sendMouseMoveRequest(gameService.getRandomClickablePoint(transportObject));
+                delayTicks = humanizerService.getShortDelay();
+                return;
+            }
+
+            // Left-click if the menu option is correct
+            // Else right-click, delay, click the correct option
+            if (Text.removeTags(menuEntries[menuEntries.length - 1].getOption()).equals(transportToUse.getMenuOption())) {
+                actionService.sendClickRequest(null, false);
+            } else {
+                actionService.sendRightClickRequest();
+                return;
+            }
+
+            // TODO: Improve ActionService.interactWithGameObject and use it here instead
+
             currentState = WalkState.WALKING;
             delayTicks = humanizerService.getRandomDelay(0, 2);
         } else {
@@ -243,7 +272,7 @@ public class WalkTask implements BotTask {
 //            }
 //        }
 
-        Transport transportToUse = findTransportInPath(currentLocation);
+        transportToUse = findTransportInPath(currentLocation);
         if (transportToUse != null) {
             log.info("Transport located: {}", transportToUse.getObjectID());
             WorldPoint originPoint = WorldPointUtil.unpackWorldPoint(transportToUse.getOrigin());
@@ -251,20 +280,9 @@ public class WalkTask implements BotTask {
                 walkTo(originPoint);
                 return;
             }
-//            Interactable selectedEntity = gameService.findNearest(interactable -> {
-//                if (!(interactable instanceof GameObject)) {
-//                    return false;
-//                }
-//
-//                GameObject gameObject = (GameObject) interactable;
-//                if (gameObject.getId() == transportToUse.getObjectID()) {
-//                    return true;
-//                }
-//                return false;
-//            });
             GameObject transportObject = gameService.findNearestGameObject(transportToUse.getObjectID());
             if (transportObject != null) {
-                this.transportToUse = transportObject;
+                this.transportObject = transportObject;
                 currentState = WalkState.USING_TRANSPORT;
                 delayTicks = humanizerService.getRandomDelay(1, 5);
                 return;

@@ -123,7 +123,19 @@ public class PipeService {
      * @return true if sent successfully
      */
     public boolean sendClick(int x, int y, boolean move) {
-        ClickCommand command = new ClickCommand(x, y, move);
+        ClickCommand command = new ClickCommand(x, y, move, false);
+        return sendCommand(command);
+    }
+
+    /**
+     * Send a right-click command.
+     * @param x X coordinate
+     * @param y Y coordinate
+     * @param move Move mouse
+     * @return true if sent successfully
+     */
+    public boolean sendRightClick(int x, int y, boolean move) {
+        ClickCommand command = new ClickCommand(x, y, move, true);
         return sendCommand(command);
     }
 
@@ -186,15 +198,20 @@ public class PipeService {
     
     @SuppressWarnings("unused")
     private static class ClickCommand {
-        public final String action = "click";
+        public final String action;
         public final int x;
         public final int y;
         public final boolean move;
 
-        public ClickCommand(int x, int y, boolean move) {
+        public  ClickCommand(int x, int y, boolean move, boolean rightClick) {
             this.x = x;
             this.y = y;
             this.move = move;
+            if (rightClick) {
+                this.action = "right_click";
+            } else {
+                this.action = "click";
+            }
         }
     }
 

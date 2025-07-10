@@ -128,6 +128,8 @@ class PipeServer:
                 self._handle_connect()
             elif action == 'click':
                 self._handle_click(command)
+            elif action == 'right_click':
+                self._handle_right_click(command)
             elif action == 'move':
                 self._handle_move(command)
             elif action == 'key_press':
@@ -167,12 +169,21 @@ class PipeServer:
             
             if move:
                 automation_manager.move_and_click(x, y)
+                log.debug(f"Click executed at ({x}, {y})")
             else:
-                automation_manager.click(x, y)
-            log.debug(f"Click executed at ({x}, {y})")
+                automation_manager.click()
+                log.debug(f"Click executed")
             
         except Exception as e:
             log.error(f"Click command failed: {e}")
+    
+    def _handle_right_click(self, command):
+        """Handle right_click command."""
+        try:
+            automation_manager.right_click()
+            log.debug(f"Right click executed")
+        except Exception as e:
+            log.error(f"Right click command failed: {e}")
     
     def _handle_move(self, command):
         """Handle move command."""
