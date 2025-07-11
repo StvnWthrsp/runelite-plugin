@@ -42,7 +42,8 @@ public class WalkTask implements BotTask {
         USING_TRANSPORT,
         WAITING_FOR_TRANSPORT,
         FAILED,
-        FINISHED
+        FINISHED,
+        CLICKING_MENU
     }
 
     private static final int RETRY_LIMIT = 5;
@@ -131,6 +132,29 @@ public class WalkTask implements BotTask {
             case WAITING_FOR_TRANSPORT:
                 handleTransportWait();
                 break;
+            case CLICKING_MENU:
+                MenuEntry[] menuEntries = client.getMenu().getMenuEntries();
+                int entryIndex = menuEntries.length;
+                for (int i = 0; i < menuEntries.length; i++) {
+                    if (transportToUse == null) {
+                        log.warn("transportToUse was null");
+                        return;
+                    }
+                    MenuEntry entry = menuEntries[i];
+                    if (transportToUse.getMenuOption().equals(entry.getOption())) {
+                        log.info("CLICKING_MENU: options matched, {} and {}", transportToUse.getMenuOption(), entry.getOption());
+                        log.info("Clicking menu option at index {}", i);
+                        java.awt.Point clickPoint = gameService.getRandomPointInBounds(gameService.getMenuEntryBounds(entry, entryIndex));
+                        actionService.sendClickRequest(clickPoint, true);
+                        currentState = WalkState.WALKING;
+                        delayTicks = humanizerService.getShortDelay();
+                        transportObject = null;
+                        transportToUse = null;
+                        return;
+                    }
+                    entryIndex--;
+                }
+                break;
             default:
                 break;
         }
@@ -155,19 +179,19 @@ public class WalkTask implements BotTask {
                 return;
             }
 
-            // Left-click if the menu option is correct
-            // Else right-click, delay, click the correct option
+            // TODO: Improve ActionService.interactWithGameObject and use it here instead
             if (Text.removeTags(menuEntries[menuEntries.length - 1].getOption()).equals(transportToUse.getMenuOption())) {
                 actionService.sendClickRequest(null, false);
             } else {
                 actionService.sendRightClickRequest();
+                currentState = WalkState.CLICKING_MENU;
                 return;
             }
 
-            // TODO: Improve ActionService.interactWithGameObject and use it here instead
-
             currentState = WalkState.WALKING;
-            delayTicks = humanizerService.getRandomDelay(0, 2);
+            delayTicks = humanizerService.getShortDelay();
+            transportObject = null;
+            transportToUse = null;
         } else {
             log.warn("Could not use transport. Recalculating path.");
             currentState = WalkState.IDLE;
@@ -213,7 +237,7 @@ public class WalkTask implements BotTask {
         // Store the node path for proper transport detection
         this.nodePath = getNodePath();
         
-        log.info("Enhanced path calculated with {} steps (including potential teleports/doors).", this.path.size());
+        log.info("Path calculated with {} steps.", this.path.size());
         currentState = WalkState.WALKING;
         pathIndex = 0;
     }
@@ -243,35 +267,6 @@ public class WalkTask implements BotTask {
         updatePathIndex(currentLocation);
         log.debug("DEBUG: After updatePathIndex - pathIndex: {}", pathIndex);
 
-        // TODO: Rewrite transport steps using shortest-path Transport information. See getAllTransportPointsInPath().
-        // Check for transport steps using proper node detection
-//        log.info("DEBUG: Checking for transport step at pathIndex {}, isTransportStep: {}", pathIndex, isTransportStep(pathIndex));
-//        if (pathIndex < path.size() && isTransportStep(pathIndex)) {
-//            WorldPoint currentStep = path.get(pathIndex);
-//            Transport transport = getTransportInfo(pathIndex);
-//
-//            log.info("DEBUG: Transport info - type: {}, displayInfo: {}, transport: {}",
-//                    transport != null ? transport.getType() : "null",
-//                    transport != null ? transport.getDisplayInfo() : "null",
-//                    transport != null ? "not null" : "null");
-//
-//            if (transport != null) {
-//                log.info("Detected transport step: {} at {}", transport.getDisplayInfo(), currentStep);
-//
-//                // Check if we're close to the transport origin
-//                if (currentLocation.distanceTo(currentStep) <= 2) {
-//                    log.info("At transport origin, executing transport: {}", transport.getDisplayInfo());
-//                    executeTransportInteraction(transport, currentStep);
-//                    return;
-//                } else {
-//                    // Walk to the transport origin first
-//                    log.info("Walking to transport origin at {}", currentStep);
-//                    walkTo(currentStep);
-//                    return;
-//                }
-//            }
-//        }
-
         transportToUse = findTransportInPath(currentLocation);
         if (transportToUse != null) {
             log.info("Transport located: {}", transportToUse.getObjectID());
@@ -289,7 +284,6 @@ public class WalkTask implements BotTask {
             } else {
                 log.warn("Transport detected but could not find object, continuing with normal walking.");
             }
-            return;
         }
         
         // Legacy detection for backwards compatibility
@@ -391,7 +385,7 @@ public class WalkTask implements BotTask {
             WorldPoint target = getNextMinimapTarget();
             log.info("DEBUG: Normal walking - pathIndex: {}, target: {}, currentLocation: {}", pathIndex, target, currentLocation);
             walkTo(target);
-            delayTicks = humanizerService.getRandomDelay(3, 10);
+            delayTicks = humanizerService.getCustomDelay(6, 2, 2);
         } else {
             log.warn("DEBUG: pathIndex {} >= path.size() {}, cannot proceed with walking", pathIndex, path.size());
         }
@@ -686,7 +680,7 @@ public class WalkTask implements BotTask {
     }
 
     /**
-     * Finds a transport in oor path
+     * Finds a transport in our path
      */
     private Transport findTransportInPath(WorldPoint currentLocation) {
         for (int i = pathIndex; i < Math.min(pathIndex + 15, path.size()); i++) {
@@ -696,15 +690,6 @@ public class WalkTask implements BotTask {
             if (transportPoints.contains(pathPoint)) {
                 log.debug("Last reachable point: {}", currentLocation);
                 return transportsInPath.get(transportPoints.indexOf(pathPoint));
-            }
-
-            // Also check the previous point to this point
-            if (i > 0) {
-                WorldPoint prevPoint = path.get(i - 1);
-                if (transportPoints.contains(prevPoint)) {
-                    log.debug("Last reachable point: {}", path.get(i - 1));
-                    return transportsInPath.get(transportPoints.indexOf(prevPoint));
-                }
             }
         }
 
@@ -1345,7 +1330,6 @@ public class WalkTask implements BotTask {
                     originPoint = WorldPointUtil.unpackWorldPoint(transport.getOrigin());
                     destinationPoint = WorldPointUtil.unpackWorldPoint(transport.getDestination());
                     if (originPoint.equals(path.get(i)) && destinationPoint.equals(path.get(i+1))) {
-                        log.info("Transport from {} to {}, click object: {}", path.get(i), path.get(i+1), transport.getObjectID());
                         transportsInPath.add(transport);
                         transportPoints.add(point);
                     }
@@ -1353,6 +1337,6 @@ public class WalkTask implements BotTask {
             }
             i++;
         }
-        log.info("Finding transports done. All transports: {}", transportPoints);
+        log.debug("Finding transports done. All transports: {}", transportPoints);
     }
 } 

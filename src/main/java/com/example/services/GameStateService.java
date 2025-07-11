@@ -185,4 +185,28 @@ public class GameStateService {
         int y = bounds.y + random.nextInt(bounds.height);
         return new Point(x, y);
     }
+
+    public Rectangle getMenuEntryBounds(MenuEntry entry, int entryIndex) {
+        Menu menu = client.getMenu();
+
+        if (!client.isMenuOpen()) {
+            return null;
+        }
+
+        // Get menu base position and dimensions
+        int menuX = menu.getMenuX();
+        int menuY = menu.getMenuY();
+        int menuWidth = menu.getMenuWidth();
+
+        // Calculate font height (typical menu entry height)
+        // RuneLite menus typically use a fixed height per entry
+        int entryHeight = 15; // Standard menu entry height in pixels
+
+        // Calculate Y position for this specific entry
+        int entryY = menuY + (entryIndex * entryHeight);
+
+        // Compress the bounds slightly to avoid clicking outside the entry
+        final int DEADZONE = 4;
+        return new Rectangle(menuX, entryY + DEADZONE, menuWidth, entryHeight - (DEADZONE * 2));
+    }
 }

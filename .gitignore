@@ -13,3 +13,4 @@ RemoteInput/
 runelite-plugin_backup/
 **.bak
 .vscode/
+.claude/

@@ -57,7 +57,7 @@ public class EventService {
             return;
         }
         
-        log.debug("Publishing event {} to {} subscribers", eventType.getSimpleName(), eventHandlers.size());
+        log.trace("Publishing event {} to {} subscribers", eventType.getSimpleName(), eventHandlers.size());
         
         // Notify all subscribers
         for (Consumer<Object> handler : eventHandlers) {

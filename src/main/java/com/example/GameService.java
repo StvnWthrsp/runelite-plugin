@@ -227,4 +227,8 @@ public class GameService {
     public boolean isCurrentlyMining() {
         return gameStateService.isCurrentlyMining();
     }
+
+    public Rectangle getMenuEntryBounds(MenuEntry entry, int entryIndex) {
+        return gameStateService.getMenuEntryBounds(entry, entryIndex);
+    }
 } 

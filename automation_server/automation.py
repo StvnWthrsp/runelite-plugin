@@ -136,9 +136,9 @@ class Automation:
         self._ensure_connected()
         if self.client:
             self.move_mouse(x, y)
-            time.sleep(random.gauss(mu=0.035, sigma=0.015))
+            time.sleep(random.uniform(0.02, 0.05))
             self.client.hold_mouse(1) # 1 for left-click
-            time.sleep(random.gauss(mu=0.05, sigma=0.02))
+            time.sleep(random.uniform(0.03, 0.07))
             self.client.release_mouse(1)
 
     def click(self):
@@ -148,7 +148,7 @@ class Automation:
         self._ensure_connected()
         if self.client:
             self.client.hold_mouse(1) # 1 for left-click
-            time.sleep(random.gauss(mu=0.05, sigma=0.02))
+            time.sleep(random.uniform(0.03, 0.07))
             self.client.release_mouse(1)
     
     def right_click(self):
@@ -158,7 +158,7 @@ class Automation:
         self._ensure_connected()
         if self.client:
             self.client.hold_mouse(0) # 2 for right-click
-            time.sleep(random.gauss(mu=0.05, sigma=0.02))
+            time.sleep(random.uniform(0.03, 0.07))
             self.client.release_mouse(0)
 
     def _get_vk_code(self, key: str):
