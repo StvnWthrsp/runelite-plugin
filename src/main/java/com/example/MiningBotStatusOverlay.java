@@ -11,7 +11,6 @@ import javax.inject.Inject;
 import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.Graphics2D;
-import java.time.Duration;
 
 public class MiningBotStatusOverlay extends OverlayPanel
 {
@@ -110,21 +109,5 @@ public class MiningBotStatusOverlay extends OverlayPanel
                 .build());
 
         return super.render(graphics);
-    }
-
-    private String formatDuration(Duration duration)
-    {
-        long hours = duration.toHours();
-        long minutes = duration.toMinutes() % 60;
-        long seconds = duration.getSeconds() % 60;
-        
-        if (hours > 0)
-        {
-            return String.format("%02d:%02d:%02d", hours, minutes, seconds);
-        }
-        else
-        {
-            return String.format("%02d:%02d", minutes, seconds);
-        }
     }
 } 

@@ -20,16 +20,15 @@ public class BankTask implements BotTask {
         FAILED
     }
 
-    private final RunepalPlugin plugin;
     private final Client client;
     private final ActionService actionService;
     private final GameService gameService;
 
-    private BankState currentState = BankState.FIND_BANK;
+    private BankState currentState;
+    private int idleTicks = 0;
 
     @Inject
     public BankTask(RunepalPlugin plugin, ActionService actionService, GameService gameService) {
-        this.plugin = plugin;
         this.client = plugin.getClient();
         this.actionService = actionService;
         this.gameService = gameService;
@@ -66,7 +65,6 @@ public class BankTask implements BotTask {
         if (bankBooth != null) {
             log.info("Found bank booth. Clicking it.");
             actionService.interactWithGameObject(bankBooth, "Bank");
-            // actionService.sendClickRequest(gameService.getRandomClickablePoint(bankBooth), true);
             currentState = BankState.OPENING_BANK;
         } else {
             log.warn("No bank booth found. Cannot proceed with banking.");
@@ -79,26 +77,44 @@ public class BankTask implements BotTask {
         if (bankWidget != null && !bankWidget.isHidden()) {
             log.info("Bank is open.");
             currentState = BankState.DEPOSITING;
+            idleTicks = 0;
+        } else {
+            idleTicks++;
         }
-        // TODO: Add a timeout here in case the widget never opens.
+        if (idleTicks > 5) {
+            log.info("Bank did not open, retrying.");
+            idleTicks = 0;
+            findAndOpenBank();
+        }
     }
 
     private void depositItems() {
+        if (gameService.isInventoryEmpty()) {
+            log.info("Inventory is empty, skipping deposit.");
+            currentState = BankState.FINISHED;
+            return;
+        }
         Widget depositInventoryButton = client.getWidget(InterfaceID.Bankmain.DEPOSITINV);
         if (depositInventoryButton != null && !depositInventoryButton.isHidden()) {
             log.info("Depositing inventory.");
             actionService.sendClickRequest(gameService.getRandomClickablePoint(depositInventoryButton), true);
             currentState = BankState.WAITING_FOR_DEPOSIT;
         }
-        // TODO: Wait for inventory to be empty.
     }
 
     private void waitForDeposit() {
         if (gameService.isInventoryEmpty()) {
             log.info("Inventory is empty. Banking complete.");
             currentState = BankState.FINISHED;
+            idleTicks = 0;
+        } else {
+            idleTicks++;
         }
-        // TODO: Add a timeout here in case inventory never becomes empty
+        if (idleTicks > 5) {
+            log.info("Failed to empty inventory. Check for unbankable items.");
+            idleTicks = 0;
+            currentState = BankState.FAILED;
+        }
     }
 
 

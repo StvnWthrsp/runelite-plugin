@@ -40,10 +40,8 @@ public class CombatTask implements BotTask {
 
     private CombatState currentState;
     private NPC targetNpc = null;
-    private int idleTicks = 0;
     private int delayTicks = 0;
     private int combatStartTicks = 0;
-    private int lastHealthCheck = 0;
     private int waitToVerifyTicks = 0;
     
     // Food item IDs (common foods)
@@ -71,7 +69,6 @@ public class CombatTask implements BotTask {
     public void onStart() {
         log.info("Starting Combat Task.");
         this.currentState = CombatState.FINDING_NPC;
-        this.lastHealthCheck = plugin.getClient().getBoostedSkillLevel(Skill.HITPOINTS);
         
         // Subscribe to events
         this.eventService.subscribe(AnimationChanged.class, this::onAnimationChanged);

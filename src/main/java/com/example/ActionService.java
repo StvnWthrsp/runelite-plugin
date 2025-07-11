@@ -5,15 +5,8 @@ import com.google.inject.Singleton;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.GameObject;
 import net.runelite.api.widgets.Widget;
-import net.runelite.api.ItemContainer;
-import net.runelite.api.InventoryID;
-import net.runelite.api.Item;
-import net.runelite.api.ItemID;
 import net.runelite.api.WallObject;
-import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.gameval.InterfaceID.MagicSpellbook;
-import net.runelite.client.callback.ClientThread;
-import shortestpath.Transport;
 
 import javax.inject.Inject;
 
@@ -42,6 +35,10 @@ public class ActionService {
         this.clickObstructionChecker = new ClickObstructionChecker(plugin.getClient());
     }
 
+    /**
+     * Drops all items currently in the inventory matching any IDs in the list
+     * @param itemIds list of IDs of items to drop
+     */
     public void powerDrop(int[] itemIds) {
         if (isCurrentlyDropping) return;
         if (itemIds.length == 0) {
@@ -76,112 +73,12 @@ public class ActionService {
         }, delay, TimeUnit.MILLISECONDS);
     }
 
+    /**
+     * Check whether dropping is currently happening
+     * @return true if power drop is not yet finished
+     */
     public boolean isDropping() {
         return isCurrentlyDropping;
-    }
-
-    /**
-     * Use an inventory item with an optional menu action
-     * @param slot inventory slot (0-27)
-     * @param action the menu action to use (e.g., "Break", "Rub", destination name), null for left-click
-     * @return true if the action was sent successfully
-     */
-    public boolean useInventoryItem(int slot, String action) {
-        Point itemPoint = gameService.getInventoryItemPoint(slot);
-        if (itemPoint.x == -1) {
-            log.warn("Invalid inventory slot: {}", slot);
-            return false;
-        }
-
-        if (action == null) {
-            // Left click
-            sendClickRequest(itemPoint, true);
-            return true;
-        } else {
-            // Right click for menu action
-            sendClickRequest(itemPoint, false); // Right click to open context menu
-            
-            // TODO: Add logic to select the specific menu option
-            // For now, we'll simulate a left click after a short delay
-            scheduler.schedule(() -> {
-                sendClickRequest(itemPoint, true);
-            }, 100, TimeUnit.MILLISECONDS);
-            
-            log.info("Used inventory item at slot {} with action '{}'", slot, action);
-            return true;
-        }
-    }
-
-    /**
-     * Check if the player has the required runes for a teleport spell
-     * @param teleport the teleport transport containing rune requirements
-     * @return true if all required runes are available
-     */
-    public boolean hasRequiredRunes(Transport teleport) {
-        if (teleport == null) {
-            return false;
-        }
-        
-        // Home teleports and some other teleports are free (no rune cost)
-        if (teleport.getItemRequirements() == null || isHomeTeleport(teleport)) {
-            log.info("Teleport '{}' requires no runes (free teleport)", teleport.getDisplayInfo());
-            return true;
-        }
-        
-        ItemContainer inventory = plugin.getClient().getItemContainer(InventoryID.INVENTORY);
-        if (inventory == null) {
-            log.warn("Cannot check runes - inventory not accessible");
-            return false;
-        }
-
-        // For now, we'll assume most teleports with requirements are available
-        // A full implementation would parse the Transport's TransportItems structure
-        // to check for specific rune requirements
-        
-        String displayInfo = teleport.getDisplayInfo();
-        if (displayInfo != null) {
-            // Home teleports are always free
-            if (displayInfo.toLowerCase().contains("home teleport")) {
-                log.info("Home teleport '{}' requires no runes", displayInfo);
-                return true;
-            }
-            
-            // For other teleports, we'll do basic checks for common runes
-            // This is still simplified but more accurate than always requiring law runes
-            if (displayInfo.toLowerCase().contains("varrock") || 
-                displayInfo.toLowerCase().contains("lumbridge") ||
-                displayInfo.toLowerCase().contains("falador") ||
-                displayInfo.toLowerCase().contains("camelot")) {
-                // Basic city teleports typically need law runes
-                boolean hasLawRunes = hasItem(inventory, ItemID.LAW_RUNE);
-                log.info("Checking law runes for city teleport '{}': {}", displayInfo, hasLawRunes);
-                return hasLawRunes;
-            }
-        }
-        
-        // For other teleports, assume they're available for now
-        // In a production implementation, you'd parse the full requirements
-        log.info("Assuming teleport '{}' requirements are met (simplified check)", displayInfo);
-        return true;
-    }
-    
-    /**
-     * Check if this is a home teleport (which are free)
-     * @param teleport the transport to check
-     * @return true if this is a home teleport
-     */
-    private boolean isHomeTeleport(Transport teleport) {
-        String displayInfo = teleport.getDisplayInfo();
-        if (displayInfo == null) {
-            return false;
-        }
-        
-        String lowerDisplayInfo = displayInfo.toLowerCase();
-        return lowerDisplayInfo.contains("home teleport") ||
-               lowerDisplayInfo.equals("lumbridge home teleport") ||
-               lowerDisplayInfo.equals("edgeville home teleport") ||
-               lowerDisplayInfo.equals("lunar home teleport") ||
-               lowerDisplayInfo.equals("arceuus home teleport");
     }
 
     /**
@@ -389,22 +286,6 @@ public class ActionService {
         return true;
     }
 
-    /**
-     * Check if inventory contains a specific item
-     * @param inventory the inventory container
-     * @param itemId the item ID to check for
-     * @return true if the item is found
-     */
-    private boolean hasItem(ItemContainer inventory, int itemId) {
-        Item[] items = inventory.getItems();
-        for (Item item : items) {
-            if (item.getId() == itemId) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     public void sendClickRequest(Point point, boolean move) {
         log.info("Sending click request to point: {}, move: {}", point, move);
         if (!move) {
@@ -462,34 +343,6 @@ public class ActionService {
 			plugin.stopBot();
 		}
 	}
-
-    /**
-     * Use an item on a game object (e.g., raw fish on cooking range)
-     * @param itemId the item ID to use
-     * @param gameObject the game object to use the item on
-     */
-    public void sendUseItemOnObjectRequest(int itemId, GameObject gameObject) {
-        if (gameObject == null) {
-            log.warn("Cannot use item on null game object");
-            return;
-        }
-        
-        // This would involve finding the item in inventory and using it on the object
-        // For now, we'll simulate a right-click -> use item workflow
-        Point clickPoint = gameService.getRandomClickablePoint(gameObject);
-        if (clickPoint.x == -1) {
-            log.warn("Could not get clickable point for game object {}", gameObject.getId());
-            return;
-        }
-        
-        log.info("Using item {} on game object {}", itemId, gameObject.getId());
-        // In a real implementation, this would require:
-        // 1. Right-click on the item in inventory
-        // 2. Select "Use" from the context menu  
-        // 3. Click on the target object
-        // For now, we'll just click on the object directly
-        sendClickRequest(clickPoint, true);
-    }
 
     /**
      * Send a spacebar key press (commonly used for "Cook All" or similar actions)

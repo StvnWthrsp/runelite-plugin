@@ -4,13 +4,10 @@ import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.GameObject;
 import net.runelite.api.ItemContainer;
 import net.runelite.api.NPC;
-import net.runelite.api.ItemID;
+import net.runelite.api.gameval.ItemID;
 import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.events.GameTick;
-import net.runelite.api.gameval.AnimationID;
-import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.gameval.InventoryID;
-import net.runelite.api.widgets.Widget;
 import shortestpath.pathfinder.PathfinderConfig;
 
 import java.util.*;
@@ -46,12 +43,8 @@ public class FishingTask implements BotTask {
     private static final WorldPoint LUMBRIDGE_SWAMP_FISHING = new WorldPoint(3241, 3149, 0);
     // Lumbridge Castle kitchen range
     private static final WorldPoint LUMBRIDGE_KITCHEN_RANGE = new WorldPoint(3211, 3215, 0);
-    // Lumbridge Castle bank (upstairs)
-    private static final WorldPoint LUMBRIDGE_BANK = new WorldPoint(3208, 3220, 2);
     // Barbarian village fishing spot (fly fishing)
     private static final WorldPoint BARBARIAN_VILLAGE = new WorldPoint(3109, 3433, 0);
-    // Varrock west bank
-    private static final WorldPoint VARROCK_WEST_BANK = new WorldPoint(3183, 3436, 0);
 
     // Fishing spot and range object IDs
     private static final int NET_FISHING_SPOT_ID = 1530;
@@ -60,7 +53,7 @@ public class FishingTask implements BotTask {
     private static final int BARBARIAN_VILLAGE_FIRE_ID = 43475;
 
     // Fish item IDs
-    private static final int RAW_SHRIMP_ID = ItemID.RAW_SHRIMPS;
+    private static final int RAW_SHRIMP_ID = ItemID.RAW_SHRIMP;
     private static final int RAW_ANCHOVIES_ID = ItemID.RAW_ANCHOVIES;
     private static final int RAW_TROUT_ID = ItemID.RAW_TROUT;
     private static final int RAW_SALMON_ID = ItemID.RAW_SALMON;
@@ -69,6 +62,8 @@ public class FishingTask implements BotTask {
     private final Deque<Runnable> actionQueue = new ArrayDeque<>();
     private int delayTicks = 0;
     private int idleTicks = 0;
+    private final int retryLimit = 5;
+    private int retries = 0;
     private NPC fishingSpot = null;
     private GameObject cookingRange = null;
     private boolean fishingStarted = false;
@@ -182,7 +177,7 @@ public class FishingTask implements BotTask {
                 doWithdrawing();
                 break;
             case IDLE:
-                currentState = FishingState.WALKING_TO_FISHING;
+                determineNextState();
                 break;
             case WAITING_FOR_SUBTASK:
                 // Handled above
@@ -245,16 +240,24 @@ public class FishingTask implements BotTask {
     }
 
     private void doWaitFishing() {
+        if (retries >= retryLimit) {
+            log.warn("Fishing failed 5 times. Restarting.");
+            currentState = FishingState.IDLE;
+            retries = 0;
+        }
+
         idleTicks++;
         
         // Check if we're actually fishing (player animation or interacting)
         if (plugin.getClient().getLocalPlayer().getInteracting() == fishingSpot) {
             fishingStarted = true;
+            retries = 0;
             idleTicks = 0;
         }
         
         if (idleTicks > 10) { // 10 ticks = 6 seconds
             log.warn("Fishing seems to have failed. Retrying.");
+            retries++;
             currentState = FishingState.FISHING;
         }
     }
@@ -398,6 +401,11 @@ public class FishingTask implements BotTask {
         
         // TODO: Move withdrawing logic to BankTask
         ItemContainer bankContainer = plugin.getClient().getItemContainer(InventoryID.BANK);
+        if (bankContainer == null) {
+            log.warn("Bank container not found. Walking to bank again.");
+            currentState = FishingState.WALKING_TO_BANK;
+            return;
+        }
         int toolIndex = bankContainer.find(requiredTool);
         if (toolIndex != -1) {
             actionService.sendClickRequest(gameService.getBankItemPoint(toolIndex), true);
@@ -483,11 +491,11 @@ public class FishingTask implements BotTask {
     private WorldPoint getBankLocation() {
         switch (config.fishingArea()) {
             case LUMBRIDGE_SWAMP:
-                return LUMBRIDGE_BANK;
+                return Banks.LUMBRIDGE.getBankCoordinates();
             case BARBARIAN_VILLAGE:
-                return VARROCK_WEST_BANK; // Use Lumbridge bank for now
+                return Banks.VARROCK_WEST.getBankCoordinates(); // Use Lumbridge bank for now
             default:
-                return LUMBRIDGE_BANK;
+                return Banks.LUMBRIDGE.getBankCoordinates();
         }
     }
 
@@ -516,11 +524,11 @@ public class FishingTask implements BotTask {
     private int getRequiredToolId() {
         switch (config.fishingSpot()) {
             case NET:
-                return ItemID.SMALL_FISHING_NET;
+                return ItemID.NET;
             case LURE:
                 return ItemID.FLY_FISHING_ROD;
             default:
-                return ItemID.SMALL_FISHING_NET;
+                return ItemID.NET;
         }
     }
 

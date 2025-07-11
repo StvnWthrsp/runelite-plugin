@@ -346,6 +346,8 @@ public class RunepalPlugin extends Plugin
 		switch (bankName) {
 			case "VARROCK_EAST":
 				return Banks.VARROCK_EAST.getBankCoordinates();
+			case "VARROCK_WEST":
+				return Banks.VARROCK_WEST.getBankCoordinates();
 			case "INTERIOR_TEST":
 				return Banks.INTERIOR_TEST.getBankCoordinates();
 			default:

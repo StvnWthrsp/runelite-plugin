@@ -4,7 +4,10 @@ import net.runelite.api.coords.WorldPoint;
 
 public enum Banks {
     VARROCK_EAST("Varrock East", new WorldPoint(3253, 3420, 0)),
-    INTERIOR_TEST("Interior Test", new WorldPoint(3249, 3405, 0));
+    INTERIOR_TEST("Interior Test", new WorldPoint(3249, 3405, 0)),
+    LUMBRIDGE("Lumbridge", new WorldPoint(3208, 3220, 2)),
+    VARROCK_WEST("Varrock West", new WorldPoint(3183, 3436, 0));
+    
 
     private final String name;
     private final WorldPoint worldPoint;
