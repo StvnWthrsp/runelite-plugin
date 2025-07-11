@@ -16,11 +16,7 @@ import shortestpath.pathfinder.PathfinderConfig;
 import shortestpath.Transport;
 
 import java.util.*;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.*;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -32,9 +28,7 @@ public class WalkTask implements BotTask {
         WALKING,
         EXECUTING_TELEPORT,
         OPENING_DOOR,
-        USING_STAIRS,
         USING_TRANSPORT,
-        WAITING_FOR_TRANSPORT,
         FAILED,
         FINISHED,
         CLICKING_MENU
@@ -53,8 +47,8 @@ public class WalkTask implements BotTask {
     private int delayTicks = 0;
     private int retries = 0;
     private List<WorldPoint> path;
-    private List<WorldPoint> transportPoints = new ArrayList<>();
-    private List<Transport> transportsInPath = new ArrayList<>();;
+    private final List<WorldPoint> transportPoints = new ArrayList<>();
+    private final List<Transport> transportsInPath = new ArrayList<>();;
     private Pathfinder pathfinder;
     private Future<?> pathfinderFuture;
     private final ExecutorService pathfinderExecutor;
@@ -115,30 +109,34 @@ public class WalkTask implements BotTask {
                 handleTransport();
                 break;
             case CLICKING_MENU:
-                MenuEntry[] menuEntries = client.getMenu().getMenuEntries();
-                int entryIndex = menuEntries.length;
-                for (int i = 0; i < menuEntries.length; i++) {
-                    if (transportToUse == null) {
-                        log.warn("transportToUse was null");
-                        return;
-                    }
-                    MenuEntry entry = menuEntries[i];
-                    if (transportToUse.getMenuOption().equals(entry.getOption())) {
-                        log.info("CLICKING_MENU: options matched, {} and {}", transportToUse.getMenuOption(), entry.getOption());
-                        log.info("Clicking menu option at index {}", i);
-                        java.awt.Point clickPoint = gameService.getRandomPointInBounds(gameService.getMenuEntryBounds(entry, entryIndex));
-                        actionService.sendClickRequest(clickPoint, true);
-                        currentState = WalkState.WALKING;
-                        delayTicks = humanizerService.getShortDelay();
-                        transportObject = null;
-                        transportToUse = null;
-                        return;
-                    }
-                    entryIndex--;
-                }
+                doClickingMenu();
                 break;
             default:
                 break;
+        }
+    }
+
+    private void doClickingMenu() {
+        MenuEntry[] menuEntries = client.getMenu().getMenuEntries();
+        int entryIndex = menuEntries.length;
+        for (int i = 0; i < menuEntries.length; i++) {
+            if (transportToUse == null) {
+                log.warn("transportToUse was null");
+                return;
+            }
+            MenuEntry entry = menuEntries[i];
+            if (transportToUse.getMenuOption().equals(entry.getOption())) {
+                log.info("CLICKING_MENU: options matched, {} and {}", transportToUse.getMenuOption(), entry.getOption());
+                log.info("Clicking menu option at index {}", i);
+                java.awt.Point clickPoint = gameService.getRandomPointInBounds(gameService.getMenuEntryBounds(entry, entryIndex));
+                actionService.sendClickRequest(clickPoint, true);
+                currentState = WalkState.WALKING;
+                delayTicks = humanizerService.getShortDelay();
+                transportObject = null;
+                transportToUse = null;
+                return;
+            }
+            entryIndex--;
         }
     }
 
@@ -166,7 +164,7 @@ public class WalkTask implements BotTask {
                 actionService.sendClickRequest(null, false);
             } else {
                 actionService.sendRightClickRequest();
-                currentState = WalkState.CLICKING_MENU;
+                scheduler.schedule(this::doClickingMenu, 450, TimeUnit.MILLISECONDS);
                 return;
             }
 
@@ -294,11 +292,11 @@ public class WalkTask implements BotTask {
         // Normal walking - proceed to next point in path
         if (pathIndex < path.size()) {
             WorldPoint target = getNextMinimapTarget();
-            log.info("DEBUG: Normal walking - pathIndex: {}, target: {}, currentLocation: {}", pathIndex, target, currentLocation);
+            log.debug("DEBUG: Normal walking - pathIndex: {}, target: {}, currentLocation: {}", pathIndex, target, currentLocation);
             walkTo(target);
             delayTicks = humanizerService.getCustomDelay(6, 2, 2);
         } else {
-            log.warn("DEBUG: pathIndex {} >= path.size() {}, cannot proceed with walking", pathIndex, path.size());
+            log.debug("DEBUG: pathIndex {} >= path.size() {}, cannot proceed with walking", pathIndex, path.size());
         }
     }
 

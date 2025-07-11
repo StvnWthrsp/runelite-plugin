@@ -441,7 +441,9 @@ public class FishingTask implements BotTask {
             } else {
                 currentState = FishingState.WALKING_TO_BANK;
             }
-        } else if (!(gameService.hasItem(requiredTool) && gameService.hasItem(requiredBait))) {
+        } else if (!(gameService.hasItem(requiredTool))) {
+            currentState = FishingState.WITHDRAWING;
+        } else if (requiredBait != -1 && !gameService.hasItem(requiredBait)){
             currentState = FishingState.WITHDRAWING;
         } else {
             currentState = FishingState.WALKING_TO_FISHING;
@@ -534,8 +536,6 @@ public class FishingTask implements BotTask {
 
     private int getRequiredBaitId() {
         switch (config.fishingSpot()) {
-            case NET:
-                return ItemID.FISHING_BAIT;
             case LURE:
                 return ItemID.FEATHER;
             default:
