@@ -71,6 +71,55 @@ public interface BotConfig extends Config
 		return "VARROCK_EAST"; // Default bank
 	}
 
+	// Fishing Bot specific settings
+	@ConfigItem(
+			keyName = "fishingSpot",
+			name = "Fishing Spot",
+			description = "Choose fishing method - Net (shrimp/anchovies) or Lure (trout/salmon)",
+			position = 15,
+			hidden = true
+	)
+	default FishingSpot fishingSpot()
+	{
+		return FishingSpot.NET;
+	}
+
+	@ConfigItem(
+			keyName = "fishingArea",
+			name = "Fishing Area",
+			description = "Choose the fishing area to use",
+			position = 16,
+			hidden = true
+	)
+	default FishingArea fishingArea()
+	{
+		return FishingArea.LUMBRIDGE_SWAMP;
+	}
+
+	@ConfigItem(
+			keyName = "cookFish",
+			name = "Cook Fish",
+			description = "Cook caught fish before banking/dropping",
+			position = 17,
+			hidden = true
+	)
+	default boolean cookFish()
+	{
+		return false;
+	}
+
+	@ConfigItem(
+			keyName = "fishingMode",
+			name = "Fishing Mode",
+			description = "Choose between power dropping and banking",
+			position = 18,
+			hidden = true
+	)
+	default FishingMode fishingMode()
+	{
+		return FishingMode.POWER_DROP;
+	}
+
 	// Combat Bot specific settings
 	@ConfigItem(
 			keyName = "combatNpcNames",

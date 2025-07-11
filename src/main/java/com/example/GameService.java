@@ -228,6 +228,15 @@ public class GameService {
         return gameStateService.isCurrentlyMining();
     }
 
+    /**
+     * Checks if the local player is currently performing any cooking animation.
+     * 
+     * @return true if the player is performing a cooking animation, false otherwise
+     */
+    public boolean isCurrentlyCooking() {
+        return gameStateService.isCurrentlyCooking();
+    }
+
     public Rectangle getMenuEntryBounds(MenuEntry entry, int entryIndex) {
         return gameStateService.getMenuEntryBounds(entry, entryIndex);
     }

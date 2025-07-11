@@ -32,6 +32,7 @@ public class FishingTask implements BotTask {
         WALKING_TO_FISHING,
         FISHING,
         WAIT_FISHING,
+        DROPPING_FISH,
         WALKING_TO_COOKING,
         COOKING,
         WAIT_COOKING,
@@ -47,20 +48,22 @@ public class FishingTask implements BotTask {
     private static final WorldPoint LUMBRIDGE_KITCHEN_RANGE = new WorldPoint(3211, 3215, 0);
     // Lumbridge Castle bank (upstairs)
     private static final WorldPoint LUMBRIDGE_BANK = new WorldPoint(3208, 3220, 2);
+    // Barbarian village fishing spot (fly fishing)
+    private static final WorldPoint BARBARIAN_VILLAGE = new WorldPoint(3109, 3433, 0);
+    // Varrock west bank
+    private static final WorldPoint VARROCK_WEST_BANK = new WorldPoint(3183, 3436, 0);
 
     // Fishing spot and range object IDs
-    private static final int FISHING_SPOT_ID = 1530; // Net fishing spot
-    private static final int KITCHEN_RANGE_ID = 114; // Cooking range
+    private static final int NET_FISHING_SPOT_ID = 1530;
+    private static final int ROD_FISHING_SPOT_ID = 1526;
+    private static final int KITCHEN_RANGE_ID = 114;
+    private static final int BARBARIAN_VILLAGE_FIRE_ID = 43475;
 
     // Fish item IDs
     private static final int RAW_SHRIMP_ID = ItemID.RAW_SHRIMPS;
     private static final int RAW_ANCHOVIES_ID = ItemID.RAW_ANCHOVIES;
-    private static final int COOKED_SHRIMP_ID = ItemID.SHRIMPS;
-    private static final int COOKED_ANCHOVIES_ID = ItemID.ANCHOVIES;
-
-    // Animation IDs
-    private static final int COOKING_ANIMATION_ID = AnimationID.HUMAN_COOKING;
-    private static final int COOKING_ANIMATION_LOOP_ID = AnimationID.HUMAN_COOKING_LOOP;
+    private static final int RAW_TROUT_ID = ItemID.RAW_TROUT;
+    private static final int RAW_SALMON_ID = ItemID.RAW_SALMON;
 
     private FishingState currentState = null;
     private final Deque<Runnable> actionQueue = new ArrayDeque<>();
@@ -154,6 +157,12 @@ public class FishingTask implements BotTask {
             case WAIT_FISHING:
                 doWaitFishing();
                 break;
+            case DROPPING_FISH:
+                if (!actionService.isDropping()) {
+                    log.info("Dropping complete. Resuming mining.");
+                    currentState = FishingState.FISHING;
+                }
+                break;
             case WALKING_TO_COOKING:
                 doWalkingToCooking();
                 break;
@@ -189,44 +198,46 @@ public class FishingTask implements BotTask {
                 finishFishing();
             }
         }
-        
-        // Handle cooking completion detection
-        if (currentState == FishingState.WAIT_COOKING && cookingStarted) {
-            if (!gameService.isCurrentAnimation(COOKING_ANIMATION_ID)) {
-                finishCooking();
-            }
-        }
     }
 
 
     private void doWalkingToFishing() {
         WorldPoint playerLocation = gameService.getPlayerLocation();
-        if (playerLocation.distanceTo(LUMBRIDGE_SWAMP_FISHING) <= 5) {
-            log.info("Arrived at fishing area");
+        WorldPoint fishingLocation = getFishingLocation();
+        if (playerLocation.distanceTo(fishingLocation) <= 5) {
+            log.info("Arrived at fishing area: {}", config.fishingArea());
             currentState = FishingState.FISHING;
         } else {
-            log.info("Walking to Lumbridge Swamp fishing area");
-            taskManager.pushTask(new WalkTask(plugin, pathfinderConfig, LUMBRIDGE_SWAMP_FISHING, actionService, gameService, humanizerService));
+            log.info("Walking to {} fishing area", config.fishingArea());
+            taskManager.pushTask(new WalkTask(plugin, pathfinderConfig, fishingLocation, actionService, gameService, humanizerService));
             currentState = FishingState.WAITING_FOR_SUBTASK;
         }
     }
 
     private void doFishing() {
         if (gameService.isInventoryFull()) {
-            log.info("Inventory full, moving to cooking");
-            currentState = FishingState.WALKING_TO_COOKING;
+            log.info("Inventory full, determining next action based on configuration");
+            if (config.fishingMode() == FishingMode.POWER_DROP) {
+                currentState = FishingState.DROPPING_FISH;
+                doDroppingFish();
+            } else if (config.cookFish()) {
+                currentState = FishingState.WALKING_TO_COOKING;
+            } else {
+                currentState = FishingState.WALKING_TO_BANK;
+            }
             return;
         }
 
-        // Find fishing spot
-        fishingSpot = gameService.findNearestNpc(FISHING_SPOT_ID);
+        // Find fishing spot using configured spot type
+        int fishingSpotId = getFishingSpotId();
+        fishingSpot = gameService.findNearestNpc(fishingSpotId);
         if (fishingSpot == null) {
-            log.warn("No fishing spot found");
+            log.warn("No {} fishing spot found", config.fishingSpot());
             delayTicks = humanizerService.getRandomDelay(2, 5);
             return;
         }
 
-        log.info("Clicking on fishing spot");
+        log.info("Clicking on {} fishing spot", config.fishingSpot());
         actionService.sendClickRequest(gameService.getRandomClickablePoint(fishingSpot), true);
         fishingStarted = false;
         idleTicks = 0;
@@ -252,39 +263,66 @@ public class FishingTask implements BotTask {
         log.info("Finished fishing, inventory full");
         fishingSpot = null;
         fishingStarted = false;
-        currentState = FishingState.WALKING_TO_COOKING;
+        if (config.fishingMode() == FishingMode.POWER_DROP) {
+            currentState = FishingState.DROPPING_FISH;
+            doDroppingFish();
+        } else if (config.cookFish()) {
+            currentState = FishingState.WALKING_TO_COOKING;
+        } else {
+            currentState = FishingState.WALKING_TO_BANK;
+        }
+    }
+
+    private void doDroppingFish() {
+        log.info("Power dropping fish");
+        int[] itemIds = {RAW_TROUT_ID, RAW_SALMON_ID};
+        actionService.powerDrop(itemIds);
     }
 
     private void doWalkingToCooking() {
+        if (!config.cookFish()) {
+            // Skip cooking if not enabled
+            currentState = FishingState.WALKING_TO_BANK;
+            return;
+        }
+        
         WorldPoint playerLocation = gameService.getPlayerLocation();
-        if (playerLocation.distanceTo(LUMBRIDGE_KITCHEN_RANGE) <= 5) {
-            log.info("Arrived at kitchen");
+        WorldPoint cookingLocation = getCookingLocation();
+        if (playerLocation.distanceTo(cookingLocation) <= 5) {
+            log.info("Arrived at cooking location: {}", config.fishingArea());
             currentState = FishingState.COOKING;
             delayTicks = humanizerService.getMediumDelay();
         } else {
-            log.info("Walking to Lumbridge Castle kitchen");
-            taskManager.pushTask(new WalkTask(plugin, pathfinderConfig, LUMBRIDGE_KITCHEN_RANGE, actionService, gameService, humanizerService));
+            String locationName = config.fishingArea() == FishingArea.BARBARIAN_VILLAGE ? "Barbarian Village fire" : "Lumbridge Castle kitchen";
+            log.info("Walking to {}", locationName);
+            taskManager.pushTask(new WalkTask(plugin, pathfinderConfig, cookingLocation, actionService, gameService, humanizerService));
             currentState = FishingState.WAITING_FOR_SUBTASK;
         }
     }
 
     private void doCooking() {
         if (!hasRawFish()) {
-            log.info("No raw fish to cook, moving to bank");
-            currentState = FishingState.WALKING_TO_BANK;
+            log.info("No raw fish to cook, determining next action");
+            if (config.fishingMode() == FishingMode.POWER_DROP) {
+                currentState = FishingState.FISHING; // Return to fishing
+            } else {
+                currentState = FishingState.WALKING_TO_BANK;
+            }
             return;
         }
 
-        // Find cooking range
-        cookingRange = gameService.findNearestGameObject(KITCHEN_RANGE_ID);
+        // Find cooking range/fire using configured location
+        int cookingRangeId = getCookingRangeId();
+        cookingRange = gameService.findNearestGameObject(cookingRangeId);
         if (cookingRange == null) {
-            log.warn("No cooking range found");
+            String cookingType = config.fishingArea() == FishingArea.BARBARIAN_VILLAGE ? "fire" : "range";
+            log.warn("No cooking {} found", cookingType);
             delayTicks = humanizerService.getRandomDelay(1, 2);
             return;
         }
 
         log.info("Starting cooking process");
-        // First, use raw fish on the range
+        // First, use raw fish on the range/fire
         int rawFishId = getRawFishId();
         if (rawFishId != -1) {
             actionService.interactWithGameObject(cookingRange, "Cook");
@@ -296,23 +334,23 @@ public class FishingTask implements BotTask {
 
     private void doWaitCooking() {
         // Check if we're currently performing the cooking animation
-        if (gameService.isCurrentAnimation(COOKING_ANIMATION_ID)) {
+        if (gameService.isCurrentlyCooking()) {
             cookingStarted = true;
             idleTicks = 0; // Reset idle counter if we see a cooking animation
         } else {
             idleTicks++; // Only increment idle ticks if not cooking
         }
-        
-        // Check if cooking interface appeared or we're in cooking animation
-        if (idleTicks > 3 && !cookingStarted) {
-            // After a few ticks, click to start cooking all
-            log.info("Clicking to cook all fish");
+
+        int waitForInterfaceTicks = humanizerService.getMediumDelay();
+        if (idleTicks > waitForInterfaceTicks && !cookingStarted) {
             actionService.sendSpacebarRequest(); // Space bar to cook all
+            cookingStarted = true;
             idleTicks = 0;
+            return;
         }
         
-        if (idleTicks > 30) { // 30 ticks = 18 seconds timeout
-            log.warn("Cooking seems to have failed or finished. Checking inventory.");
+        if (idleTicks > 5) { // 30 ticks = 18 seconds timeout
+            log.warn("Cooking seems to have failed or finished. Finishing.");
             finishCooking();
         }
     }
@@ -322,20 +360,26 @@ public class FishingTask implements BotTask {
         cookingRange = null;
         cookingStarted = false;
         if (hasRawFish()) {
-            currentState = FishingState.WALKING_TO_COOKING;
+            currentState = FishingState.COOKING; // Continue cooking remaining fish
         } else {
-            currentState = FishingState.WALKING_TO_BANK;
+            // All fish cooked, determine next action
+            if (config.fishingMode() == FishingMode.POWER_DROP) {
+                currentState = FishingState.FISHING; // Return to fishing
+            } else {
+                currentState = FishingState.WALKING_TO_BANK; // Bank the cooked fish
+            }
         }
     }
 
     private void doWalkingToBank() {
         WorldPoint playerLocation = gameService.getPlayerLocation();
-        if (playerLocation.distanceTo(LUMBRIDGE_BANK) <= 5) {
+        WorldPoint bankLocation = getBankLocation();
+        if (playerLocation.distanceTo(bankLocation) <= 5) {
             log.info("Arrived at bank");
             currentState = FishingState.DEPOSITING;
         } else {
-            log.info("Walking to Lumbridge Castle bank");
-            taskManager.pushTask(new WalkTask(plugin, pathfinderConfig, LUMBRIDGE_BANK, actionService, gameService, humanizerService));
+            log.info("Walking to bank");
+            taskManager.pushTask(new WalkTask(plugin, pathfinderConfig, bankLocation, actionService, gameService, humanizerService));
             currentState = FishingState.WAITING_FOR_SUBTASK;
         }
     }
@@ -347,24 +391,49 @@ public class FishingTask implements BotTask {
     }
 
     private void doWithdrawing() {
-        log.info("Withdrawing small fishing net");
+        int requiredTool = getRequiredToolId();
+        int requiredBait = getRequiredBaitId();
+        String toolName = config.fishingSpot() == FishingSpot.NET ? "small fishing net" : "fly fishing rod";
+        log.info("Withdrawing {}", toolName);
+        
         // TODO: Move withdrawing logic to BankTask
         ItemContainer bankContainer = plugin.getClient().getItemContainer(InventoryID.BANK);
-        int smallFishingNetIndex = bankContainer.find(ItemID.SMALL_FISHING_NET);
-        actionService.sendClickRequest(gameService.getBankItemPoint(smallFishingNetIndex), true);
+        int toolIndex = bankContainer.find(requiredTool);
+        if (toolIndex != -1) {
+            actionService.sendClickRequest(gameService.getBankItemPoint(toolIndex), true);
+            currentState = FishingState.WAITING_FOR_SUBTASK;
+            delayTicks = humanizerService.getRandomDelay(1, 2);
+            return;
+        } else {
+            log.warn("Required tool {} not found in bank", toolName);
+        }
+        if (requiredBait != -1) {
+            int baitIndex = bankContainer.find(requiredBait);
+            if (baitIndex != -1) {
+                actionService.sendClickRequest(gameService.getBankItemPoint(baitIndex), true);
+            }
+        } else {
+            log.warn("Required bait not found in bank");
+        }
         currentState = FishingState.WAITING_FOR_SUBTASK;
         delayTicks = humanizerService.getRandomDelay(1, 2);
     }
 
     private void determineNextState() {
         // After completing a subtask, determine what to do next
+        int requiredTool = getRequiredToolId();
+        int requiredBait = getRequiredBaitId();
+        
         if (gameService.isInventoryFull()) {
-            if (hasRawFish()) {
+            if (config.fishingMode() == FishingMode.POWER_DROP) {
+                currentState = FishingState.DROPPING_FISH;
+                doDroppingFish();
+            } else if (config.cookFish() && hasRawFish()) {
                 currentState = FishingState.WALKING_TO_COOKING;
             } else {
                 currentState = FishingState.WALKING_TO_BANK;
             }
-        } else if (!gameService.hasItem(ItemID.SMALL_FISHING_NET)) {
+        } else if (!(gameService.hasItem(requiredTool) && gameService.hasItem(requiredBait))) {
             currentState = FishingState.WITHDRAWING;
         } else {
             currentState = FishingState.WALKING_TO_FISHING;
@@ -372,7 +441,8 @@ public class FishingTask implements BotTask {
     }
 
     private boolean hasRawFish() {
-        return gameService.hasItem(RAW_SHRIMP_ID) || gameService.hasItem(RAW_ANCHOVIES_ID);
+        return gameService.hasItem(RAW_SHRIMP_ID) || gameService.hasItem(RAW_ANCHOVIES_ID) ||
+               gameService.hasItem(RAW_TROUT_ID) || gameService.hasItem(RAW_SALMON_ID);
     }
 
     private int getRawFishId() {
@@ -380,7 +450,88 @@ public class FishingTask implements BotTask {
             return RAW_SHRIMP_ID;
         } else if (gameService.hasItem(RAW_ANCHOVIES_ID)) {
             return RAW_ANCHOVIES_ID;
+        } else if (gameService.hasItem(RAW_TROUT_ID)) {
+            return RAW_TROUT_ID;
+        } else if (gameService.hasItem(RAW_SALMON_ID)) {
+            return RAW_SALMON_ID;
         }
         return -1;
+    }
+
+    private WorldPoint getFishingLocation() {
+        switch (config.fishingArea()) {
+            case LUMBRIDGE_SWAMP:
+                return LUMBRIDGE_SWAMP_FISHING;
+            case BARBARIAN_VILLAGE:
+                return BARBARIAN_VILLAGE;
+            default:
+                return LUMBRIDGE_SWAMP_FISHING;
+        }
+    }
+
+    private WorldPoint getCookingLocation() {
+        switch (config.fishingArea()) {
+            case LUMBRIDGE_SWAMP:
+                return LUMBRIDGE_KITCHEN_RANGE;
+            case BARBARIAN_VILLAGE:
+                return BARBARIAN_VILLAGE; // Cook at the fire
+            default:
+                return LUMBRIDGE_KITCHEN_RANGE;
+        }
+    }
+
+    private WorldPoint getBankLocation() {
+        switch (config.fishingArea()) {
+            case LUMBRIDGE_SWAMP:
+                return LUMBRIDGE_BANK;
+            case BARBARIAN_VILLAGE:
+                return VARROCK_WEST_BANK; // Use Lumbridge bank for now
+            default:
+                return LUMBRIDGE_BANK;
+        }
+    }
+
+    private int getFishingSpotId() {
+        switch (config.fishingSpot()) {
+            case NET:
+                return NET_FISHING_SPOT_ID;
+            case LURE:
+                return ROD_FISHING_SPOT_ID;
+            default:
+                return NET_FISHING_SPOT_ID;
+        }
+    }
+
+    private int getCookingRangeId() {
+        switch (config.fishingArea()) {
+            case LUMBRIDGE_SWAMP:
+                return KITCHEN_RANGE_ID;
+            case BARBARIAN_VILLAGE:
+                return BARBARIAN_VILLAGE_FIRE_ID;
+            default:
+                return KITCHEN_RANGE_ID;
+        }
+    }
+
+    private int getRequiredToolId() {
+        switch (config.fishingSpot()) {
+            case NET:
+                return ItemID.SMALL_FISHING_NET;
+            case LURE:
+                return ItemID.FLY_FISHING_ROD;
+            default:
+                return ItemID.SMALL_FISHING_NET;
+        }
+    }
+
+    private int getRequiredBaitId() {
+        switch (config.fishingSpot()) {
+            case NET:
+                return ItemID.FISHING_BAIT;
+            case LURE:
+                return ItemID.FEATHER;
+            default:
+                return -1;
+        }
     }
 }

@@ -74,12 +74,18 @@ public class MiningTask implements BotTask {
     @Override
     public void onStart() {
         log.info("Starting Mining Task.");
-        this.currentState = MiningState.FINDING_ROCK;
         this.lastMiningXp = plugin.getClient().getSkillExperience(Skill.MINING);
         this.eventService.subscribe(AnimationChanged.class, this::onAnimationChanged);
         this.eventService.subscribe(StatChanged.class, this::onStatChanged);
         this.eventService.subscribe(InteractingChanged.class, this::onInteractingChanged);
         this.eventService.subscribe(GameTick.class, this::onGameTick);
+
+        if( gameService.getPlayerLocation().distanceTo(VARROCK_EAST_MINE) > 10 ) {
+            taskManager.pushTask(new WalkTask(plugin, pathfinderConfig, VARROCK_EAST_MINE, actionService, gameService, humanizerService));
+            this.currentState = MiningState.WAITING_FOR_SUBTASK;
+            return;
+        }
+        this.currentState = MiningState.FINDING_ROCK;
     }
 
     @Override

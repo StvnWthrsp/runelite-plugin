@@ -163,6 +163,18 @@ public class GameStateService {
     }
 
     /**
+     * Checks if the local player is currently performing any cooking animation.
+     * 
+     * @return true if the player is performing a cooking animation, false otherwise
+     */
+    public boolean isCurrentlyCooking() {
+        int currentAnimation = getCurrentAnimation();
+        return currentAnimation == AnimationID.HUMAN_COOKING ||
+                currentAnimation == AnimationID.HUMAN_COOKING_LOOP ||
+                currentAnimation == AnimationID.HUMAN_FIRECOOKING;
+    }
+
+    /**
      * Gets the current world location of the local player.
      * 
      * @return the player's current world location
