@@ -31,7 +31,7 @@ public class WalkTask implements BotTask {
         USING_TRANSPORT,
         FAILED,
         FINISHED,
-        CLICKING_MENU
+        INTERACTING_WITH_OBJECT
     }
 
     private static final int RETRY_LIMIT = 5;
@@ -108,73 +108,35 @@ public class WalkTask implements BotTask {
             case USING_TRANSPORT:
                 handleTransport();
                 break;
-            case CLICKING_MENU:
-                doClickingMenu();
+            case INTERACTING_WITH_OBJECT:
+                if (!actionService.isInteracting()) {
+                    log.info("Interacting complete. Resuming walking.");
+                    currentState = WalkState.WALKING;
+                    delayTicks = humanizerService.getShortDelay();
+                    transportObject = null;
+                    transportToUse = null;
+                }
                 break;
             default:
                 break;
         }
     }
 
-    private void doClickingMenu() {
-        MenuEntry[] menuEntries = client.getMenu().getMenuEntries();
-        int entryIndex = menuEntries.length;
-        for (int i = 0; i < menuEntries.length; i++) {
-            if (transportToUse == null) {
-                log.warn("transportToUse was null");
-                return;
-            }
-            MenuEntry entry = menuEntries[i];
-            if (transportToUse.getMenuOption().equals(entry.getOption())) {
-                log.info("CLICKING_MENU: options matched, {} and {}", transportToUse.getMenuOption(), entry.getOption());
-                log.info("Clicking menu option at index {}", i);
-                java.awt.Point clickPoint = gameService.getRandomPointInBounds(gameService.getMenuEntryBounds(entry, entryIndex));
-                actionService.sendClickRequest(clickPoint, true);
-                currentState = WalkState.WALKING;
-                delayTicks = humanizerService.getShortDelay();
-                transportObject = null;
-                transportToUse = null;
-                return;
-            }
-            entryIndex--;
-        }
-    }
-
     private void handleTransport() {
-        if ((transportObject != null)) {
-            // TODO: More efficient to check if mouse is in clickable area, or check menu entries?
-            // TODO: Maybe a helper is needed for checking if a menu entry is in the list
-
-            // Get the menu entries that are present on hover
-            MenuEntry[] menuEntries = client.getMenu().getMenuEntries();
-
-            // If there is no menu or the wrong object is targeted, move the mouse to hover over the object
-            if (menuEntries.length == 0) {
-                actionService.sendMouseMoveRequest(gameService.getRandomClickablePoint(transportObject));
-                delayTicks = humanizerService.getShortDelay();
-                return;
-            } else if (!Text.removeTags(menuEntries[menuEntries.length - 1].getTarget()).equals(transportToUse.getMenuTarget())) {
-                actionService.sendMouseMoveRequest(gameService.getRandomClickablePoint(transportObject));
-                delayTicks = humanizerService.getShortDelay();
-                return;
-            }
-
-            // TODO: Improve ActionService.interactWithGameObject and use it here instead
-            if (Text.removeTags(menuEntries[menuEntries.length - 1].getOption()).equals(transportToUse.getMenuOption())) {
-                actionService.sendClickRequest(null, false);
-            } else {
-                actionService.sendRightClickRequest();
-                scheduler.schedule(this::doClickingMenu, 450, TimeUnit.MILLISECONDS);
-                return;
-            }
-
-            currentState = WalkState.WALKING;
-            delayTicks = humanizerService.getShortDelay();
-            transportObject = null;
-            transportToUse = null;
-        } else {
-            log.warn("Could not use transport. Recalculating path.");
+        if (transportObject == null) {
+            log.warn("transportObject was null, recalculating path");
             currentState = WalkState.IDLE;
+            return;
+        }
+        if (transportToUse == null) {
+            log.warn("transportToUse was null, recalculating path");
+            currentState = WalkState.IDLE;
+            return;
+        }
+
+        boolean startedInteraction = actionService.interactWithGameObject(transportObject, transportToUse.getMenuOption());
+        if (startedInteraction) {
+            currentState = WalkState.INTERACTING_WITH_OBJECT;
         }
     }
 

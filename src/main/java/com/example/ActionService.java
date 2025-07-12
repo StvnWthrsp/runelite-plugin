@@ -4,13 +4,15 @@ import com.example.utils.ClickObstructionChecker;
 import com.google.inject.Singleton;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.GameObject;
+import net.runelite.api.MenuEntry;
 import net.runelite.api.widgets.Widget;
+import net.runelite.client.util.Text;
 import net.runelite.api.WallObject;
 import net.runelite.api.gameval.InterfaceID.MagicSpellbook;
 
 import javax.inject.Inject;
 
-import java.awt.Point;
+import java.awt.*;
 import java.util.Objects;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -25,6 +27,7 @@ public class ActionService {
     private final GameService gameService;
     private volatile boolean isCurrentlyDropping = false;
     private final ClickObstructionChecker clickObstructionChecker;
+    private volatile boolean isCurrentlyInteracting;
 
     @Inject
     public ActionService(RunepalPlugin plugin, PipeService pipeService, GameService gameService) {
@@ -79,6 +82,14 @@ public class ActionService {
      */
     public boolean isDropping() {
         return isCurrentlyDropping;
+    }
+
+        /**
+     * Check whether interacting with an object is currently happening
+     * @return true if interacting with an object is not yet finished
+     */
+    public boolean isInteracting() {
+        return isCurrentlyInteracting;
     }
 
     /**
@@ -239,7 +250,6 @@ public class ActionService {
      * @return true if the interaction was initiated
      */
     public boolean interactWithGameObject(GameObject gameObject, String action) {
-        // TODO: Add a move argument, we might not always want to move the mouse
         if (gameObject == null) {
             log.warn("Cannot interact with null game object");
             return false;
@@ -257,10 +267,58 @@ public class ActionService {
         }
 
         log.info("Interacting with game object {} using action '{}'", gameObject.getId(), action);
-        
-        // For most interactions, a left click will work
-        // For specific actions, you might need right-click menu handling
-        sendClickRequest(clickPoint, true);
+        isCurrentlyInteracting = true;
+
+        // If mouse is not already over the gameObject, move the mouse
+        // TODO: isMouseOverObject could be a helper method
+        Shape convexHull = gameObject.getConvexHull();
+        net.runelite.api.Point mousePosition = plugin.getClient().getMouseCanvasPosition();
+
+        if (!convexHull.contains(mousePosition.getX(), mousePosition.getY())) {
+            log.info("Mouse is not over the object, moving mouse");
+            // TODO: Can we do this and schedule the next actions so we don't have to iterate again?
+            sendMouseMoveRequest(clickPoint);
+            return false;
+        }
+
+        // Get the menu entries that are present on hover
+        MenuEntry[] menuEntries = plugin.getClient().getMenu().getMenuEntries();
+
+        // If there is no menu, we have a problem
+        if (menuEntries.length == 0) {
+            log.warn("No menu detected, moving mouse to GameObject");
+            return false;
+        }
+
+        // If left-click option matches action, just click
+        if (Text.removeTags(menuEntries[menuEntries.length - 1].getOption()).equals(action)) {
+            log.info("Left-click action {} matches expected action {}, sending click", Text.removeTags(menuEntries[menuEntries.length - 1].getTarget()), action);
+            sendClickRequest(null, false);
+            isCurrentlyInteracting = false;
+            return true;
+        }
+
+        // Otherwise, right-click and schedule the click on the menu entry
+        log.info("Left-click action did not match, right-clicking");
+        sendRightClickRequest();
+        scheduler.schedule(() -> {
+            int entryIndex = menuEntries.length;
+            for (int i = 0; i < menuEntries.length; i++) {
+                entryIndex--;
+                MenuEntry entry = menuEntries[i];
+                if (action.equals(entry.getOption())) {
+                    log.info("CLICKING_MENU: options matched, {} and {}", action, entry.getOption());
+                    log.info("Clicking menu option at index {}", i);
+                    java.awt.Point menuEntryClickPoint = gameService.getRandomPointInBounds(gameService.getMenuEntryBounds(entry, entryIndex));
+                    sendClickRequest(menuEntryClickPoint, true);
+                    isCurrentlyInteracting = false;
+                    return true;
+                }
+            }
+            log.warn("Right-click menu did not contain expected option {}", action);
+            isCurrentlyInteracting = false;
+            return false;
+        }, 300, TimeUnit.MILLISECONDS);
         return true;
     }
 

@@ -17,7 +17,7 @@ public class BankTask implements BotTask {
         DEPOSITING,
         WAITING_FOR_DEPOSIT,
         FINISHED,
-        FAILED
+        INTERACTING_WITH_BANK, FAILED
     }
 
     private final Client client;
@@ -46,6 +46,10 @@ public class BankTask implements BotTask {
             case FIND_BANK:
                 findAndOpenBank();
                 break;
+            case INTERACTING_WITH_BANK:
+                if (!actionService.isInteracting()) {
+                    currentState = BankState.OPENING_BANK;
+                }
             case OPENING_BANK:
                 waitForBankWidget();
                 break;
@@ -64,8 +68,10 @@ public class BankTask implements BotTask {
         GameObject bankBooth = gameService.findNearestGameObject(10583, 10355, 18491, 27291);
         if (bankBooth != null) {
             log.info("Found bank booth. Clicking it.");
-            actionService.interactWithGameObject(bankBooth, "Bank");
-            currentState = BankState.OPENING_BANK;
+            boolean startedInteraction = actionService.interactWithGameObject(bankBooth, "Bank");
+            if(startedInteraction){
+                currentState = BankState.INTERACTING_WITH_BANK;
+            };
         } else {
             log.warn("No bank booth found. Cannot proceed with banking.");
             currentState = BankState.FAILED;
