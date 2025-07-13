@@ -141,7 +141,7 @@ public class RunepalPlugin extends Plugin
 		UtilityService utilityService = new UtilityService(client);
 		
 		gameService = new GameService(gameStateService, entityService, clickService, utilityService);
-		actionService = new ActionService(this, pipeService, gameService);
+		actionService = new ActionService(this, pipeService, gameService, eventService);
 
 		ShortestPathConfig shortestPathConfig = configManager.getConfig(ShortestPathConfig.class);
 		pathfinderConfig = new PathfinderConfig(client, shortestPathConfig);
@@ -406,7 +406,7 @@ public class RunepalPlugin extends Plugin
 				gameService = new GameService(gameStateService, entityService, clickService, utilityService);
 			}
 			if (actionService == null) {
-				actionService = new ActionService(this, pipeService, gameService);
+				actionService = new ActionService(this, pipeService, gameService, eventService);
 			}
 			if (pipeService.connect()) {
 				// After connecting, send a "connect" command to the Python server

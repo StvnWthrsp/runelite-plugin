@@ -25,16 +25,18 @@ public class ActionService {
     private final ScheduledExecutorService scheduler;
     private final PipeService pipeService;
     private final GameService gameService;
+    private final EventService eventService;
     private volatile boolean isCurrentlyDropping = false;
     private final ClickObstructionChecker clickObstructionChecker;
     private volatile boolean isCurrentlyInteracting;
 
     @Inject
-    public ActionService(RunepalPlugin plugin, PipeService pipeService, GameService gameService) {
+    public ActionService(RunepalPlugin plugin, PipeService pipeService, GameService gameService, EventService eventService) {
         this.plugin = Objects.requireNonNull(plugin, "plugin cannot be null");
         this.scheduler = Executors.newSingleThreadScheduledExecutor();
         this.pipeService = Objects.requireNonNull(pipeService, "pipeService cannot be null");
         this.gameService = Objects.requireNonNull(gameService, "gameService cannot be null");
+        this.eventService = Objects.requireNonNull(eventService, "eventService cannot be null");
         this.clickObstructionChecker = new ClickObstructionChecker(plugin.getClient());
     }
 
@@ -255,19 +257,28 @@ public class ActionService {
             return false;
         }
 
+        // Prevent concurrent interactions
+        if (isCurrentlyInteracting) {
+            log.debug("Already interacting with an object, ignoring new interaction request");
+            return false;
+        }
+
         Point clickPoint = gameService.getRandomClickablePoint(gameObject);
         if (clickObstructionChecker.isClickObstructed(clickPoint)) {
             log.warn("Click point is obstructed");
             // TODO: Rotate the camera so we can try again
+            eventService.publish(new InteractionCompletedEvent(gameObject, action, false, "Click point obstructed"));
             return false;
         }
         if (clickPoint.x == -1) {
             log.warn("Could not get clickable point for game object {}", gameObject.getId());
+            eventService.publish(new InteractionCompletedEvent(gameObject, action, false, "Could not get clickable point"));
             return false;
         }
 
         log.info("Interacting with game object {} using action '{}'", gameObject.getId(), action);
         isCurrentlyInteracting = true;
+        eventService.publish(new InteractionStartedEvent(gameObject, action));
 
         // If mouse is not already over the gameObject, move the mouse
         // TODO: isMouseOverObject could be a helper method
@@ -275,18 +286,39 @@ public class ActionService {
         net.runelite.api.Point mousePosition = plugin.getClient().getMouseCanvasPosition();
 
         if (!convexHull.contains(mousePosition.getX(), mousePosition.getY())) {
-            log.info("Mouse is not over the object, moving mouse");
-            // TODO: Can we do this and schedule the next actions so we don't have to iterate again?
+            log.info("Mouse is not over the object, moving mouse and scheduling interaction");
             sendMouseMoveRequest(clickPoint);
-            return false;
+            
+            // Schedule the actual interaction after mouse movement
+            scheduler.schedule(() -> {
+                performInteractionAfterMouseMove(gameObject, action, clickPoint);
+            }, 600, TimeUnit.MILLISECONDS);
+            return true; // Return true since we're handling the interaction asynchronously
         }
 
+        // Perform the actual interaction logic
+        return performInteractionLogic(gameObject, action);
+    }
+
+    /**
+     * Performs the interaction logic after mouse positioning
+     */
+    private void performInteractionAfterMouseMove(GameObject gameObject, String action, Point clickPoint) {
+        performInteractionLogic(gameObject, action);
+    }
+
+    /**
+     * Core interaction logic shared by both immediate and delayed interactions
+     */
+    private boolean performInteractionLogic(GameObject gameObject, String action) {
         // Get the menu entries that are present on hover
         MenuEntry[] menuEntries = plugin.getClient().getMenu().getMenuEntries();
 
         // If there is no menu, we have a problem
         if (menuEntries.length == 0) {
-            log.warn("No menu detected, moving mouse to GameObject");
+            log.warn("No menu detected for game object {}", gameObject.getId());
+            isCurrentlyInteracting = false;
+            eventService.publish(new InteractionCompletedEvent(gameObject, action, false, "No menu detected"));
             return false;
         }
 
@@ -295,6 +327,7 @@ public class ActionService {
             log.info("Left-click action {} matches expected action {}, sending click", Text.removeTags(menuEntries[menuEntries.length - 1].getTarget()), action);
             sendClickRequest(null, false);
             isCurrentlyInteracting = false;
+            eventService.publish(new InteractionCompletedEvent(gameObject, action, true));
             return true;
         }
 
@@ -302,22 +335,31 @@ public class ActionService {
         log.info("Left-click action did not match, right-clicking");
         sendRightClickRequest();
         scheduler.schedule(() -> {
-            int entryIndex = menuEntries.length;
-            for (int i = 0; i < menuEntries.length; i++) {
+            MenuEntry[] currentMenuEntries = plugin.getClient().getMenu().getMenuEntries();
+            int entryIndex = currentMenuEntries.length;
+            boolean foundAction = false;
+            
+            for (int i = 0; i < currentMenuEntries.length; i++) {
                 entryIndex--;
-                MenuEntry entry = menuEntries[i];
+                MenuEntry entry = currentMenuEntries[i];
                 if (action.equals(entry.getOption())) {
                     log.info("CLICKING_MENU: options matched, {} and {}", action, entry.getOption());
                     log.info("Clicking menu option at index {}", i);
                     java.awt.Point menuEntryClickPoint = gameService.getRandomPointInBounds(gameService.getMenuEntryBounds(entry, entryIndex));
                     sendClickRequest(menuEntryClickPoint, true);
-                    isCurrentlyInteracting = false;
-                    return true;
+                    foundAction = true;
+                    break;
                 }
             }
-            log.warn("Right-click menu did not contain expected option {}", action);
+            
+            // Always reset the interaction flag and publish completion event
             isCurrentlyInteracting = false;
-            return false;
+            if (foundAction) {
+                eventService.publish(new InteractionCompletedEvent(gameObject, action, true));
+            } else {
+                log.warn("Right-click menu did not contain expected option {}", action);
+                eventService.publish(new InteractionCompletedEvent(gameObject, action, false, "Menu option not found"));
+            }
         }, 300, TimeUnit.MILLISECONDS);
         return true;
     }

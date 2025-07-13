@@ -92,6 +92,7 @@ public class FishingTask implements BotTask {
         }
         determineNextState();
         this.eventService.subscribe(GameTick.class, this::onGameTick);
+        eventService.subscribe(InteractionCompletedEvent.class, this::onInteractionCompleted);
     }
 
     @Override
@@ -100,6 +101,7 @@ public class FishingTask implements BotTask {
         this.fishingSpot = null;
         this.cookingRange = null;
         this.eventService.unsubscribe(GameTick.class, this::onGameTick);
+        this.eventService.unsubscribe(InteractionCompletedEvent.class, this::onInteractionCompleted);
     }
 
     @Override
@@ -162,14 +164,7 @@ public class FishingTask implements BotTask {
                 doWalkingToCooking();
                 break;
             case INTERACTING_WITH_RANGE:
-                if (!actionService.isInteracting()) {
-                    log.info("Interacting complete. Resuming walking.");
-                    currentState = FishingState.COOKING;
-                    delayTicks = humanizerService.getShortDelay();
-                    cookingStarted = false;
-                    idleTicks = 0;
-                    currentState = FishingState.WAIT_COOKING;
-                }
+                // State transition handled by InteractionCompletedEvent
                 break;
             case COOKING:
                 doCooking();
@@ -205,6 +200,20 @@ public class FishingTask implements BotTask {
         }
     }
 
+    private void onInteractionCompleted(InteractionCompletedEvent event) {
+        if (currentState == FishingState.INTERACTING_WITH_RANGE) {
+            if(event.isSuccess()) {
+                log.info("Interacting with range complete. Beginning to cook.");
+                delayTicks = humanizerService.getShortDelay();
+                cookingStarted = false;
+                idleTicks = 0;
+                currentState = FishingState.WAIT_COOKING;
+            } else {
+                log.info("Interacting with range failed. Retrying.");
+                currentState = FishingState.COOKING;
+            }
+        }
+    }
 
     private void doWalkingToFishing() {
         WorldPoint playerLocation = gameService.getPlayerLocation();
@@ -338,8 +347,9 @@ public class FishingTask implements BotTask {
         // First, use raw fish on the range/fire
         int rawFishId = getRawFishId();
         if (rawFishId != -1) {
-            boolean startedInteraction = actionService.interactWithGameObject(cookingRange, "Cook");
-            if (startedInteraction) {
+            // Check if ActionService is already interacting to prevent duplicate interactions
+            if (!actionService.isInteracting()) {
+                actionService.interactWithGameObject(cookingRange, "Cook");
                 currentState = FishingState.INTERACTING_WITH_RANGE;
             }
         }
