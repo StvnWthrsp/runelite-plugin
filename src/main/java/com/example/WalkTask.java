@@ -668,12 +668,16 @@ public class WalkTask implements BotTask {
     private void handleDoorOpening() {
         if ((doorToOpen != null && doorToOpen instanceof GameObject) || (doorToOpen != null && doorToOpen instanceof WallObject)) {
             if (doorToOpen instanceof GameObject) {
-                actionService.interactWithGameObject((GameObject) doorToOpen, "Open");
+                boolean startedInteraction = actionService.interactWithGameObject((GameObject) doorToOpen, "Open");
+                if (startedInteraction) {
+                    currentState = WalkState.INTERACTING_WITH_OBJECT;
+                }
+            // TODO: Handle wall objects similar to game objects
             } else {
                 actionService.interactWithWallObject((WallObject) doorToOpen, "Open");
+                currentState = WalkState.WALKING;
+                delayTicks = humanizerService.getRandomDelay(0, 2);
             }
-            currentState = WalkState.WALKING;
-            delayTicks = humanizerService.getRandomDelay(0, 2);
         } else {
             log.warn("Could not open door. Recalculating path.");
             currentState = WalkState.IDLE;

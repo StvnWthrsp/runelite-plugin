@@ -36,7 +36,7 @@ public class FishingTask implements BotTask {
         WALKING_TO_BANK,
         DEPOSITING,
         WITHDRAWING,
-        WAITING_FOR_SUBTASK
+        INTERACTING_WITH_RANGE, WAITING_FOR_SUBTASK
     }
 
     // Lumbridge Swamp fishing spot (net fishing)
@@ -160,6 +160,16 @@ public class FishingTask implements BotTask {
                 break;
             case WALKING_TO_COOKING:
                 doWalkingToCooking();
+                break;
+            case INTERACTING_WITH_RANGE:
+                if (!actionService.isInteracting()) {
+                    log.info("Interacting complete. Resuming walking.");
+                    currentState = FishingState.COOKING;
+                    delayTicks = humanizerService.getShortDelay();
+                    cookingStarted = false;
+                    idleTicks = 0;
+                    currentState = FishingState.WAIT_COOKING;
+                }
                 break;
             case COOKING:
                 doCooking();
@@ -328,10 +338,10 @@ public class FishingTask implements BotTask {
         // First, use raw fish on the range/fire
         int rawFishId = getRawFishId();
         if (rawFishId != -1) {
-            actionService.interactWithGameObject(cookingRange, "Cook");
-            cookingStarted = false;
-            idleTicks = 0;
-            currentState = FishingState.WAIT_COOKING;
+            boolean startedInteraction = actionService.interactWithGameObject(cookingRange, "Cook");
+            if (startedInteraction) {
+                currentState = FishingState.INTERACTING_WITH_RANGE;
+            }
         }
     }
 
