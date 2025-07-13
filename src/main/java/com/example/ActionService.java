@@ -336,17 +336,22 @@ public class ActionService {
         sendRightClickRequest();
         scheduler.schedule(() -> {
             MenuEntry[] currentMenuEntries = plugin.getClient().getMenu().getMenuEntries();
-            int entryIndex = currentMenuEntries.length;
             boolean foundAction = false;
-            
+
+            log.info("----Menu----");
             for (int i = 0; i < currentMenuEntries.length; i++) {
-                entryIndex--;
                 MenuEntry entry = currentMenuEntries[i];
+                int visualIndex = currentMenuEntries.length - 1 - i;
+                log.info("Visual {}, Index {}: {}", visualIndex, i, entry.getOption());
                 if (action.equals(entry.getOption())) {
+                    // Menu entries are indexed bottom-up, but visually displayed top-down
+                    // So array index 0 = bottom menu item, array index length-1 = top menu item
+                    // For getMenuEntryBounds, we need the visual index from top (0 = top item)
                     log.info("CLICKING_MENU: options matched, {} and {}", action, entry.getOption());
-                    log.info("Clicking menu option at index {}", i);
-                    java.awt.Point menuEntryClickPoint = gameService.getRandomPointInBounds(gameService.getMenuEntryBounds(entry, entryIndex));
+                    log.info("Clicking menu option at array index {} (visual index {})", i, visualIndex);
+                    java.awt.Point menuEntryClickPoint = gameService.getRandomPointInBounds(gameService.getMenuEntryBounds(entry, visualIndex));
                     sendClickRequest(menuEntryClickPoint, true);
+                    isCurrentlyInteracting = false;
                     foundAction = true;
                     break;
                 }
@@ -360,7 +365,7 @@ public class ActionService {
                 log.warn("Right-click menu did not contain expected option {}", action);
                 eventService.publish(new InteractionCompletedEvent(gameObject, action, false, "Menu option not found"));
             }
-        }, 300, TimeUnit.MILLISECONDS);
+        }, 600, TimeUnit.MILLISECONDS);
         return true;
     }
 

@@ -409,7 +409,7 @@ public class FishingTask implements BotTask {
 
     private void doDepositing() {
         log.info("Banking all items");
-        taskManager.pushTask(new BankTask(plugin, actionService, gameService));
+        taskManager.pushTask(new BankTask(plugin, actionService, gameService, eventService));
         currentState = FishingState.WAITING_FOR_SUBTASK;
     }
 

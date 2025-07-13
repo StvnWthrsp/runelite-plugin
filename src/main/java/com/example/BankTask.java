@@ -33,11 +33,23 @@ public class BankTask implements BotTask {
         this.actionService = actionService;
         this.gameService = gameService;
     }
+    
+    private EventService eventService;
+
+    public BankTask(RunepalPlugin plugin, ActionService actionService, GameService gameService, EventService eventService) {
+        this.client = plugin.getClient();
+        this.actionService = actionService;
+        this.gameService = gameService;
+        this.eventService = eventService;
+    }
 
     @Override
     public void onStart() {
         log.info("Starting bank task.");
         this.currentState = BankState.FIND_BANK;
+        if (eventService != null) {
+            eventService.subscribe(InteractionCompletedEvent.class, this::onInteractionCompleted);
+        }
     }
 
     @Override
@@ -47,9 +59,8 @@ public class BankTask implements BotTask {
                 findAndOpenBank();
                 break;
             case INTERACTING_WITH_BANK:
-                if (!actionService.isInteracting()) {
-                    currentState = BankState.OPENING_BANK;
-                }
+                // State transition handled by InteractionCompletedEvent
+                break;
             case OPENING_BANK:
                 waitForBankWidget();
                 break;
@@ -68,10 +79,10 @@ public class BankTask implements BotTask {
         GameObject bankBooth = gameService.findNearestGameObject(10583, 10355, 18491, 27291);
         if (bankBooth != null) {
             log.info("Found bank booth. Clicking it.");
-            boolean startedInteraction = actionService.interactWithGameObject(bankBooth, "Bank");
-            if(startedInteraction){
+            if (!actionService.isInteracting()) {
+                actionService.interactWithGameObject(bankBooth, "Bank");
                 currentState = BankState.INTERACTING_WITH_BANK;
-            };
+            }
         } else {
             log.warn("No bank booth found. Cannot proceed with banking.");
             currentState = BankState.FAILED;
@@ -127,6 +138,9 @@ public class BankTask implements BotTask {
     @Override
     public void onStop() {
         log.info("Stopping bank task.");
+        if (eventService != null) {
+            eventService.unsubscribe(InteractionCompletedEvent.class, this::onInteractionCompleted);
+        }
     }
 
     @Override
@@ -140,6 +154,18 @@ public class BankTask implements BotTask {
             return false;
         }
         return true;
+    }
+
+    private void onInteractionCompleted(InteractionCompletedEvent event) {
+        if (currentState == BankState.INTERACTING_WITH_BANK) {
+            if (event.isSuccess()) {
+                log.info("Bank interaction completed successfully");
+                currentState = BankState.OPENING_BANK;
+            } else {
+                log.warn("Bank interaction failed: {}", event.getFailureReason());
+                currentState = BankState.FIND_BANK;
+            }
+        }
     }
 
     @Override

@@ -80,6 +80,7 @@ public class WalkTask implements BotTask {
         log.info("Starting enhanced walk task to {}", destination);
         this.currentState = WalkState.IDLE;
         this.pathIndex = 0;
+        // Note: WalkTask doesn't need eventService since it uses a simple polling approach for interactions
     }
 
     @Override
@@ -109,6 +110,8 @@ public class WalkTask implements BotTask {
                 handleTransport();
                 break;
             case INTERACTING_WITH_OBJECT:
+                // For simplicity, WalkTask continues to use polling approach
+                // since interactions are brief and not complex
                 if (!actionService.isInteracting()) {
                     log.info("Interacting complete. Resuming walking.");
                     currentState = WalkState.WALKING;
@@ -134,8 +137,8 @@ public class WalkTask implements BotTask {
             return;
         }
 
-        boolean startedInteraction = actionService.interactWithGameObject(transportObject, transportToUse.getMenuOption());
-        if (startedInteraction) {
+        if (!actionService.isInteracting()) {
+            actionService.interactWithGameObject(transportObject, transportToUse.getMenuOption());
             currentState = WalkState.INTERACTING_WITH_OBJECT;
         }
     }
@@ -668,8 +671,8 @@ public class WalkTask implements BotTask {
     private void handleDoorOpening() {
         if ((doorToOpen != null && doorToOpen instanceof GameObject) || (doorToOpen != null && doorToOpen instanceof WallObject)) {
             if (doorToOpen instanceof GameObject) {
-                boolean startedInteraction = actionService.interactWithGameObject((GameObject) doorToOpen, "Open");
-                if (startedInteraction) {
+                if (!actionService.isInteracting()) {
+                    actionService.interactWithGameObject((GameObject) doorToOpen, "Open");
                     currentState = WalkState.INTERACTING_WITH_OBJECT;
                 }
             // TODO: Handle wall objects similar to game objects

@@ -335,7 +335,7 @@ public class MiningTask implements BotTask {
                     log.info("Inventory full. Banking.");
                     // Order is reversed because we push to the top of the stack
                     taskManager.pushTask(new WalkTask(plugin, pathfinderConfig, gameService.getPlayerLocation(), actionService, gameService, humanizerService));
-                    taskManager.pushTask(new BankTask(plugin, actionService, gameService));
+                    taskManager.pushTask(new BankTask(plugin, actionService, gameService, eventService));
                     log.info("Banking to: {}", plugin.getBankCoordinates());
                     taskManager.pushTask(new WalkTask(plugin, pathfinderConfig, plugin.getBankCoordinates(), actionService, gameService, humanizerService));
                     currentState = MiningState.WAITING_FOR_SUBTASK;
