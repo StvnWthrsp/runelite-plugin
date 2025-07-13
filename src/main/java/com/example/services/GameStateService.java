@@ -213,12 +213,17 @@ public class GameStateService {
         // Calculate font height (typical menu entry height)
         // RuneLite menus typically use a fixed height per entry
         int entryHeight = 15; // Standard menu entry height in pixels
+        
+        // Account for the menu header at the top
+        // The menu has a header section before the actual entries start
+        int menuHeaderHeight = 19; // Typical RuneLite menu header height
 
         // Calculate Y position for this specific entry
-        int entryY = menuY + (entryIndex * entryHeight);
+        // Add header offset to account for the space above the first menu entry
+        int entryY = menuY + menuHeaderHeight + (entryIndex * entryHeight);
 
         // Compress the bounds slightly to avoid clicking outside the entry
-        final int DEADZONE = 4;
+        final int DEADZONE = 1;
         return new Rectangle(menuX, entryY + DEADZONE, menuWidth, entryHeight - (DEADZONE * 2));
     }
 }

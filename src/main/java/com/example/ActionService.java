@@ -26,17 +26,19 @@ public class ActionService {
     private final PipeService pipeService;
     private final GameService gameService;
     private final EventService eventService;
+    private final BotConfig config;
     private volatile boolean isCurrentlyDropping = false;
     private final ClickObstructionChecker clickObstructionChecker;
     private volatile boolean isCurrentlyInteracting;
 
     @Inject
-    public ActionService(RunepalPlugin plugin, PipeService pipeService, GameService gameService, EventService eventService) {
+    public ActionService(RunepalPlugin plugin, PipeService pipeService, GameService gameService, EventService eventService, BotConfig config) {
         this.plugin = Objects.requireNonNull(plugin, "plugin cannot be null");
         this.scheduler = Executors.newSingleThreadScheduledExecutor();
         this.pipeService = Objects.requireNonNull(pipeService, "pipeService cannot be null");
         this.gameService = Objects.requireNonNull(gameService, "gameService cannot be null");
         this.eventService = Objects.requireNonNull(eventService, "eventService cannot be null");
+        this.config = Objects.requireNonNull(config, "config cannot be null");
         this.clickObstructionChecker = new ClickObstructionChecker(plugin.getClient());
     }
 
@@ -349,8 +351,30 @@ public class ActionService {
                     // For getMenuEntryBounds, we need the visual index from top (0 = top item)
                     log.info("CLICKING_MENU: options matched, {} and {}", action, entry.getOption());
                     log.info("Clicking menu option at array index {} (visual index {})", i, visualIndex);
-                    java.awt.Point menuEntryClickPoint = gameService.getRandomPointInBounds(gameService.getMenuEntryBounds(entry, visualIndex));
+                    
+                    // DEBUG: Show the menu entry bounds as an overlay (if enabled in config)
+                    Rectangle menuBounds = gameService.getMenuEntryBounds(entry, visualIndex);
+                    if (menuBounds != null) {
+                        if (config.showMenuDebugOverlay()) {
+                            plugin.getMenuDebugOverlay().addDebugRect(
+                                menuBounds, 
+                                String.format("Menu: %s (arr:%d vis:%d)", action, i, visualIndex), 
+                                Color.RED
+                            );
+                            log.info("DEBUG: Menu bounds for '{}': {}", action, menuBounds);
+                            
+                            // Clear the debug overlay after 1 seconds
+                            scheduler.schedule(() -> {
+                                plugin.getMenuDebugOverlay().clearDebugRects();
+                            }, 1000, TimeUnit.MILLISECONDS);
+                        }
+                    } else {
+                        log.warn("DEBUG: getMenuEntryBounds returned null for entry '{}' at visual index {}", action, visualIndex);
+                    }
+
+                    java.awt.Point menuEntryClickPoint = gameService.getRandomPointInBounds(menuBounds);
                     sendClickRequest(menuEntryClickPoint, true);
+                    
                     isCurrentlyInteracting = false;
                     foundAction = true;
                     break;

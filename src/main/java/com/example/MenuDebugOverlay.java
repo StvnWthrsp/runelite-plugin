@@ -21,11 +21,19 @@ public class MenuDebugOverlay extends Overlay {
     public MenuDebugOverlay(Client client) {
         this.client = client;
         setPosition(OverlayPosition.DYNAMIC);
-        setLayer(OverlayLayer.ABOVE_WIDGETS);
-        setPriority(OverlayPriority.HIGH);
+        setLayer(OverlayLayer.ALWAYS_ON_TOP);
+        setPriority(OverlayPriority.HIGHEST);
     }
     
     public void addDebugRect(Rectangle bounds, String label, Color color) {
+        if (bounds == null) {
+            log.warn("Cannot add debug rect with null bounds");
+            return;
+        }
+        if (color == null) {
+            color = Color.RED; // Default color
+        }
+        
         debugRects.clear(); // Clear previous rectangles
         debugRects.add(new DebugRect(bounds, label, color));
         log.info("Added debug rect: {} with label: {}", bounds, label);
@@ -37,24 +45,28 @@ public class MenuDebugOverlay extends Overlay {
     
     @Override
     public Dimension render(Graphics2D graphics) {
+        if (graphics == null) {
+            return null;
+        }
+        
         for (DebugRect debugRect : debugRects) {
-            graphics.setColor(debugRect.color);
-            graphics.setStroke(new BasicStroke(2));
-            graphics.drawRect(
-                debugRect.bounds.x, 
-                debugRect.bounds.y, 
-                debugRect.bounds.width, 
-                debugRect.bounds.height
-            );
+            if (debugRect == null || debugRect.bounds == null || debugRect.color == null) {
+                log.warn("Skipping null debug rect or bounds");
+                continue;
+            }
             
-            // Draw label
-            graphics.setColor(Color.WHITE);
-            graphics.setFont(new Font("Arial", Font.BOLD, 12));
-            graphics.drawString(
-                debugRect.label, 
-                debugRect.bounds.x + 5, 
-                debugRect.bounds.y + 15
-            );
+            try {
+                graphics.setColor(debugRect.color);
+                graphics.setStroke(new BasicStroke(2));
+                graphics.drawRect(
+                    debugRect.bounds.x, 
+                    debugRect.bounds.y, 
+                    debugRect.bounds.width, 
+                    debugRect.bounds.height
+                );
+            } catch (Exception e) {
+                log.warn("Error rendering debug rect: {}", e.getMessage());
+            }
         }
         
         return null;

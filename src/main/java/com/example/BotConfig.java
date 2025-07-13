@@ -208,4 +208,16 @@ public interface BotConfig extends Config
 	{
 		return false;
 	}
+
+	@ConfigItem(
+			keyName = "showMenuDebugOverlay",
+			name = "Show Menu Debug Overlay",
+			description = "Display debug rectangles around menu entries when right-clicking objects",
+			position = 3,
+			section = debugSection
+	)
+	default boolean showMenuDebugOverlay()
+	{
+		return false;
+	}
 } 
