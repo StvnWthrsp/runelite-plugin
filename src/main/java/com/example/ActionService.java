@@ -1,5 +1,6 @@
 package com.example;
 
+import com.example.services.WindmouseService;
 import com.example.utils.ClickObstructionChecker;
 import com.google.inject.Singleton;
 import lombok.extern.slf4j.Slf4j;
@@ -16,8 +17,11 @@ import java.awt.*;
 import java.awt.event.KeyEvent;
 import java.awt.event.MouseEvent;
 import java.util.Objects;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 
 @Singleton
@@ -29,19 +33,76 @@ public class ActionService {
     private final GameService gameService;
     private final EventService eventService;
     private final BotConfig config;
+    private final WindmouseService windmouseService;
     private volatile boolean isCurrentlyDropping = false;
     private final ClickObstructionChecker clickObstructionChecker;
     private volatile boolean isCurrentlyInteracting;
+    
+    // Map to track pending click actions for Windmouse movements
+    private final ConcurrentHashMap<String, PendingClickAction> pendingClickActions = new ConcurrentHashMap<>();
 
     @Inject
-    public ActionService(RunepalPlugin plugin, PipeService pipeService, GameService gameService, EventService eventService, BotConfig config) {
+    public ActionService(RunepalPlugin plugin, PipeService pipeService, GameService gameService, EventService eventService, BotConfig config, WindmouseService windmouseService) {
         this.plugin = Objects.requireNonNull(plugin, "plugin cannot be null");
         this.scheduler = Executors.newSingleThreadScheduledExecutor();
         this.pipeService = Objects.requireNonNull(pipeService, "pipeService cannot be null");
         this.gameService = Objects.requireNonNull(gameService, "gameService cannot be null");
         this.eventService = Objects.requireNonNull(eventService, "eventService cannot be null");
         this.config = Objects.requireNonNull(config, "config cannot be null");
+        this.windmouseService = Objects.requireNonNull(windmouseService, "windmouseService cannot be null");
         this.clickObstructionChecker = new ClickObstructionChecker(plugin.getClient());
+        
+        // Subscribe to mouse movement completion events
+        eventService.subscribe(MouseMovementCompletedEvent.class, this::handleMouseMovementCompleted);
+    }
+    
+    /**
+     * Internal class to track pending click actions after Windmouse movement
+     */
+    private static class PendingClickAction {
+        final Point targetPoint;
+        final boolean isRightClick;
+        final long timestamp;
+        
+        PendingClickAction(Point targetPoint, boolean isRightClick) {
+            this.targetPoint = targetPoint;
+            this.isRightClick = isRightClick;
+            this.timestamp = System.currentTimeMillis();
+        }
+    }
+    
+    /**
+     * Handle mouse movement completion events from WindmouseService
+     */
+    private void handleMouseMovementCompleted(MouseMovementCompletedEvent event) {
+        String movementId = event.getMovementId();
+        PendingClickAction pendingAction = pendingClickActions.remove(movementId);
+        
+        if (pendingAction == null) {
+            // No pending action for this movement
+            return;
+        }
+        
+        if (event.isCancelled()) {
+            log.debug("Mouse movement {} was cancelled, skipping pending click", movementId);
+            return;
+        }
+        
+        // Calculate delay before clicking (2-5ms for realism)
+        int minDelay = config.windmousePreClickDelay();
+        int maxDelay = config.windmouseMaxPreClickDelay();
+        int delay = ThreadLocalRandom.current().nextInt(minDelay, maxDelay + 1);
+        
+        // Schedule the click
+        scheduler.schedule(() -> {
+            if (pendingAction.isRightClick) {
+                executeRightClick(event.getFinalPosition());
+            } else {
+                executeLeftClick(event.getFinalPosition());
+            }
+        }, delay, TimeUnit.MILLISECONDS);
+        
+        log.debug("Scheduled click for movement {} with {}ms delay", movementId, delay);
     }
 
     /**
@@ -434,11 +495,17 @@ public class ActionService {
             }
             return;
         }
-        sendMouseMoveRequest(clickPoint);
-        MouseEvent mousePressed = new MouseEvent(plugin.getClient().getCanvas(), MouseEvent.MOUSE_PRESSED, System.currentTimeMillis(), 0, clickPoint.x, clickPoint.y, 1, false, MouseEvent.BUTTON1);
-        plugin.getClient().getCanvas().dispatchEvent(mousePressed);
-        MouseEvent mouseReleased = new MouseEvent(plugin.getClient().getCanvas(), MouseEvent.MOUSE_RELEASED, System.currentTimeMillis(), 0, clickPoint.x, clickPoint.y, 1, false, MouseEvent.BUTTON1);
-        plugin.getClient().getCanvas().dispatchEvent(mouseReleased);
+        // Use Windmouse for movement and schedule click after completion
+        Point currentMousePos = new Point(plugin.getClient().getMouseCanvasPosition().getX(), plugin.getClient().getMouseCanvasPosition().getY());
+        String movementId = UUID.randomUUID().toString();
+        
+        // Store pending click action
+        pendingClickActions.put(movementId, new PendingClickAction(clickPoint, false));
+        
+        // Start Windmouse movement
+        windmouseService.moveToPoint(currentMousePos, clickPoint, movementId);
+        return;  // Click will be executed after movement completes
+        // plugin.getClient().getCanvas().dispatchEvent(mouseReleased);
 	}
 
     public void sendRightClickRequest(Point clickPoint) {
@@ -450,11 +517,17 @@ public class ActionService {
             }
             return;
         }
-        sendMouseMoveRequest(clickPoint);
-        MouseEvent mousePressed = new MouseEvent(plugin.getClient().getCanvas(), MouseEvent.MOUSE_PRESSED, System.currentTimeMillis(), 0, clickPoint.x, clickPoint.y, 1, false, MouseEvent.BUTTON3);
-        plugin.getClient().getCanvas().dispatchEvent(mousePressed);
-        MouseEvent mouseReleased = new MouseEvent(plugin.getClient().getCanvas(), MouseEvent.MOUSE_RELEASED, System.currentTimeMillis(), 0, clickPoint.x, clickPoint.y, 1, false, MouseEvent.BUTTON3);
-        plugin.getClient().getCanvas().dispatchEvent(mouseReleased);
+        // Use Windmouse for movement and schedule right-click after completion
+        Point currentMousePos = new Point(plugin.getClient().getMouseCanvasPosition().getX(), plugin.getClient().getMouseCanvasPosition().getY());
+        String movementId = UUID.randomUUID().toString();
+        
+        // Store pending right-click action
+        pendingClickActions.put(movementId, new PendingClickAction(clickPoint, true));
+        
+        // Start Windmouse movement
+        windmouseService.moveToPoint(currentMousePos, clickPoint, movementId);
+        return;  // Right-click will be executed after movement completes
+        // plugin.getClient().getCanvas().dispatchEvent(mouseReleased);
 
     }
 
@@ -470,8 +543,10 @@ public class ActionService {
             }
             return;
         }
-        MouseEvent mouseMoved = new MouseEvent(plugin.getClient().getCanvas(), MouseEvent.MOUSE_MOVED, System.currentTimeMillis(), 0, point.x, point.y, 0, false);
-        plugin.getClient().getCanvas().dispatchEvent(mouseMoved);
+        // Use Windmouse for human-like movement when not connected
+        Point currentMousePos = new Point(plugin.getClient().getMouseCanvasPosition().getX(), plugin.getClient().getMouseCanvasPosition().getY());
+        String movementId = UUID.randomUUID().toString();
+        windmouseService.moveToPoint(currentMousePos, point, movementId);
 	}
 
 	public void sendKeyRequest(String endpoint, String key) {
@@ -540,6 +615,27 @@ public class ActionService {
         plugin.getClient().getCanvas().dispatchEvent(keyPressed);
         KeyEvent keyReleased = new KeyEvent(plugin.getClient().getCanvas(), KeyEvent.KEY_RELEASED, System.currentTimeMillis(), 0, KeyEvent.VK_SPACE, ' ');
         plugin.getClient().getCanvas().dispatchEvent(keyReleased);
+    }
+
+    
+    /**
+     * Execute a left click at the specified point
+     */
+    private void executeLeftClick(Point clickPoint) {
+        MouseEvent mousePressed = new MouseEvent(plugin.getClient().getCanvas(), MouseEvent.MOUSE_PRESSED, System.currentTimeMillis(), 0, clickPoint.x, clickPoint.y, 1, false, MouseEvent.BUTTON1);
+        plugin.getClient().getCanvas().dispatchEvent(mousePressed);
+        MouseEvent mouseReleased = new MouseEvent(plugin.getClient().getCanvas(), MouseEvent.MOUSE_RELEASED, System.currentTimeMillis(), 0, clickPoint.x, clickPoint.y, 1, false, MouseEvent.BUTTON1);
+        plugin.getClient().getCanvas().dispatchEvent(mouseReleased);
+    }
+    
+    /**
+     * Execute a right click at the specified point
+     */
+    private void executeRightClick(Point clickPoint) {
+        MouseEvent mousePressed = new MouseEvent(plugin.getClient().getCanvas(), MouseEvent.MOUSE_PRESSED, System.currentTimeMillis(), 0, clickPoint.x, clickPoint.y, 1, false, MouseEvent.BUTTON3);
+        plugin.getClient().getCanvas().dispatchEvent(mousePressed);
+        MouseEvent mouseReleased = new MouseEvent(plugin.getClient().getCanvas(), MouseEvent.MOUSE_RELEASED, System.currentTimeMillis(), 0, clickPoint.x, clickPoint.y, 1, false, MouseEvent.BUTTON3);
+        plugin.getClient().getCanvas().dispatchEvent(mouseReleased);
     }
 
 }

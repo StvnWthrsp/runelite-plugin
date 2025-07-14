@@ -220,4 +220,108 @@ public interface BotConfig extends Config
 	{
 		return false;
 	}
+
+	// Windmouse section
+	@ConfigSection(
+			name = "Windmouse - Mouse Movement",
+			description = "Configuration for human-like mouse movement algorithm",
+			position = 40
+	)
+	String windmouseSection = "windmouse";
+
+	@ConfigItem(
+			keyName = "windmouseGravity",
+			name = "Gravity Force",
+			description = "Gravitational force magnitude (higher = more direct movement)",
+			position = 0,
+			section = windmouseSection
+	)
+	default double windmouseGravity()
+	{
+		return 9.0;
+	}
+
+	@ConfigItem(
+			keyName = "windmouseWind",
+			name = "Wind Force",
+			description = "Wind force fluctuation magnitude (higher = more randomness)",
+			position = 1,
+			section = windmouseSection
+	)
+	default double windmouseWind()
+	{
+		return 3.0;
+	}
+
+	@ConfigItem(
+			keyName = "windmouseMaxVel",
+			name = "Max Velocity",
+			description = "Maximum step size/velocity threshold",
+			position = 2,
+			section = windmouseSection
+	)
+	default double windmouseMaxVel()
+	{
+		return 15.0;
+	}
+
+	@ConfigItem(
+			keyName = "windmouseTargetArea",
+			name = "Target Area",
+			description = "Distance threshold where wind behavior changes",
+			position = 3,
+			section = windmouseSection
+	)
+	default double windmouseTargetArea()
+	{
+		return 12.0;
+	}
+
+	@ConfigItem(
+			keyName = "windmouseMinStepDelay",
+			name = "Min Step Delay (ms)",
+			description = "Minimum milliseconds between movement steps",
+			position = 4,
+			section = windmouseSection
+	)
+	default int windmouseMinStepDelay()
+	{
+		return 5;
+	}
+
+	@ConfigItem(
+			keyName = "windmouseMaxStepDelay",
+			name = "Max Step Delay (ms)",
+			description = "Maximum milliseconds between movement steps",
+			position = 5,
+			section = windmouseSection
+	)
+	default int windmouseMaxStepDelay()
+	{
+		return 10;
+	}
+
+	@ConfigItem(
+			keyName = "windmousePreClickDelay",
+			name = "Min Pre-Click Delay (ms)",
+			description = "Minimum milliseconds before clicking after movement",
+			position = 6,
+			section = windmouseSection
+	)
+	default int windmousePreClickDelay()
+	{
+		return 2;
+	}
+
+	@ConfigItem(
+			keyName = "windmouseMaxPreClickDelay",
+			name = "Max Pre-Click Delay (ms)",
+			description = "Maximum milliseconds before clicking after movement",
+			position = 7,
+			section = windmouseSection
+	)
+	default int windmouseMaxPreClickDelay()
+	{
+		return 5;
+	}
 } 

@@ -1,5 +1,6 @@
 package com.example;
 
+import com.example.services.*;
 import com.google.inject.Provides;
 import java.time.Duration;
 import java.time.Instant;
@@ -22,10 +23,6 @@ import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
 import java.util.Arrays;
 
-import com.example.services.GameStateService;
-import com.example.services.EntityService;
-import com.example.services.ClickService;
-import com.example.services.UtilityService;
 import net.runelite.api.GameObject;
 import net.runelite.api.NPC;
 import java.util.List;
@@ -144,28 +141,22 @@ public class RunepalPlugin extends Plugin
 		EntityService entityService = new EntityService(client, gameStateService);
 		ClickService clickService = new ClickService();
 		UtilityService utilityService = new UtilityService(client);
+		WindmouseService windMouseService = new WindmouseService(this, eventService, config);
 		
 		gameService = new GameService(gameStateService, entityService, clickService, utilityService);
-		actionService = new ActionService(this, pipeService, gameService, eventService, config);
+		actionService = new ActionService(this, pipeService, gameService, eventService, config, windMouseService);
 
 		ShortestPathConfig shortestPathConfig = configManager.getConfig(ShortestPathConfig.class);
 		pathfinderConfig = new PathfinderConfig(client, shortestPathConfig);
 
-		// Initialize session tracking
-		if (client.getLocalPlayer() != null)
-		{
-			sessionStartXp = client.getSkillExperience(Skill.MINING);
-			sessionStartTime = Instant.now();
-		}
-
 		// Don't initialize pipe service automatically - user must click Connect
-		log.info("Runepal initialized. Use the 'Connect' button to connect to the automation server.");
+		log.info("Runepal initialized. Use the 'Connect' button to connect to the RemoteInput server.");
 	}
 
 	@Override
 	protected void shutDown() throws Exception
 	{
-		log.info("Runepal stopped!");
+		log.info("Runepal shut down!");
 		clientToolbar.removeNavigation(navButton);
 		overlayManager.remove(mouseIndicatorOverlay);
 		overlayManager.remove(rockOverlay);
@@ -179,8 +170,10 @@ public class RunepalPlugin extends Plugin
 			eventService.clearAllSubscribers();
 		}
 
-		// Kill the client
-		pipeService.sendExit();
+		// Kill the client if using RemoteInput
+		if (isAutomationConnected()) {
+			pipeService.sendExit();
+		}
 		
 	}
 
@@ -190,13 +183,6 @@ public class RunepalPlugin extends Plugin
 		if (gameStateChanged.getGameState() == GameState.LOGGED_IN)
 		{
 			log.info("Runepal is running - player logged in.");
-
-			// Initialize session tracking if not already done
-			if (sessionStartTime == null)
-			{
-				sessionStartXp = client.getSkillExperience(Skill.MINING);
-				sessionStartTime = Instant.now();
-			}
 		}
 		else if (gameStateChanged.getGameState() == GameState.LOGIN_SCREEN)
 		{
@@ -300,6 +286,7 @@ public class RunepalPlugin extends Plugin
 
 	public void stopBot() {
 		configManager.setConfiguration("runepal", "startBot", false);
+		taskManager.clearTasks();
 	}
 
 	// --- Public Helper Methods for Tasks ---
@@ -400,19 +387,11 @@ public class RunepalPlugin extends Plugin
 
 	public boolean connectAutomation()
 	{
+		if (gameService == null || actionService == null) {
+			log.error("Unable to connect because plugin failed to initialize.");
+			return false;
+		}
 		try {
-			if (gameService == null) {
-				// Initialize game services in correct dependency order
-				GameStateService gameStateService = new GameStateService(client);
-				EntityService entityService = new EntityService(client, gameStateService);
-				ClickService clickService = new ClickService();
-				UtilityService utilityService = new UtilityService(client);
-				
-				gameService = new GameService(gameStateService, entityService, clickService, utilityService);
-			}
-			if (actionService == null) {
-				actionService = new ActionService(this, pipeService, gameService, eventService, config);
-			}
 			if (pipeService.connect()) {
 				// After connecting, send a "connect" command to the Python server
 				// to initialize the RemoteInput client.
