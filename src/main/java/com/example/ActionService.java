@@ -410,10 +410,13 @@ public class ActionService {
     public void sendClickRequest(Point clickPoint, boolean move) {
         log.info("Sending click request to point: {}, move: {}", clickPoint, move);
         if (!move) {
-//            if (!pipeService.sendClick(0, 0, false)) {
-//                log.warn("Failed to send click command via pipe");
-//                plugin.stopBot();
-//            }
+            if (plugin.isAutomationConnected()) {
+                if (!pipeService.sendClick(0, 0, false)) {
+                    log.warn("Failed to send click command via pipe");
+                    plugin.stopBot();
+                }
+                return;
+            }
             MouseEvent mousePressed = new MouseEvent(plugin.getClient().getCanvas(), MouseEvent.MOUSE_PRESSED, System.currentTimeMillis(), 0, clickPoint.x, clickPoint.y, 1, false, MouseEvent.BUTTON1);
             plugin.getClient().getCanvas().dispatchEvent(mousePressed);
             MouseEvent mouseReleased = new MouseEvent(plugin.getClient().getCanvas(), MouseEvent.MOUSE_RELEASED, System.currentTimeMillis(), 0, clickPoint.x, clickPoint.y, 1, false, MouseEvent.BUTTON1);
@@ -424,29 +427,35 @@ public class ActionService {
 			log.warn("Invalid point provided to sendClickRequest.");
 			return;
 		}
+        if (plugin.isAutomationConnected()) {
+            if (!pipeService.sendClick(clickPoint.x, clickPoint.y, true)) {
+                log.warn("Failed to send click command via pipe");
+                plugin.stopBot();
+            }
+            return;
+        }
         sendMouseMoveRequest(clickPoint);
         MouseEvent mousePressed = new MouseEvent(plugin.getClient().getCanvas(), MouseEvent.MOUSE_PRESSED, System.currentTimeMillis(), 0, clickPoint.x, clickPoint.y, 1, false, MouseEvent.BUTTON1);
         plugin.getClient().getCanvas().dispatchEvent(mousePressed);
         MouseEvent mouseReleased = new MouseEvent(plugin.getClient().getCanvas(), MouseEvent.MOUSE_RELEASED, System.currentTimeMillis(), 0, clickPoint.x, clickPoint.y, 1, false, MouseEvent.BUTTON1);
         plugin.getClient().getCanvas().dispatchEvent(mouseReleased);
-        // if (!pipeService.sendClick(clickPoint.x, clickPoint.y, true)) {
-        //     log.warn("Failed to send click command via pipe");
-        //     plugin.stopBot();
-        // }
 	}
 
     public void sendRightClickRequest(Point clickPoint) {
         log.info("Sending right click request");
+        if (plugin.isAutomationConnected()) {
+            if (!pipeService.sendRightClick(0, 0, false)) {
+                log.warn("Failed to send click command via pipe");
+                plugin.stopBot();
+            }
+            return;
+        }
         sendMouseMoveRequest(clickPoint);
         MouseEvent mousePressed = new MouseEvent(plugin.getClient().getCanvas(), MouseEvent.MOUSE_PRESSED, System.currentTimeMillis(), 0, clickPoint.x, clickPoint.y, 1, false, MouseEvent.BUTTON3);
         plugin.getClient().getCanvas().dispatchEvent(mousePressed);
         MouseEvent mouseReleased = new MouseEvent(plugin.getClient().getCanvas(), MouseEvent.MOUSE_RELEASED, System.currentTimeMillis(), 0, clickPoint.x, clickPoint.y, 1, false, MouseEvent.BUTTON3);
         plugin.getClient().getCanvas().dispatchEvent(mouseReleased);
 
-        // if (!pipeService.sendRightClick(0, 0, false)) {
-        //     log.warn("Failed to send click command via pipe");
-        //     plugin.stopBot();
-        // }
     }
 
     public void sendMouseMoveRequest(Point point) {
@@ -454,12 +463,15 @@ public class ActionService {
 			log.warn("Invalid point provided to sendMouseMoveRequest.");
 			return;
 		}
+        if (plugin.isAutomationConnected()) {
+            if (!pipeService.sendMouseMove(point.x, point.y)) {
+                log.warn("Failed to send mouse move command via pipe");
+                plugin.stopBot();
+            }
+            return;
+        }
         MouseEvent mouseMoved = new MouseEvent(plugin.getClient().getCanvas(), MouseEvent.MOUSE_MOVED, System.currentTimeMillis(), 0, point.x, point.y, 0, false);
         plugin.getClient().getCanvas().dispatchEvent(mouseMoved);
-        // if (!pipeService.sendMouseMove(point.x, point.y)) {
-        //     log.warn("Failed to send mouse move command via pipe");
-        //     plugin.stopBot();
-        // }
 	}
 
 	public void sendKeyRequest(String endpoint, String key) {
@@ -487,15 +499,17 @@ public class ActionService {
      */
     public void sendSpacebarRequest() {
         log.info("Sending spacebar key press");
+        if (plugin.isAutomationConnected()) {
+            if (!pipeService.sendKeyPress("space")) {
+                log.warn("Failed to send spacebar hold command via pipe");
+                plugin.stopBot();
+            }
+            return;
+        }
         KeyEvent keyPressed = new KeyEvent(plugin.getClient().getCanvas(), KeyEvent.KEY_PRESSED, System.currentTimeMillis(), 0, KeyEvent.VK_SPACE, ' ');
         plugin.getClient().getCanvas().dispatchEvent(keyPressed);
         KeyEvent keyReleased = new KeyEvent(plugin.getClient().getCanvas(), KeyEvent.KEY_RELEASED, System.currentTimeMillis(), 0, KeyEvent.VK_SPACE, ' ');
         plugin.getClient().getCanvas().dispatchEvent(keyReleased);
-        // if (!pipeService.sendKeyPress("space")) {
-        //     log.warn("Failed to send spacebar hold command via pipe");
-        //     plugin.stopBot();
-        //     return;
-        // }
     }
 
 }
