@@ -144,25 +144,25 @@ public class WindmouseService {
         double M_0 = config.windmouseMaxVel();
         double D_0 = config.windmouseTargetArea();
         
-        // Initialize physics state
-        double currentX = start.x;
-        double currentY = start.y;
-        double vX = 0.0;
-        double vY = 0.0;
-        double wX = 0.0;
-        double wY = 0.0;
+        // Initialize physics state - match Python variable names exactly
+        double loop_start_x = start.x;
+        double loop_start_y = start.y;
+        double v_x = 0.0;
+        double v_y = 0.0;
+        double W_x = 0.0;
+        double W_y = 0.0;
         
         // Track actual mouse position for event dispatch
-        int lastMouseX = start.x;
-        int lastMouseY = start.y;
+        int current_x = start.x;
+        int current_y = start.y;
         
         log.debug("Starting Windmouse movement {} from {} to {}", movementId, start, destination);
         
-        // Main physics loop
+        // Main physics loop - match Python logic exactly
         while (isMoving.get() && movementId.equals(currentMovementId.get())) {
-            // Calculate distance to destination
-            double deltaX = destination.x - currentX;
-            double deltaY = destination.y - currentY;
+            // Calculate distance to destination using loop_start position (Python line 241)
+            double deltaX = destination.x - loop_start_x;
+            double deltaY = destination.y - loop_start_y;
             double distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
             
             // Stop if we're close enough
@@ -170,43 +170,49 @@ public class WindmouseService {
                 break;
             }
             
-            // Update wind forces based on distance
+            // Update wind forces based on distance (Python lines 242-252)
+            double W_mag = Math.min(W_0, distance);
             if (distance >= D_0) {
                 // Far from target - add random wind perturbation
-                double wMag = Math.min(W_0, distance);
-                wX = wX / SQRT_3 + (2 * ThreadLocalRandom.current().nextDouble() - 1) * wMag / SQRT_5;
-                wY = wY / SQRT_3 + (2 * ThreadLocalRandom.current().nextDouble() - 1) * wMag / SQRT_5;
+                W_x = W_x / SQRT_3 + (2 * ThreadLocalRandom.current().nextDouble() - 1) * W_mag / SQRT_5;
+                W_y = W_y / SQRT_3 + (2 * ThreadLocalRandom.current().nextDouble() - 1) * W_mag / SQRT_5;
             } else {
                 // Near target - dampen wind
-                wX /= SQRT_3;
-                wY /= SQRT_3;
+                W_x /= SQRT_3;
+                W_y /= SQRT_3;
+                // Critical M_0 adjustment logic from Python (lines 249-252)
+                if (M_0 < 3) {
+                    M_0 = ThreadLocalRandom.current().nextDouble() * 3 + 3;
+                } else {
+                    M_0 /= SQRT_5;
+                }
             }
             
-            // Apply gravity and wind to velocity
-            vX += wX + G_0 * deltaX / distance;
-            vY += wY + G_0 * deltaY / distance;
+            // Apply gravity and wind to velocity (Python lines 254-255)
+            v_x += W_x + G_0 * deltaX / distance;
+            v_y += W_y + G_0 * deltaY / distance;
             
-            // Clip velocity if exceeding maximum
-            double vMag = Math.sqrt(vX * vX + vY * vY);
-            if (vMag > M_0) {
-                double vClip = M_0 / 2.0 + ThreadLocalRandom.current().nextDouble() * M_0 / 2.0;
-                vX = (vX / vMag) * vClip;
-                vY = (vY / vMag) * vClip;
+            // Clip velocity if exceeding maximum (Python lines 256-261)
+            double v_mag = Math.sqrt(v_x * v_x + v_y * v_y);
+            if (v_mag > M_0) {
+                double v_clip = M_0 / 2.0 + ThreadLocalRandom.current().nextDouble() * M_0 / 2.0;
+                v_x = (v_x / v_mag) * v_clip;
+                v_y = (v_y / v_mag) * v_clip;
             }
             
-            // Update position
-            currentX += vX;
-            currentY += vY;
+            // Update physics position (Python lines 263-264)
+            loop_start_x += v_x;
+            loop_start_y += v_y;
             
-            // Convert to integer coordinates
-            int mouseX = (int) Math.round(currentX);
-            int mouseY = (int) Math.round(currentY);
+            // Convert to integer coordinates for mouse dispatch
+            int move_x = (int) Math.round(loop_start_x);
+            int move_y = (int) Math.round(loop_start_y);
             
-            // Dispatch mouse event only if position changed
-            if (mouseX != lastMouseX || mouseY != lastMouseY) {
-                dispatchMouseMoveEvent(mouseX, mouseY);
-                lastMouseX = mouseX;
-                lastMouseY = mouseY;
+            // Dispatch mouse event only if position changed (Python lines 269-271)
+            if (current_x != move_x || current_y != move_y) {
+                dispatchMouseMoveEvent(move_x, move_y);
+                current_x = move_x;
+                current_y = move_y;
             }
             
             // Sleep for realistic timing
@@ -222,10 +228,13 @@ public class WindmouseService {
             }
         }
         
+        // Final move to ensure we are at the destination (Python lines 273-274)
+        dispatchMouseMoveEvent(destination.x, destination.y);
+        
         // Calculate final results
         long duration = System.currentTimeMillis() - startTime;
         boolean cancelled = !movementId.equals(currentMovementId.get()) || !isMoving.get();
-        Point finalPosition = new Point(lastMouseX, lastMouseY);
+        Point finalPosition = new Point(destination.x, destination.y);
         
         // Clean up state
         if (movementId.equals(currentMovementId.get())) {
