@@ -1,2 +1,2 @@
-rootProject.name = 'runelite-plugin'
+rootProject.name = 'runepal'
 include 'shortest-path'
