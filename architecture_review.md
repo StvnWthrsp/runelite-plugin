@@ -20,19 +20,20 @@ This document provides a comprehensive refactoring plan to address 12 critical a
 #### **Step-by-Step Plan:**
 
 **1.1 Create GameStateService.java**
+
 ```java
-package com.example.services;
+package com.runepal.services;
 
 @Singleton
 @Slf4j
 public class GameStateService {
     private final Client client;
-    
+
     @Inject
     public GameStateService(Client client) {
         this.client = client;
     }
-    
+
     // Move these methods from GameService:
     // - isInventoryFull() (lines 37-41)
     // - isInventoryEmpty() (lines 43-47)
@@ -49,21 +50,22 @@ public class GameStateService {
 ```
 
 **1.2 Create EntityService.java**
+
 ```java
-package com.example.services;
+package com.runepal.services;
 
 @Singleton
 @Slf4j
 public class EntityService {
     private final Client client;
     private final RunepalPlugin plugin;
-    
+
     @Inject
     public EntityService(Client client, RunepalPlugin plugin) {
         this.client = client;
         this.plugin = plugin;
     }
-    
+
     // Move these methods from GameService:
     // - findNearestGameObject() (lines 53-80)
     // - findNearestNpc() (lines 170-214)
@@ -77,21 +79,22 @@ public class EntityService {
 ```
 
 **1.3 Create ClickService.java (addresses finding #3)**
+
 ```java
-package com.example.services;
+package com.runepal.services;
 
 @Singleton
 @Slf4j
 public class ClickService {
     private final Random random = new Random();
-    
+
     // Move and unify these methods from GameService:
     // - getRandomClickablePoint(NPC npc) (lines 105-112)
     // - getRandomClickablePoint(GameObject gameObject) (lines 114-140)
     // - getRandomClickablePoint(TileObject tileObject) (lines 142-168)
     // - getRandomClickablePoint(Interactable interactable) (lines 242-271)
     // - getRandomPointInBounds() (lines 389-396)
-    
+
     public Point getRandomClickablePoint(Object entity) {
         if (entity instanceof NPC) {
             return getClickablePointForNpc((NPC) entity);
@@ -104,14 +107,15 @@ public class ClickService {
         }
         return new Point(-1, -1);
     }
-    
+
     // Private helper methods for each entity type
 }
 ```
 
 **1.4 Create UtilityService.java**
+
 ```java
-package com.example.services;
+package com.runepal.services;
 
 @Singleton
 public class UtilityService {
@@ -122,8 +126,9 @@ public class UtilityService {
 ```
 
 **1.5 Update GameService.java**
+
 ```java
-package com.example;
+package com.runepal;
 
 @Singleton
 @Slf4j
@@ -132,29 +137,29 @@ public class GameService {
     private final EntityService entityService;
     private final ClickService clickService;
     private final UtilityService utilityService;
-    
+
     @Inject
-    public GameService(GameStateService gameStateService, EntityService entityService, 
-                      ClickService clickService, UtilityService utilityService) {
+    public GameService(GameStateService gameStateService, EntityService entityService,
+                       ClickService clickService, UtilityService utilityService) {
         this.gameStateService = gameStateService;
         this.entityService = entityService;
         this.clickService = clickService;
         this.utilityService = utilityService;
     }
-    
+
     // Delegate methods that call the appropriate service
     public boolean isInventoryFull() {
         return gameStateService.isInventoryFull();
     }
-    
+
     public GameObject findNearestGameObject(int... ids) {
         return entityService.findNearestGameObject(ids);
     }
-    
+
     public Point getRandomClickablePoint(Object entity) {
         return clickService.getRandomClickablePoint(entity);
     }
-    
+
     // ... other delegation methods
 }
 ```
@@ -174,19 +179,20 @@ public class GameService {
 #### **Step-by-Step Plan:**
 
 **2.1 Create CookingTask.java**
+
 ```java
-package com.example;
+package com.runepal;
 
 @Slf4j
 public class CookingTask implements BotTask {
-    
+
     private enum CookingState {
         WALKING_TO_RANGE,
         COOKING,
         WAIT_COOKING,
         FINISHED
     }
-    
+
     private final RunepalPlugin plugin;
     private final ActionService actionService;
     private final GameService gameService;
@@ -194,17 +200,17 @@ public class CookingTask implements BotTask {
     private final WorldPoint rangeLocation;
     private final int rangeObjectId;
     private final int[] rawFishIds;
-    
+
     private CookingState currentState = CookingState.WALKING_TO_RANGE;
     private boolean cookingStarted = false;
     private int idleTicks = 0;
     private GameObject cookingRange = null;
-    
-    public CookingTask(RunepalPlugin plugin, ActionService actionService, GameService gameService, 
-                      EventService eventService, WorldPoint rangeLocation, int rangeObjectId, int[] rawFishIds) {
+
+    public CookingTask(RunepalPlugin plugin, ActionService actionService, GameService gameService,
+                       EventService eventService, WorldPoint rangeLocation, int rangeObjectId, int[] rawFishIds) {
         // Constructor implementation
     }
-    
+
     // Move these methods from FishingTask:
     // - doCooking() logic (lines 271-295)
     // - doWaitCooking() logic (lines 297-318)
@@ -273,15 +279,16 @@ src/main/java/com/example/walking/
 ```
 
 **4.2 Create TransportHandler.java**
+
 ```java
-package com.example.walking;
+package com.runepal.walking;
 
 @Slf4j
 public class TransportHandler {
     private final Client client;
     private final GameService gameService;
     private final ActionService actionService;
-    
+
     // Move these methods from WalkTask:
     // - executeTransport() (lines 340-363)
     // - determineTeleportType() (lines 365-392)
@@ -289,7 +296,7 @@ public class TransportHandler {
     // - isTransportStep() (lines 862-875)
     // - getTransportInfo() (lines 882-906)
     // - executeTransportInteraction() (lines 913-938)
-    
+
     public boolean handleTransportStep(List<WorldPoint> path, int pathIndex, WorldPoint currentLocation) {
         // Extract transport detection logic from handleWalking() lines 207-231
     }
@@ -297,15 +304,16 @@ public class TransportHandler {
 ```
 
 **4.3 Create DoorHandler.java**
+
 ```java
-package com.example.walking;
+package com.runepal.walking;
 
 @Slf4j
 public class DoorHandler {
     private final Client client;
     private final GameService gameService;
     private final ActionService actionService;
-    
+
     // Move these methods from WalkTask:
     // - findDoorBlockingPath() (lines 422-447)
     // - isMovementBlockedByDoor() (lines 452-513)
@@ -313,7 +321,7 @@ public class DoorHandler {
     // - isClosedDoor() (lines 574-601)
     // - handleDoorOpening() (lines 770-783)
     // - handleDoorInteraction() (lines 977-989)
-    
+
     public boolean handleDoorStep(List<WorldPoint> path, int pathIndex, WorldPoint currentLocation) {
         // Extract door detection logic from handleWalking() lines 301-323
     }
@@ -321,15 +329,16 @@ public class DoorHandler {
 ```
 
 **4.4 Create StairsHandler.java**
+
 ```java
-package com.example.walking;
+package com.runepal.walking;
 
 @Slf4j
 public class StairsHandler {
     private final Client client;
     private final GameService gameService;
     private final ActionService actionService;
-    
+
     // Move these methods from WalkTask:
     // - handleStairs() (lines 785-800)
     // - findStairObjectGeneric() (lines 1092-1132)
@@ -339,7 +348,7 @@ public class StairsHandler {
     // - findStairObject() (lines 997-1037)
     // - isStairObject() (lines 1045-1085)
     // - handleStairsOrLadder() (lines 946-969)
-    
+
     public boolean handleStairsStep(List<WorldPoint> path, int pathIndex, WorldPoint currentLocation) {
         // Extract stairs detection logic from handleWalking() lines 273-298
     }
@@ -347,22 +356,23 @@ public class StairsHandler {
 ```
 
 **4.5 Create PathHandler.java**
+
 ```java
-package com.example.walking;
+package com.runepal.walking;
 
 @Slf4j
 public class PathHandler {
     private final Client client;
     private final GameService gameService;
     private final ActionService actionService;
-    
+
     // Move these methods from WalkTask:
     // - updatePathIndex() (lines 618-647)
     // - getNextMinimapTarget() (lines 649-686)
     // - isPointOnMinimap() (lines 688-715)
     // - getMinimapDrawWidget() (lines 717-728)
     // - walkTo() (lines 755-768)
-    
+
     public boolean handleNormalWalking(List<WorldPoint> path, int pathIndex, WorldPoint currentLocation) {
         // Extract normal walking logic from handleWalking() lines 325-334
     }
@@ -487,8 +497,9 @@ delayTicks = humanizerService.getRandomDelay(minTicks, maxTicks);
 #### **Step-by-Step Plan:**
 
 **6.1 Create PluginCoordinator.java**
+
 ```java
-package com.example.core;
+package com.runepal.core;
 
 @Singleton
 @Slf4j
@@ -496,16 +507,16 @@ public class PluginCoordinator {
     private final TaskManager taskManager;
     private final BotConfig config;
     private final ConfigManager configManager;
-    
+
     // Move these methods from RunepalPlugin:
     // - Bot start/stop logic (lines 248-288)
     // - Task management (lines 260-274)
     // - Connection management (lines 384-430)
-    
+
     public void startBot() {
         // Extract logic from onGameTick() lines 250-277
     }
-    
+
     public void stopBot() {
         // Move stopBot() method (lines 291-293)
     }
@@ -513,8 +524,9 @@ public class PluginCoordinator {
 ```
 
 **6.2 Create SessionTracker.java**
+
 ```java
-package com.example.core;
+package com.runepal.core;
 
 @Singleton
 @Slf4j
@@ -522,7 +534,7 @@ public class SessionTracker {
     private long sessionStartXp = 0;
     private Instant sessionStartTime = null;
     private final Client client;
-    
+
     // Move these methods from RunepalPlugin:
     // - getSessionXpGained() (lines 360-364)
     // - getSessionRuntime() (lines 366-370)
@@ -532,13 +544,14 @@ public class SessionTracker {
 ```
 
 **6.3 Create ConfigurationHelper.java**
+
 ```java
-package com.example.core;
+package com.runepal.core;
 
 @Singleton
 public class ConfigurationHelper {
     private final BotConfig config;
-    
+
     // Move these methods from RunepalPlugin:
     // - getRockIds() (lines 299-328)
     // - getOreIds() (lines 330-336)
@@ -547,14 +560,15 @@ public class ConfigurationHelper {
 ```
 
 **6.4 Create EventManager.java**
+
 ```java
-package com.example.core;
+package com.runepal.core;
 
 @Singleton
 @Slf4j
 public class EventManager {
     private final EventService eventService;
-    
+
     // Move event handling methods from RunepalPlugin:
     // - onAnimationChanged() (lines 209-213)
     // - onStatChanged() (lines 216-220)
@@ -603,45 +617,48 @@ public class RunepalPlugin extends Plugin {
 #### **Step-by-Step Plan:**
 
 **7.1 Create EventAwareTask.java (abstract base class)**
+
 ```java
-package com.example;
+package com.runepal;
 
 @Slf4j
 public abstract class EventAwareTask implements BotTask {
     protected final EventService eventService;
     private final Set<Class<? extends Event>> subscribedEvents = new HashSet<>();
-    
+
     protected EventAwareTask(EventService eventService) {
         this.eventService = Objects.requireNonNull(eventService, "eventService cannot be null");
     }
-    
+
     protected final <T extends Event> void subscribeToEvent(Class<T> eventType, Consumer<T> handler) {
         eventService.subscribe(eventType, handler);
         subscribedEvents.add(eventType);
     }
-    
+
     @Override
     public final void onStart() {
         subscribeToEvents();
         onTaskStart();
     }
-    
+
     @Override
     public final void onStop() {
         unsubscribeFromAllEvents();
         onTaskStop();
     }
-    
+
     private void unsubscribeFromAllEvents() {
         for (Class<? extends Event> eventType : subscribedEvents) {
             eventService.unsubscribe(eventType, this::handleEvent);
         }
         subscribedEvents.clear();
     }
-    
+
     // Abstract methods for subclasses to implement
     protected abstract void subscribeToEvents();
+
     protected abstract void onTaskStart();
+
     protected abstract void onTaskStop();
 }
 ```
@@ -704,12 +721,13 @@ public class MiningTask extends EventAwareTask {
 ```
 
 **8.2 Create enhanced BankTask with standardized interface**
+
 ```java
-package com.example;
+package com.runepal;
 
 @Slf4j
 public class BankTask implements BotTask {
-    
+
     public enum BankOperation {
         DEPOSIT_ALL,
         DEPOSIT_ALL_EXCEPT,
@@ -717,25 +735,25 @@ public class BankTask implements BotTask {
         WITHDRAW_QUANTITY,
         CLOSE_BANK
     }
-    
+
     private final BankOperation operation;
     private final int[] itemsToKeep;  // For DEPOSIT_ALL_EXCEPT
     private final int itemIdToWithdraw;  // For WITHDRAW operations
     private final int quantityToWithdraw;  // For WITHDRAW_QUANTITY
-    
+
     // Constructor for different banking operations
     public static BankTask depositAll() {
         return new BankTask(BankOperation.DEPOSIT_ALL, null, -1, -1);
     }
-    
+
     public static BankTask depositAllExcept(int[] itemsToKeep) {
         return new BankTask(BankOperation.DEPOSIT_ALL_EXCEPT, itemsToKeep, -1, -1);
     }
-    
+
     public static BankTask withdrawItem(int itemId) {
         return new BankTask(BankOperation.WITHDRAW_ITEM, null, itemId, 1);
     }
-    
+
     public static BankTask withdrawQuantity(int itemId, int quantity) {
         return new BankTask(BankOperation.WITHDRAW_QUANTITY, null, itemId, quantity);
     }
@@ -801,45 +819,46 @@ private void doWithdrawing() {
 #### **Step-by-Step Plan:**
 
 **10.1 Create BotConstants.java**
+
 ```java
-package com.example.constants;
+package com.runepal.constants;
 
 public final class BotConstants {
-    
+
     // Lumbridge locations (from FishingTask)
     public static final class Lumbridge {
         public static final WorldPoint SWAMP_FISHING = new WorldPoint(3241, 3149, 0);
         public static final WorldPoint KITCHEN_RANGE = new WorldPoint(3211, 3215, 0);
         public static final WorldPoint BANK = new WorldPoint(3208, 3220, 2);
     }
-    
+
     // Varrock locations (from MiningTask)  
     public static final class Varrock {
         public static final WorldPoint EAST_MINE = new WorldPoint(3285, 3365, 0);
         public static final WorldPoint EAST_BANK = new WorldPoint(3253, 3420, 0);
     }
-    
+
     // Object IDs
     public static final class ObjectIds {
         public static final int FISHING_SPOT = 1530;
         public static final int KITCHEN_RANGE = 114;
         // ... other hardcoded IDs from throughout the codebase
     }
-    
+
     // Animation IDs
     public static final class Animations {
         public static final int COOKING = AnimationID.HUMAN_COOKING;
         public static final int COOKING_LOOP = AnimationID.HUMAN_COOKING_LOOP;
         // ... other animation constants
     }
-    
+
     // Timeouts and delays (in ticks)
     public static final class Timeouts {
         public static final int COMBAT_TIMEOUT = 100;
         public static final int TELEPORT_TIMEOUT = 30000;
         public static final int GENERAL_ACTION_TIMEOUT = 10;
     }
-    
+
     private BotConstants() {
         // Utility class
     }
@@ -868,14 +887,15 @@ public final class BotConstants {
 #### **Step-by-Step Plan:**
 
 **11.1 Create BotException hierarchy**
+
 ```java
-package com.example.exceptions;
+package com.runepal.exceptions;
 
 public class BotException extends RuntimeException {
     public BotException(String message) {
         super(message);
     }
-    
+
     public BotException(String message, Throwable cause) {
         super(message, cause);
     }
@@ -939,8 +959,9 @@ public class GameStateService {
 #### **Step-by-Step Plan:**
 
 **12.1 Create BotPanelPresenter.java**
+
 ```java
-package com.example.ui;
+package com.runepal.ui;
 
 @Slf4j
 public class BotPanelPresenter {
@@ -948,31 +969,31 @@ public class BotPanelPresenter {
     private final ConfigManager configManager;
     private final PluginCoordinator coordinator;
     private final SessionTracker sessionTracker;
-    
+
     public void startBot() {
         coordinator.startBot();
     }
-    
+
     public void stopBot() {
         coordinator.stopBot();
     }
-    
+
     public String getCurrentStatus() {
         return coordinator.getCurrentState();
     }
-    
+
     public boolean isConnected() {
         return coordinator.isConnected();
     }
-    
+
     public SessionStats getSessionStats() {
         return new SessionStats(
-            sessionTracker.getSessionXpGained(),
-            sessionTracker.getSessionRuntime(),
-            sessionTracker.getXpPerHour()
+                sessionTracker.getSessionXpGained(),
+                sessionTracker.getSessionRuntime(),
+                sessionTracker.getXpPerHour()
         );
     }
-    
+
     public void updateConfiguration(String key, Object value) {
         configManager.setConfiguration("runepal", key, value);
     }
@@ -980,20 +1001,21 @@ public class BotPanelPresenter {
 ```
 
 **12.2 Create SessionStats.java**
+
 ```java
-package com.example.ui;
+package com.runepal.ui;
 
 public class SessionStats {
     private final long xpGained;
     private final Duration runtime;
     private final String xpPerHour;
-    
+
     public SessionStats(long xpGained, Duration runtime, String xpPerHour) {
         this.xpGained = xpGained;
         this.runtime = runtime;
         this.xpPerHour = xpPerHour;
     }
-    
+
     // Getters...
 }
 ```
