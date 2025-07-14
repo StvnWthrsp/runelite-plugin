@@ -240,4 +240,16 @@ public class GameService {
     public Rectangle getMenuEntryBounds(MenuEntry entry, int entryIndex) {
         return gameStateService.getMenuEntryBounds(entry, entryIndex);
     }
+
+    public boolean isMouseOverObject(GameObject object) {
+        return gameStateService.isMouseOverObject(object);
+    }
+
+    public boolean isMouseOverNpc(NPC npc) {
+        return gameStateService.isMouseOverNpc(npc);
+    }
+
+    public int getInventoryItemIndex(int itemId) {
+        return gameStateService.getInventoryItemIndex(itemId);
+    }
 } 

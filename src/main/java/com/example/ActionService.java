@@ -13,6 +13,8 @@ import net.runelite.api.gameval.InterfaceID.MagicSpellbook;
 import javax.inject.Inject;
 
 import java.awt.*;
+import java.awt.event.KeyEvent;
+import java.awt.event.MouseEvent;
 import java.util.Objects;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -253,29 +255,28 @@ public class ActionService {
      * @param action the action to perform (e.g., "Open", "Mine", "Cut")
      * @return true if the interaction was initiated
      */
-    public boolean interactWithGameObject(GameObject gameObject, String action) {
+    public void interactWithGameObject(GameObject gameObject, String action) {
         if (gameObject == null) {
             log.warn("Cannot interact with null game object");
-            return false;
+            return;
         }
 
         // Prevent concurrent interactions
         if (isCurrentlyInteracting) {
             log.debug("Already interacting with an object, ignoring new interaction request");
-            return false;
+            return;
         }
 
         Point clickPoint = gameService.getRandomClickablePoint(gameObject);
         if (clickObstructionChecker.isClickObstructed(clickPoint)) {
             log.warn("Click point is obstructed");
-            // TODO: Rotate the camera so we can try again
             eventService.publish(new InteractionCompletedEvent(gameObject, action, false, "Click point obstructed"));
-            return false;
+            return;
         }
         if (clickPoint.x == -1) {
             log.warn("Could not get clickable point for game object {}", gameObject.getId());
             eventService.publish(new InteractionCompletedEvent(gameObject, action, false, "Could not get clickable point"));
-            return false;
+            return;
         }
 
         log.info("Interacting with game object {} using action '{}'", gameObject.getId(), action);
@@ -283,29 +284,18 @@ public class ActionService {
         eventService.publish(new InteractionStartedEvent(gameObject, action));
 
         // If mouse is not already over the gameObject, move the mouse
-        // TODO: isMouseOverObject could be a helper method
-        Shape convexHull = gameObject.getConvexHull();
-        net.runelite.api.Point mousePosition = plugin.getClient().getMouseCanvasPosition();
-
-        if (!convexHull.contains(mousePosition.getX(), mousePosition.getY())) {
+        if (!gameService.isMouseOverObject(gameObject)) {
             log.info("Mouse is not over the object, moving mouse and scheduling interaction");
             sendMouseMoveRequest(clickPoint);
             
             // Schedule the actual interaction after mouse movement
             scheduler.schedule(() -> {
-                performInteractionAfterMouseMove(gameObject, action, clickPoint);
+                performInteractionLogic(gameObject, action);
             }, 600, TimeUnit.MILLISECONDS);
-            return true; // Return true since we're handling the interaction asynchronously
+            return;
         }
 
         // Perform the actual interaction logic
-        return performInteractionLogic(gameObject, action);
-    }
-
-    /**
-     * Performs the interaction logic after mouse positioning
-     */
-    private void performInteractionAfterMouseMove(GameObject gameObject, String action, Point clickPoint) {
         performInteractionLogic(gameObject, action);
     }
 
@@ -324,10 +314,12 @@ public class ActionService {
             return false;
         }
 
+        Point currentMousePoint = new Point(plugin.getClient().getMouseCanvasPosition().getX(), plugin.getClient().getMouseCanvasPosition().getY());
+
         // If left-click option matches action, just click
         if (Text.removeTags(menuEntries[menuEntries.length - 1].getOption()).equals(action)) {
             log.info("Left-click action {} matches expected action {}, sending click", Text.removeTags(menuEntries[menuEntries.length - 1].getTarget()), action);
-            sendClickRequest(null, false);
+            sendClickRequest(currentMousePoint, false);
             isCurrentlyInteracting = false;
             eventService.publish(new InteractionCompletedEvent(gameObject, action, true));
             return true;
@@ -335,22 +327,22 @@ public class ActionService {
 
         // Otherwise, right-click and schedule the click on the menu entry
         log.info("Left-click action did not match, right-clicking");
-        sendRightClickRequest();
+        sendRightClickRequest(currentMousePoint);
         scheduler.schedule(() -> {
             MenuEntry[] currentMenuEntries = plugin.getClient().getMenu().getMenuEntries();
             boolean foundAction = false;
 
-            log.info("----Menu----");
+            log.trace("----Menu----");
             for (int i = 0; i < currentMenuEntries.length; i++) {
                 MenuEntry entry = currentMenuEntries[i];
                 int visualIndex = currentMenuEntries.length - 1 - i;
-                log.info("Visual {}, Index {}: {}", visualIndex, i, entry.getOption());
+                log.trace("Visual {}, Index {}: {}", visualIndex, i, entry.getOption());
                 if (action.equals(entry.getOption())) {
                     // Menu entries are indexed bottom-up, but visually displayed top-down
                     // So array index 0 = bottom menu item, array index length-1 = top menu item
                     // For getMenuEntryBounds, we need the visual index from top (0 = top item)
-                    log.info("CLICKING_MENU: options matched, {} and {}", action, entry.getOption());
-                    log.info("Clicking menu option at array index {} (visual index {})", i, visualIndex);
+                    log.debug("CLICKING_MENU: options matched, {} and {}", action, entry.getOption());
+                    log.debug("Clicking menu option at array index {} (visual index {})", i, visualIndex);
                     
                     // DEBUG: Show the menu entry bounds as an overlay (if enabled in config)
                     Rectangle menuBounds = gameService.getMenuEntryBounds(entry, visualIndex);
@@ -361,7 +353,7 @@ public class ActionService {
                                 String.format("Menu: %s (arr:%d vis:%d)", action, i, visualIndex), 
                                 Color.RED
                             );
-                            log.info("DEBUG: Menu bounds for '{}': {}", action, menuBounds);
+                            log.debug("DEBUG: Menu bounds for '{}': {}", action, menuBounds);
                             
                             // Clear the debug overlay after 1 seconds
                             scheduler.schedule(() -> {
@@ -369,7 +361,7 @@ public class ActionService {
                             }, 1000, TimeUnit.MILLISECONDS);
                         }
                     } else {
-                        log.warn("DEBUG: getMenuEntryBounds returned null for entry '{}' at visual index {}", action, visualIndex);
+                        log.warn("WARN: getMenuEntryBounds returned null for entry '{}' at visual index {}", action, visualIndex);
                     }
 
                     java.awt.Point menuEntryClickPoint = gameService.getRandomPointInBounds(menuBounds);
@@ -389,7 +381,7 @@ public class ActionService {
                 log.warn("Right-click menu did not contain expected option {}", action);
                 eventService.publish(new InteractionCompletedEvent(gameObject, action, false, "Menu option not found"));
             }
-        }, 600, TimeUnit.MILLISECONDS);
+        }, 100, TimeUnit.MILLISECONDS);
         return true;
     }
 
@@ -415,31 +407,46 @@ public class ActionService {
         return true;
     }
 
-    public void sendClickRequest(Point point, boolean move) {
-        log.info("Sending click request to point: {}, move: {}", point, move);
+    public void sendClickRequest(Point clickPoint, boolean move) {
+        log.info("Sending click request to point: {}, move: {}", clickPoint, move);
         if (!move) {
-            if (!pipeService.sendClick(0, 0, false)) {
-                log.warn("Failed to send click command via pipe");
-                plugin.stopBot();
-            }
+//            if (!pipeService.sendClick(0, 0, false)) {
+//                log.warn("Failed to send click command via pipe");
+//                plugin.stopBot();
+//            }
+            MouseEvent mousePressed = new MouseEvent(plugin.getClient().getCanvas(), MouseEvent.MOUSE_PRESSED, System.currentTimeMillis(), 0, clickPoint.x, clickPoint.y, 1, false, MouseEvent.BUTTON1);
+            plugin.getClient().getCanvas().dispatchEvent(mousePressed);
+            MouseEvent mouseReleased = new MouseEvent(plugin.getClient().getCanvas(), MouseEvent.MOUSE_RELEASED, System.currentTimeMillis(), 0, clickPoint.x, clickPoint.y, 1, false, MouseEvent.BUTTON1);
+            plugin.getClient().getCanvas().dispatchEvent(mouseReleased);
             return;
         }
-		if (point == null || point.x == -1) {
+		if (clickPoint == null || clickPoint.x == -1) {
 			log.warn("Invalid point provided to sendClickRequest.");
 			return;
 		}
-        if (!pipeService.sendClick(point.x, point.y, true)) {
-            log.warn("Failed to send click command via pipe");
-            plugin.stopBot();
-        }
+        sendMouseMoveRequest(clickPoint);
+        MouseEvent mousePressed = new MouseEvent(plugin.getClient().getCanvas(), MouseEvent.MOUSE_PRESSED, System.currentTimeMillis(), 0, clickPoint.x, clickPoint.y, 1, false, MouseEvent.BUTTON1);
+        plugin.getClient().getCanvas().dispatchEvent(mousePressed);
+        MouseEvent mouseReleased = new MouseEvent(plugin.getClient().getCanvas(), MouseEvent.MOUSE_RELEASED, System.currentTimeMillis(), 0, clickPoint.x, clickPoint.y, 1, false, MouseEvent.BUTTON1);
+        plugin.getClient().getCanvas().dispatchEvent(mouseReleased);
+        // if (!pipeService.sendClick(clickPoint.x, clickPoint.y, true)) {
+        //     log.warn("Failed to send click command via pipe");
+        //     plugin.stopBot();
+        // }
 	}
 
-    public void sendRightClickRequest() {
+    public void sendRightClickRequest(Point clickPoint) {
         log.info("Sending right click request");
-        if (!pipeService.sendRightClick(0, 0, false)) {
-            log.warn("Failed to send click command via pipe");
-            plugin.stopBot();
-        }
+        sendMouseMoveRequest(clickPoint);
+        MouseEvent mousePressed = new MouseEvent(plugin.getClient().getCanvas(), MouseEvent.MOUSE_PRESSED, System.currentTimeMillis(), 0, clickPoint.x, clickPoint.y, 1, false, MouseEvent.BUTTON3);
+        plugin.getClient().getCanvas().dispatchEvent(mousePressed);
+        MouseEvent mouseReleased = new MouseEvent(plugin.getClient().getCanvas(), MouseEvent.MOUSE_RELEASED, System.currentTimeMillis(), 0, clickPoint.x, clickPoint.y, 1, false, MouseEvent.BUTTON3);
+        plugin.getClient().getCanvas().dispatchEvent(mouseReleased);
+
+        // if (!pipeService.sendRightClick(0, 0, false)) {
+        //     log.warn("Failed to send click command via pipe");
+        //     plugin.stopBot();
+        // }
     }
 
     public void sendMouseMoveRequest(Point point) {
@@ -447,10 +454,12 @@ public class ActionService {
 			log.warn("Invalid point provided to sendMouseMoveRequest.");
 			return;
 		}
-        if (!pipeService.sendMouseMove(point.x, point.y)) {
-            log.warn("Failed to send mouse move command via pipe");
-            plugin.stopBot();
-        }
+        MouseEvent mouseMoved = new MouseEvent(plugin.getClient().getCanvas(), MouseEvent.MOUSE_MOVED, System.currentTimeMillis(), 0, point.x, point.y, 0, false);
+        plugin.getClient().getCanvas().dispatchEvent(mouseMoved);
+        // if (!pipeService.sendMouseMove(point.x, point.y)) {
+        //     log.warn("Failed to send mouse move command via pipe");
+        //     plugin.stopBot();
+        // }
 	}
 
 	public void sendKeyRequest(String endpoint, String key) {
@@ -478,11 +487,15 @@ public class ActionService {
      */
     public void sendSpacebarRequest() {
         log.info("Sending spacebar key press");
-        if (!pipeService.sendKeyPress("space")) {
-            log.warn("Failed to send spacebar hold command via pipe");
-            plugin.stopBot();
-            return;
-        }
+        KeyEvent keyPressed = new KeyEvent(plugin.getClient().getCanvas(), KeyEvent.KEY_PRESSED, System.currentTimeMillis(), 0, KeyEvent.VK_SPACE, ' ');
+        plugin.getClient().getCanvas().dispatchEvent(keyPressed);
+        KeyEvent keyReleased = new KeyEvent(plugin.getClient().getCanvas(), KeyEvent.KEY_RELEASED, System.currentTimeMillis(), 0, KeyEvent.VK_SPACE, ' ');
+        plugin.getClient().getCanvas().dispatchEvent(keyReleased);
+        // if (!pipeService.sendKeyPress("space")) {
+        //     log.warn("Failed to send spacebar hold command via pipe");
+        //     plugin.stopBot();
+        //     return;
+        // }
     }
 
 }

@@ -8,20 +8,8 @@ This is a RuneLite plugin called "Runepal" that implements an automated bot syst
 
 ## Build and Development Commands
 
-### Building the Project
-```bash
-./gradlew build
-```
-
-### Running Tests
-```bash
-./gradlew test
-```
-
-### Creating Shadow JAR
-```bash
-./gradlew shadowJar
-```
+### Building and Testing the Project
+The user will build the project and test manually, as this is a plugin to an interactive video game.
 
 ### Running the Python Automation Server
 ```bash

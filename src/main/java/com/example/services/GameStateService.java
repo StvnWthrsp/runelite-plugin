@@ -226,4 +226,23 @@ public class GameStateService {
         final int DEADZONE = 1;
         return new Rectangle(menuX, entryY + DEADZONE, menuWidth, entryHeight - (DEADZONE * 2));
     }
+
+    public boolean isMouseOverObject(GameObject object) {
+        return object.getConvexHull().contains(client.getMouseCanvasPosition().getX(), client.getMouseCanvasPosition().getY());
+    }
+
+    public boolean isMouseOverNpc(NPC npc) {
+        return npc.getConvexHull().contains(client.getMouseCanvasPosition().getX(), client.getMouseCanvasPosition().getY());
+    }
+
+    public int getInventoryItemIndex(int itemId) {
+        ItemContainer inventory = client.getItemContainer(InventoryID.INV);
+        if (inventory == null) return -1;
+        for (int i = 0; i < inventory.count(); i++) {
+            Item item = inventory.getItem(i);
+            if (item == null) continue;
+            if (item.getId() == itemId) return i;
+        }
+        return -1;
+    }
 }
