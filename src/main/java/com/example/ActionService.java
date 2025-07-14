@@ -476,12 +476,42 @@ public class ActionService {
 
 	public void sendKeyRequest(String endpoint, String key) {
 		boolean success;
+        int keyCode;
+        switch (key) {
+            case "esc":
+                keyCode = KeyEvent.VK_ESCAPE;
+                break;
+            case "F6":
+                keyCode = KeyEvent.VK_F6;
+                break;
+            case "space":
+                keyCode = KeyEvent.VK_SPACE;
+                break;
+            case "shift":
+                keyCode = KeyEvent.VK_SHIFT;
+                break;
+            default:
+                log.warn("Unknown key: {}", key);
+                return;
+        }
 		switch (endpoint) {
 			case "/key_hold":
-				success = pipeService.sendKeyHold(key);
+                if (plugin.isAutomationConnected()) {
+                    success = pipeService.sendKeyHold(key);
+                } else {
+                    KeyEvent keyPressed = new KeyEvent(plugin.getClient().getCanvas(), KeyEvent.KEY_PRESSED, System.currentTimeMillis(), 0, keyCode, key.charAt(0));
+                    plugin.getClient().getCanvas().dispatchEvent(keyPressed);
+                    success = true;
+                }
 				break;
 			case "/key_release":
-				success = pipeService.sendKeyRelease(key);
+                if (plugin.isAutomationConnected()) {
+                    success = pipeService.sendKeyRelease(key);
+                } else {
+                    KeyEvent keyReleased = new KeyEvent(plugin.getClient().getCanvas(), KeyEvent.KEY_RELEASED, System.currentTimeMillis(), 0, keyCode, key.charAt(0));
+                    plugin.getClient().getCanvas().dispatchEvent(keyReleased);
+                    success = true;
+                }
 				break;
 			default:
 				log.warn("Unknown key endpoint: {}", endpoint);
