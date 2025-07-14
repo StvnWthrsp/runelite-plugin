@@ -134,15 +134,7 @@ public class CombatBotPanel extends PluginPanel {
         }
     }
     
-    private void toggleBot() {
-        if (!plugin.isAutomationConnected()) {
-            JOptionPane.showMessageDialog(this, 
-                "Please connect to the automation server first!", 
-                "Connection Required", 
-                JOptionPane.WARNING_MESSAGE);
-            return;
-        }
-        
+    private void toggleBot() {        
         if (!isRunning) {
             // Validate configuration before starting
             String npcNames = npcNamesField.getText().trim();

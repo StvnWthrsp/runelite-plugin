@@ -259,9 +259,9 @@ public class RunepalPlugin extends Plugin
 
 		if (isRunning && !wasRunning) {
 			if (!isAutomationConnected()) {
-				log.warn("Cannot start bot: Automation server not connected. Please click 'Connect' first.");
-				stopBot();
-				return;
+				log.warn("Automation server not connected. RemoteInput will be disabled. Please click 'Connect' first.");
+				// stopBot();
+				// return;
 			}
 			log.info("Bot starting...");
 
