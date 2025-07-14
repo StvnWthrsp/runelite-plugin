@@ -11,7 +11,7 @@
 *   **Task 1.1: Create the `ServiceLocator` and Core Services**
     *   **Goal:** Establish a centralized dependency provider to decouple components.
     *   **Action:**
-        1.  Create a new package `com.example.services`.
+        1.  Create a new package `com.runepal.services`.
         2.  Create a `ServiceLocator` class to hold and provide singleton instances of all services.
         3.  Create an `ActionService` class. Move reusable logic like `findNearestGameObject`, `findItemInInventory`, and `getRandomClickablePoint` into this service.
         4.  Create a `HumanizerService` class. This service will provide methods to generate human-like delays (e.g., `getShortDelay()`, `getMediumDelay()`), replacing all manual `delayTicks` and `Math.random` implementations. The delays should use a Gaussian distribution instead of basic random numbers.

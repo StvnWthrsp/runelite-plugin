@@ -70,7 +70,7 @@ The ActionService automatically detects if the Python automation server is conne
 ## Important Configuration
 
 - Plugin name: "Runepal"
-- Main class: `com.example.RunepalPlugin`
+- Main class: `com.runepal.RunepalPlugin`
 - Supported bot types: MINING_BOT, COMBAT_BOT, FISHING_BOT
 - Uses `shortest-path` submodule for pathfinding
 - Requires Java 11+ (Python 3.8+ optional for remote input mode)
