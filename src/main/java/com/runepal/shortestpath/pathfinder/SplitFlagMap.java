@@ -10,7 +10,6 @@ import java.util.zip.ZipInputStream;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import com.runepal.shortestpath.Util;
-import shortestpath.pathfinder.FlagMap;
 
 import static net.runelite.api.Constants.REGION_SIZE;
 
