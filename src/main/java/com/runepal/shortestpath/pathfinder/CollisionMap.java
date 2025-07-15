@@ -5,7 +5,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 import com.runepal.shortestpath.Transport;
-import com.runepal.shortestpath.WorldPointUtil;s
+import com.runepal.shortestpath.WorldPointUtil;
 
 public class CollisionMap {
 
