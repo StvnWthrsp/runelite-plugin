@@ -39,7 +39,8 @@ import net.runelite.api.coords.WorldPoint;
 
 @Slf4j
 @PluginDescriptor(
-	name = "Runepal"
+	name = "Runepal",
+	description = "Runepal automation platform"
 )
 public class RunepalPlugin extends Plugin
 {
