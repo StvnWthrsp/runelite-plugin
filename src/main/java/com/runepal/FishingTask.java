@@ -8,7 +8,7 @@ import net.runelite.api.gameval.ItemID;
 import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.events.GameTick;
 import net.runelite.api.gameval.InventoryID;
-import shortestpath.pathfinder.PathfinderConfig;
+import com.runepal.shortestpath.pathfinder.PathfinderConfig;
 
 import java.util.*;
 

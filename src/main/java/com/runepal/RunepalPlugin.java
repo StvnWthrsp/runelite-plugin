@@ -34,8 +34,7 @@ import net.runelite.client.util.ImageUtil;
 
 import java.awt.image.BufferedImage;
 import net.runelite.client.ui.overlay.OverlayManager;
-import shortestpath.ShortestPathConfig;
-import shortestpath.pathfinder.PathfinderConfig;
+import com.runepal.shortestpath.pathfinder.PathfinderConfig;
 import net.runelite.api.coords.WorldPoint;
 
 @Slf4j
@@ -157,8 +156,7 @@ public class RunepalPlugin extends Plugin
 		prayerService = new PrayerService(client, actionService, humanizerService);
 		supplyManager = new SupplyManager(client, gameService, potionService, config);
 
-		ShortestPathConfig shortestPathConfig = configManager.getConfig(ShortestPathConfig.class);
-		pathfinderConfig = new PathfinderConfig(client, shortestPathConfig);
+		pathfinderConfig = new PathfinderConfig(client, config);
 
 		// Don't initialize pipe service automatically - user must click Connect
 		log.info("Runepal initialized. Use the 'Connect' button to connect to the RemoteInput server.");
