@@ -109,27 +109,28 @@ public class CombatBotPanel extends PluginPanel {
         GridBagConstraints gbc = new GridBagConstraints();
         gbc.insets = new Insets(3, 5, 3, 5);
         
-        // Prayer potions
-        gbc.gridx = 0; gbc.gridy = 0; gbc.anchor = GridBagConstraints.WEST;
+        // Prayer potions checkbox
+        gbc.gridx = 0; gbc.gridy = 0; gbc.anchor = GridBagConstraints.WEST; gbc.fill = GridBagConstraints.NONE; gbc.weightx = 0;
         usePrayerPotionsCheckBox = new JCheckBox("Use Prayer Potions", config.combatUsePrayerPotions());
         potionPanel.add(usePrayerPotionsCheckBox, gbc);
         
-        gbc.gridx = 1; gbc.anchor = GridBagConstraints.WEST;
-        potionPanel.add(new JLabel("Threshold:"), gbc);
+        // Prayer potion threshold
+        gbc.gridx = 0; gbc.gridy = 1; gbc.anchor = GridBagConstraints.WEST;
+        potionPanel.add(new JLabel("Prayer Potion Threshold:"), gbc);
         
-        gbc.gridx = 2; gbc.fill = GridBagConstraints.HORIZONTAL; gbc.weightx = 1.0;
+        gbc.gridx = 0; gbc.gridy = 2; gbc.fill = GridBagConstraints.HORIZONTAL; gbc.weightx = 1.0;
         prayerPotionThresholdSpinner = new JSpinner(new SpinnerNumberModel(config.combatPrayerPotionThreshold(), 1, 99, 1));
         prayerPotionThresholdSpinner.setToolTipText("Prayer % at which to drink prayer potion");
         potionPanel.add(prayerPotionThresholdSpinner, gbc);
         
         // Combat potions
-        gbc.gridx = 0; gbc.gridy = 1; gbc.fill = GridBagConstraints.NONE; gbc.weightx = 0;
+        gbc.gridx = 0; gbc.gridy = 3; gbc.fill = GridBagConstraints.NONE; gbc.weightx = 0;
         useCombatPotionsCheckBox = new JCheckBox("Use Combat Potions", config.combatUseCombatPotions());
         useCombatPotionsCheckBox.setToolTipText("Auto-consume super combat potions");
         potionPanel.add(useCombatPotionsCheckBox, gbc);
         
         // Antipoison
-        gbc.gridx = 0; gbc.gridy = 2;
+        gbc.gridx = 0; gbc.gridy = 4;
         useAntipoisonCheckBox = new JCheckBox("Use Antipoison", config.combatUseAntipoison());
         useAntipoisonCheckBox.setToolTipText("Auto-consume antipoison when poisoned");
         potionPanel.add(useAntipoisonCheckBox, gbc);
@@ -144,34 +145,37 @@ public class CombatBotPanel extends PluginPanel {
         gbc.insets = new Insets(3, 5, 3, 5);
         
         // Use prayers checkbox
-        gbc.gridx = 0; gbc.gridy = 0; gbc.anchor = GridBagConstraints.WEST;
+        gbc.gridx = 0; gbc.gridy = 0; gbc.anchor = GridBagConstraints.WEST; gbc.fill = GridBagConstraints.NONE; gbc.weightx = 0;
         usePrayersCheckBox = new JCheckBox("Use Prayers", config.combatUsePrayers());
         prayerPanel.add(usePrayersCheckBox, gbc);
         
-        // Prayer point threshold
-        gbc.gridx = 1; gbc.anchor = GridBagConstraints.WEST;
+        // Prayer point threshold label
+        gbc.gridx = 0; gbc.gridy = 1; gbc.anchor = GridBagConstraints.WEST;
         prayerPanel.add(new JLabel("Min Prayer %:"), gbc);
         
-        gbc.gridx = 2; gbc.fill = GridBagConstraints.HORIZONTAL; gbc.weightx = 1.0;
+        // Prayer point threshold spinner
+        gbc.gridx = 0; gbc.gridy = 2; gbc.fill = GridBagConstraints.HORIZONTAL; gbc.weightx = 1.0;
         prayerPointThresholdSpinner = new JSpinner(new SpinnerNumberModel(config.combatPrayerPointThreshold(), 1, 99, 1));
         prayerPointThresholdSpinner.setToolTipText("Prayer % below which to deactivate prayers");
         prayerPanel.add(prayerPointThresholdSpinner, gbc);
         
-        // Offensive prayer
-        gbc.gridx = 0; gbc.gridy = 1; gbc.fill = GridBagConstraints.NONE; gbc.weightx = 0;
+        // Offensive prayer label
+        gbc.gridx = 0; gbc.gridy = 3; gbc.fill = GridBagConstraints.NONE; gbc.weightx = 0;
         prayerPanel.add(new JLabel("Offensive:"), gbc);
         
-        gbc.gridx = 1; gbc.gridwidth = 2; gbc.fill = GridBagConstraints.HORIZONTAL; gbc.weightx = 1.0;
+        // Offensive prayer combobox
+        gbc.gridx = 0; gbc.gridy = 4; gbc.fill = GridBagConstraints.HORIZONTAL; gbc.weightx = 1.0;
         String[] offensivePrayers = {"None", "Ultimate Strength", "Incredible Reflexes", "Chivalry", "Piety"};
         offensivePrayerComboBox = new JComboBox<>(offensivePrayers);
         offensivePrayerComboBox.setSelectedItem(config.combatOffensivePrayer());
         prayerPanel.add(offensivePrayerComboBox, gbc);
         
-        // Defensive prayer
-        gbc.gridx = 0; gbc.gridy = 2; gbc.gridwidth = 1; gbc.fill = GridBagConstraints.NONE; gbc.weightx = 0;
+        // Defensive prayer label
+        gbc.gridx = 0; gbc.gridy = 5; gbc.fill = GridBagConstraints.NONE; gbc.weightx = 0;
         prayerPanel.add(new JLabel("Defensive:"), gbc);
         
-        gbc.gridx = 1; gbc.gridwidth = 2; gbc.fill = GridBagConstraints.HORIZONTAL; gbc.weightx = 1.0;
+        // Defensive prayer combobox
+        gbc.gridx = 0; gbc.gridy = 6; gbc.fill = GridBagConstraints.HORIZONTAL; gbc.weightx = 1.0;
         String[] defensivePrayers = {"None", "Protect from Melee", "Protect from Missiles", "Protect from Magic"};
         defensivePrayerComboBox = new JComboBox<>(defensivePrayers);
         defensivePrayerComboBox.setSelectedItem(config.combatDefensivePrayer());
@@ -223,21 +227,22 @@ public class CombatBotPanel extends PluginPanel {
         gbc.insets = new Insets(3, 5, 3, 5);
         
         // Auto loot checkbox
-        gbc.gridx = 0; gbc.gridy = 0; gbc.anchor = GridBagConstraints.WEST;
+        gbc.gridx = 0; gbc.gridy = 0; gbc.anchor = GridBagConstraints.WEST; gbc.fill = GridBagConstraints.NONE; gbc.weightx = 0;
         autoLootCheckBox = new JCheckBox("Auto Loot", config.combatAutoLoot());
         lootPanel.add(autoLootCheckBox, gbc);
         
-        // Loot value threshold
-        gbc.gridx = 1; gbc.anchor = GridBagConstraints.WEST;
+        // Loot value threshold label
+        gbc.gridx = 0; gbc.gridy = 1; gbc.anchor = GridBagConstraints.WEST;
         lootPanel.add(new JLabel("Min Value:"), gbc);
         
-        gbc.gridx = 2; gbc.fill = GridBagConstraints.HORIZONTAL; gbc.weightx = 1.0;
+        // Loot value threshold spinner
+        gbc.gridx = 0; gbc.gridy = 2; gbc.fill = GridBagConstraints.HORIZONTAL; gbc.weightx = 1.0;
         lootValueThresholdSpinner = new JSpinner(new SpinnerNumberModel(config.combatLootValueThreshold(), 0, 100000, 50));
         lootValueThresholdSpinner.setToolTipText("Minimum GP value of items to loot");
         lootPanel.add(lootValueThresholdSpinner, gbc);
         
         // Save button for all configurations
-        gbc.gridx = 0; gbc.gridy = 1; gbc.gridwidth = 3; gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.gridx = 0; gbc.gridy = 3; gbc.fill = GridBagConstraints.HORIZONTAL;
         JButton saveButton = new JButton("Save All Configuration");
         saveButton.addActionListener(e -> saveConfiguration());
         lootPanel.add(saveButton, gbc);
