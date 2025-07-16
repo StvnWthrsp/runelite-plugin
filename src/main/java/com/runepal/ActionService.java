@@ -44,6 +44,9 @@ public class ActionService {
     
     // Map to track pending click actions for Windmouse movements
     private final ConcurrentHashMap<String, PendingClickAction> pendingClickActions = new ConcurrentHashMap<>();
+    
+    // Map to track pending interactions for Windmouse movements
+    private final ConcurrentHashMap<String, PendingInteraction> pendingInteractions = new ConcurrentHashMap<>();
 
     @Inject
     public ActionService(RunepalPlugin plugin, PipeService pipeService, GameService gameService, EventService eventService, BotConfig config, WindmouseService windmouseService) {
@@ -74,6 +77,21 @@ public class ActionService {
             this.timestamp = System.currentTimeMillis();
         }
     }
+
+    /**
+     * Internal class to track pending interactions after Windmouse movement
+     */
+    private static class PendingInteraction {
+        final Interactable entity;
+        final String action;
+        final long timestamp;
+        
+        PendingInteraction(Interactable entity, String action) {
+            this.entity = entity;
+            this.action = action;
+            this.timestamp = System.currentTimeMillis();
+        }
+    }
     
     /**
      * Handle mouse movement completion events from WindmouseService
@@ -81,32 +99,48 @@ public class ActionService {
     private void handleMouseMovementCompleted(MouseMovementCompletedEvent event) {
         String movementId = event.getMovementId();
         PendingClickAction pendingAction = pendingClickActions.remove(movementId);
+        PendingInteraction pendingInteraction = pendingInteractions.remove(movementId);
         
-        if (pendingAction == null) {
+        if (pendingAction == null && pendingInteraction == null) {
             // No pending action for this movement
             return;
         }
         
         if (event.isCancelled()) {
-            log.debug("Mouse movement {} was cancelled, skipping pending click", movementId);
+            log.debug("Mouse movement {} was cancelled, skipping pending action", movementId);
             return;
         }
         
-        // Calculate delay before clicking (2-5ms for realism)
+        // Calculate delay before action (2-5ms for realism)
         int minDelay = config.windmousePreClickDelay();
         int maxDelay = config.windmouseMaxPreClickDelay();
         int delay = ThreadLocalRandom.current().nextInt(minDelay, maxDelay + 1);
         
-        // Schedule the click
-        scheduler.schedule(() -> {
-            if (pendingAction.isRightClick) {
-                executeRightClick(event.getFinalPosition());
-            } else {
-                executeLeftClick(event.getFinalPosition());
-            }
-        }, delay, TimeUnit.MILLISECONDS);
+        // Handle pending click action
+        if (pendingAction != null) {
+            scheduler.schedule(() -> {
+                if (pendingAction.isRightClick) {
+                    executeRightClick(event.getFinalPosition());
+                } else {
+                    executeLeftClick(event.getFinalPosition());
+                }
+            }, delay, TimeUnit.MILLISECONDS);
+            log.debug("Scheduled click for movement {} with {}ms delay", movementId, delay);
+        }
         
-        log.debug("Scheduled click for movement {} with {}ms delay", movementId, delay);
+        // Handle pending interaction
+        if (pendingInteraction != null) {
+            scheduler.schedule(() -> {
+                if (pendingInteraction.entity instanceof GameObjectEntity) {
+                    GameObject gameObject = ((GameObjectEntity) pendingInteraction.entity).getGameObject();
+                    performInteractionLogic(gameObject, pendingInteraction.action);
+                } else if (pendingInteraction.entity instanceof NpcEntity) {
+                    NPC npc = ((NpcEntity) pendingInteraction.entity).getNpc();
+                    performNpcInteractionLogic(npc, pendingInteraction.action);
+                }
+            }, delay, TimeUnit.MILLISECONDS);
+            log.debug("Scheduled interaction for movement {} with {}ms delay", movementId, delay);
+        }
     }
 
     /**
@@ -388,12 +422,7 @@ public class ActionService {
         // If mouse is not already over the gameObject, move the mouse
         if (!gameService.isMouseOverObject(gameObject)) {
             log.info("Mouse is not over the object, moving mouse and scheduling interaction");
-            sendMouseMoveRequest(clickPoint);
-            
-            // Schedule the actual interaction after mouse movement
-            scheduler.schedule(() -> {
-                performInteractionLogic(gameObject, action);
-            }, 600, TimeUnit.MILLISECONDS);
+            sendMouseMoveRequestWithPendingInteraction(clickPoint, new GameObjectEntity(gameObject), action);
             return;
         }
 
@@ -438,12 +467,7 @@ public class ActionService {
         // If mouse is not already over the NPC, move the mouse
         if (!gameService.isMouseOverNpc(npc)) {
             log.info("Mouse is not over the NPC, moving mouse and scheduling interaction");
-            sendMouseMoveRequest(clickPoint);
-            
-            // Schedule the actual interaction after mouse movement
-            scheduler.schedule(() -> {
-                performNpcInteractionLogic(npc, action);
-            }, 600, TimeUnit.MILLISECONDS);
+            sendMouseMoveRequestWithPendingInteraction(clickPoint, new NpcEntity(npc), action);
             return;
         }
 
@@ -730,6 +754,47 @@ public class ActionService {
         String movementId = UUID.randomUUID().toString();
         windmouseService.moveToPoint(currentMousePos, point, movementId);
 	}
+
+    /**
+     * Send mouse move request with a pending interaction to be executed after movement completes
+     */
+    private void sendMouseMoveRequestWithPendingInteraction(Point point, Interactable entity, String action) {
+        if (point == null || point.x == -1) {
+            log.warn("Invalid point provided to sendMouseMoveRequestWithPendingInteraction.");
+            return;
+        }
+        
+        if (plugin.isAutomationConnected()) {
+            // For Python automation, we still need to handle the delay differently
+            // as the Python server doesn't generate movement completion events
+            if (!pipeService.sendMouseMove(point.x, point.y)) {
+                log.warn("Failed to send mouse move command via pipe");
+                plugin.stopBot();
+                return;
+            }
+            // Schedule the interaction with a fixed delay for Python automation
+            scheduler.schedule(() -> {
+                if (entity instanceof GameObjectEntity) {
+                    GameObject gameObject = ((GameObjectEntity) entity).getGameObject();
+                    performInteractionLogic(gameObject, action);
+                } else if (entity instanceof NpcEntity) {
+                    NPC npc = ((NpcEntity) entity).getNpc();
+                    performNpcInteractionLogic(npc, action);
+                }
+            }, 100, TimeUnit.MILLISECONDS);
+            return;
+        }
+        
+        // Use Windmouse for human-like movement when not connected
+        Point currentMousePos = new Point(plugin.getClient().getMouseCanvasPosition().getX(), plugin.getClient().getMouseCanvasPosition().getY());
+        String movementId = UUID.randomUUID().toString();
+        
+        // Store pending interaction
+        pendingInteractions.put(movementId, new PendingInteraction(entity, action));
+        
+        // Start Windmouse movement - interaction will be executed after movement completes
+        windmouseService.moveToPoint(currentMousePos, point, movementId);
+    }
 
 	public void sendKeyRequest(String endpoint, String key) {
 		boolean success;
