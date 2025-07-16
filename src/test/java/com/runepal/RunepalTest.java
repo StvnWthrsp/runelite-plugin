@@ -3,7 +3,7 @@ package com.runepal;
 import net.runelite.client.RuneLite;
 import net.runelite.client.externalplugins.ExternalPluginManager;
 
-public class MiningBotPluginTest
+public class RunepalTest
 {
 	public static void main(String[] args) throws Exception
 	{
