@@ -269,30 +269,49 @@ public class CombatTask implements BotTask {
         // Set target NPC for overlay debugging
         plugin.setTargetNpc(targetNpc);
         
-        // Get clickable point and attack using the new unified approach
-        Point clickPoint = gameService.getRandomClickablePoint(selectedEntity);
-        if (clickPoint != null && clickPoint.x != -1 && clickPoint.y != -1) {
-            actionService.sendClickRequest(clickPoint, true);
-            currentState = CombatState.VERIFY_ATTACK;
-            waitToVerifyTicks = 5;
-            combatStartTicks = 0;
-        } else {
-            log.warn("Found {} at {} but could not get clickable point for NPC.", targetNpc.getName(), targetNpc.getWorldLocation());
-        }
+        // Use enhanced interaction system
+        log.info("Attacking NPC {} using enhanced interaction system", targetNpc.getName());
+        actionService.interactWithEntity(selectedEntity, "Attack");
+        
+        currentState = CombatState.VERIFY_ATTACK;
+        waitToVerifyTicks = 10; // Increased for more robust verification
+        combatStartTicks = 0;
     }
 
     private void doVerifyAttack() {
         waitToVerifyTicks--;
-
-        if (plugin.getClient().getLocalPlayer().getInteracting() != null) {
+        
+        Player localPlayer = plugin.getClient().getLocalPlayer();
+        
+        // Check if we started attacking
+        if (localPlayer.getInteracting() == targetNpc) {
+            log.info("Successfully started attacking {}", targetNpc.getName());
             currentState = CombatState.ATTACKING;
             waitToVerifyTicks = 0;
             return;
         }
-        if (waitToVerifyTicks <= 0) {
-            log.warn("Attacking did not start after 5 ticks. Finding new target.");
-            currentState = CombatState.FINDING_NPC;
+        
+        // Check if we're attacking someone else (acceptable)
+        if (localPlayer.getInteracting() != null) {
+            log.info("Started attacking different target, updating targetNpc");
+            targetNpc = (NPC) localPlayer.getInteracting();
+            plugin.setTargetNpc(targetNpc);
+            currentState = CombatState.ATTACKING;
             waitToVerifyTicks = 0;
+            return;
+        }
+        
+        if (waitToVerifyTicks <= 0) {
+            log.warn("Attack verification failed, retrying with same target");
+            // Retry with same target instead of immediately finding new one
+            if (targetNpc != null && targetNpc.getHealthRatio() > 0) {
+                NpcEntity npcEntity = new NpcEntity(targetNpc);
+                actionService.interactWithEntity(npcEntity, "Attack");
+                waitToVerifyTicks = 10;
+            } else {
+                log.info("Target no longer valid, finding new target");
+                currentState = CombatState.FINDING_NPC;
+            }
         }
     }
 

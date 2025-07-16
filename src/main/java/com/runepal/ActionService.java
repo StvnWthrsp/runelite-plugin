@@ -9,7 +9,11 @@ import net.runelite.api.MenuEntry;
 import net.runelite.api.widgets.Widget;
 import net.runelite.client.util.Text;
 import net.runelite.api.WallObject;
+import net.runelite.api.NPC;
 import net.runelite.api.gameval.InterfaceID.MagicSpellbook;
+import com.runepal.entity.Interactable;
+import com.runepal.entity.NpcEntity;
+import com.runepal.entity.GameObjectEntity;
 
 import javax.inject.Inject;
 
@@ -311,12 +315,49 @@ public class ActionService {
     }
 
     /**
+     * Interact with any interactable entity (NPC, GameObject, etc.)
+     * @param entity the interactable entity to interact with
+     * @param action the action to perform (e.g., "Attack", "Open", "Mine", "Cut")
+     */
+    public void interactWithEntity(Interactable entity, String action) {
+        if (entity == null) {
+            log.warn("Cannot interact with null entity");
+            return;
+        }
+
+        // Prevent concurrent interactions
+        if (isCurrentlyInteracting) {
+            log.debug("Already interacting with an entity, ignoring new interaction request");
+            return;
+        }
+
+        // Handle different entity types
+        if (entity instanceof NpcEntity) {
+            NPC npc = ((NpcEntity) entity).getNpc();
+            interactWithNpcInternal(npc, action);
+        } else if (entity instanceof GameObjectEntity) {
+            GameObject gameObject = ((GameObjectEntity) entity).getGameObject();
+            interactWithGameObjectInternal(gameObject, action);
+        } else {
+            log.warn("Unknown entity type: {}", entity.getClass().getSimpleName());
+        }
+    }
+
+    /**
      * Interact with a game object
      * @param gameObject the game object to interact with
      * @param action the action to perform (e.g., "Open", "Mine", "Cut")
-     * @return true if the interaction was initiated
      */
     public void interactWithGameObject(GameObject gameObject, String action) {
+        interactWithGameObjectInternal(gameObject, action);
+    }
+
+    /**
+     * Internal method for interacting with game objects
+     * @param gameObject the game object to interact with
+     * @param action the action to perform
+     */
+    private void interactWithGameObjectInternal(GameObject gameObject, String action) {
         if (gameObject == null) {
             log.warn("Cannot interact with null game object");
             return;
@@ -358,6 +399,147 @@ public class ActionService {
 
         // Perform the actual interaction logic
         performInteractionLogic(gameObject, action);
+    }
+
+    /**
+     * Internal method for interacting with NPCs
+     * @param npc the NPC to interact with
+     * @param action the action to perform
+     */
+    private void interactWithNpcInternal(NPC npc, String action) {
+        if (npc == null) {
+            log.warn("Cannot interact with null NPC");
+            return;
+        }
+
+        // Check if NPC is still valid (not dead, still exists)
+        if (npc.getHealthRatio() == 0 && npc.getInteracting() != null) {
+            log.warn("Cannot interact with dead NPC: {}", npc.getName());
+            eventService.publish(new InteractionCompletedEvent(npc, action, false, "NPC is dead"));
+            return;
+        }
+
+        Point clickPoint = gameService.getRandomClickablePoint(new NpcEntity(npc));
+        if (clickObstructionChecker.isClickObstructed(clickPoint)) {
+            log.warn("Click point is obstructed for NPC: {}", npc.getName());
+            eventService.publish(new InteractionCompletedEvent(npc, action, false, "Click point obstructed"));
+            return;
+        }
+        if (clickPoint.x == -1) {
+            log.warn("Could not get clickable point for NPC: {}", npc.getName());
+            eventService.publish(new InteractionCompletedEvent(npc, action, false, "Could not get clickable point"));
+            return;
+        }
+
+        log.info("Interacting with NPC {} using action '{}'", npc.getName(), action);
+        isCurrentlyInteracting = true;
+        eventService.publish(new InteractionStartedEvent(npc, action));
+
+        // If mouse is not already over the NPC, move the mouse
+        if (!gameService.isMouseOverNpc(npc)) {
+            log.info("Mouse is not over the NPC, moving mouse and scheduling interaction");
+            sendMouseMoveRequest(clickPoint);
+            
+            // Schedule the actual interaction after mouse movement
+            scheduler.schedule(() -> {
+                performNpcInteractionLogic(npc, action);
+            }, 600, TimeUnit.MILLISECONDS);
+            return;
+        }
+
+        // Perform the actual interaction logic
+        performNpcInteractionLogic(npc, action);
+    }
+
+    /**
+     * Core interaction logic for NPCs
+     */
+    private boolean performNpcInteractionLogic(NPC npc, String action) {
+        // Check if NPC is still valid before interaction
+        if (npc.getHealthRatio() == 0 && npc.getInteracting() != null) {
+            log.warn("NPC {} died before interaction could complete", npc.getName());
+            isCurrentlyInteracting = false;
+            eventService.publish(new InteractionCompletedEvent(npc, action, false, "NPC died"));
+            return false;
+        }
+
+        // Get the menu entries that are present on hover
+        MenuEntry[] menuEntries = plugin.getClient().getMenu().getMenuEntries();
+
+        // If there is no menu, we have a problem
+        if (menuEntries.length == 0) {
+            log.warn("No menu detected for NPC {}", npc.getName());
+            isCurrentlyInteracting = false;
+            eventService.publish(new InteractionCompletedEvent(npc, action, false, "No menu detected"));
+            return false;
+        }
+
+        Point currentMousePoint = new Point(plugin.getClient().getMouseCanvasPosition().getX(), plugin.getClient().getMouseCanvasPosition().getY());
+
+        // If left-click option matches action, just click
+        if (Text.removeTags(menuEntries[menuEntries.length - 1].getOption()).equals(action)) {
+            log.info("Left-click action {} matches expected action {}, sending click", Text.removeTags(menuEntries[menuEntries.length - 1].getTarget()), action);
+            sendClickRequest(currentMousePoint, false);
+            isCurrentlyInteracting = false;
+            eventService.publish(new InteractionCompletedEvent(npc, action, true));
+            return true;
+        }
+
+        // Otherwise, right-click and schedule the click on the menu entry
+        log.info("Left-click action did not match, right-clicking");
+        sendRightClickRequest(currentMousePoint);
+        scheduler.schedule(() -> {
+            MenuEntry[] currentMenuEntries = plugin.getClient().getMenu().getMenuEntries();
+            boolean foundAction = false;
+
+            log.trace("----Menu----");
+            for (int i = 0; i < currentMenuEntries.length; i++) {
+                MenuEntry entry = currentMenuEntries[i];
+                int visualIndex = currentMenuEntries.length - 1 - i;
+                log.trace("Visual {}, Index {}: {}", visualIndex, i, entry.getOption());
+                if (action.equals(entry.getOption())) {
+                    log.debug("CLICKING_MENU: options matched, {} and {}", action, entry.getOption());
+                    log.debug("Clicking menu option at array index {} (visual index {})", i, visualIndex);
+                    
+                    // DEBUG: Show the menu entry bounds as an overlay (if enabled in config)
+                    Rectangle menuBounds = gameService.getMenuEntryBounds(entry, visualIndex);
+                    if (menuBounds != null) {
+                        if (config.showMenuDebugOverlay()) {
+                            plugin.getMenuDebugOverlay().addDebugRect(
+                                menuBounds, 
+                                String.format("Menu: %s (arr:%d vis:%d)", action, i, visualIndex), 
+                                Color.RED
+                            );
+                            log.debug("DEBUG: Menu bounds for '{}': {}", action, menuBounds);
+                            
+                            // Clear the debug overlay after 1 seconds
+                            scheduler.schedule(() -> {
+                                plugin.getMenuDebugOverlay().clearDebugRects();
+                            }, 1000, TimeUnit.MILLISECONDS);
+                        }
+                    } else {
+                        log.warn("WARN: getMenuEntryBounds returned null for entry '{}' at visual index {}", action, visualIndex);
+                    }
+
+                    java.awt.Point menuEntryClickPoint = gameService.getRandomPointInBounds(menuBounds);
+                    sendClickRequest(menuEntryClickPoint, true);
+                    
+                    isCurrentlyInteracting = false;
+                    foundAction = true;
+                    break;
+                }
+            }
+            
+            // Always reset the interaction flag and publish completion event
+            isCurrentlyInteracting = false;
+            if (foundAction) {
+                eventService.publish(new InteractionCompletedEvent(npc, action, true));
+            } else {
+                log.warn("Right-click menu did not contain expected option {}", action);
+                eventService.publish(new InteractionCompletedEvent(npc, action, false, "Menu option not found"));
+            }
+        }, 100, TimeUnit.MILLISECONDS);
+        return true;
     }
 
     /**
