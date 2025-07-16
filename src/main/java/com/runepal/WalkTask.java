@@ -9,10 +9,10 @@ import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.gameval.ObjectID;
 import net.runelite.api.coords.LocalPoint;
 import net.runelite.api.widgets.Widget;
-import shortestpath.WorldPointUtil;
-import shortestpath.pathfinder.Pathfinder;
-import shortestpath.pathfinder.PathfinderConfig;
-import shortestpath.Transport;
+import com.runepal.shortestpath.WorldPointUtil;
+import com.runepal.shortestpath.pathfinder.Pathfinder;
+import com.runepal.shortestpath.pathfinder.PathfinderConfig;
+import com.runepal.shortestpath.Transport;
 
 import java.util.*;
 import java.util.concurrent.*;
