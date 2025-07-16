@@ -216,24 +216,62 @@ public class CombatTask implements BotTask {
             return;
         }
         
-        // Use enhanced target selection with reachability validation (Phase 2)
-        WorldPoint playerLocation = plugin.getClient().getLocalPlayer().getWorldLocation();
-        targetNpc = gameService.findBestCombatTarget(npcNames, playerLocation);
+        // Find nearest valid NPC to attack
+        Interactable selectedEntity = gameService.findNearest(interactable -> {
+            if (!(interactable instanceof NpcEntity)) {
+                return false;
+            }
+            
+            NpcEntity npcEntity = (NpcEntity) interactable;
+            NPC npc = npcEntity.getNpc();
+            
+            // Check if NPC name is null
+            if (npc.getName() == null) {
+                return false;
+            }
+            
+            // Check if NPC name matches our target list (using config instead of hardcoded "Goblin")
+            boolean nameMatches = Arrays.stream(npcNames)
+                    .anyMatch(targetName -> npc.getName().toLowerCase().contains(targetName.toLowerCase().trim()));
+            if (!nameMatches) {
+                return false;
+            }
+            
+            // Only exclude NPCs that are definitely dead (health ratio exactly 0 AND in combat)
+            // NPCs not in combat will have health ratio 0, but they're still alive and targetable
+            if (npc.getHealthRatio() == 0 && npc.getInteracting() != null) {
+                return false; // NPC is dead (health 0 while in combat)
+            }
+            
+            // Skip NPCs already in combat with another player (not us)
+            if (npc.getInteracting() != null && npc.getInteracting() != plugin.getClient().getLocalPlayer()) {
+                return false;
+            }
+            
+            return true;
+        });
 
+        if (selectedEntity == null) {
+            log.debug("No valid NPCs found, waiting...");
+            targetNpc = null;
+            return;
+        }
+        
+        targetNpc = ((NpcEntity) selectedEntity).getNpc();
+        
         if (targetNpc == null) {
-            log.debug("No reachable NPCs found, waiting...");
+            log.debug("Selected entity had null NPC, waiting...");
             return;
         }
 
-        log.debug("Selected reachable target: {} at {}", targetNpc.getName(), targetNpc.getWorldLocation());
+        log.debug("Found target NPC: {} at {}", targetNpc.getName(), targetNpc.getWorldLocation());
         
         // Set target NPC for overlay debugging
         plugin.setTargetNpc(targetNpc);
         
-        // Use enhanced interaction system with reachability-validated target (Phase 2)
-        NpcEntity npcEntity = new NpcEntity(targetNpc);
-        log.info("Attacking reachable NPC {} using enhanced interaction system", targetNpc.getName());
-        actionService.interactWithEntity(npcEntity, "Attack");
+        // Use enhanced interaction system
+        log.info("Attacking NPC {} using enhanced interaction system", targetNpc.getName());
+        actionService.interactWithEntity(selectedEntity, "Attack");
         
         currentState = CombatState.VERIFY_ATTACK;
         waitToVerifyTicks = 10; // Increased for more robust verification

@@ -31,15 +31,6 @@ public class GameStateService {
     }
 
     /**
-     * Gets the RuneLite client instance for accessing game data.
-     * 
-     * @return the client instance
-     */
-    public Client getClient() {
-        return client;
-    }
-
-    /**
      * Checks if the player's inventory is full (28 items).
      * 
      * @return true if inventory is full, false otherwise
