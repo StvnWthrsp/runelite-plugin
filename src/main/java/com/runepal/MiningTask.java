@@ -16,6 +16,7 @@ import shortestpath.pathfinder.PathfinderConfig;
 import java.util.*;
 import java.util.stream.Collectors;
 import java.util.Arrays;
+import java.util.function.Consumer;
 
 @Slf4j
 public class MiningTask implements BotTask {
@@ -28,6 +29,13 @@ public class MiningTask implements BotTask {
     private final GameService gameService;
     private final EventService eventService;
     private final HumanizerService humanizerService;
+    
+    // Event handler references to maintain identity
+    private Consumer<AnimationChanged> animationHandler;
+    private Consumer<StatChanged> statHandler;
+    private Consumer<InteractingChanged> interactingHandler;
+    private Consumer<GameTick> gameTickHandler;
+    
     // Internal state for this task only
     private enum MiningState {
         IDLE,
@@ -74,10 +82,17 @@ public class MiningTask implements BotTask {
     public void onStart() {
         log.info("Starting Mining Task.");
         this.lastMiningXp = plugin.getClient().getSkillExperience(Skill.MINING);
-        this.eventService.subscribe(AnimationChanged.class, this::onAnimationChanged);
-        this.eventService.subscribe(StatChanged.class, this::onStatChanged);
-        this.eventService.subscribe(InteractingChanged.class, this::onInteractingChanged);
-        this.eventService.subscribe(GameTick.class, this::onGameTick);
+        
+        // Store event handler references to maintain identity
+        this.animationHandler = this::onAnimationChanged;
+        this.statHandler = this::onStatChanged;
+        this.interactingHandler = this::onInteractingChanged;
+        this.gameTickHandler = this::onGameTick;
+        
+        this.eventService.subscribe(AnimationChanged.class, animationHandler);
+        this.eventService.subscribe(StatChanged.class, statHandler);
+        this.eventService.subscribe(InteractingChanged.class, interactingHandler);
+        this.eventService.subscribe(GameTick.class, gameTickHandler);
 
         if( gameService.getPlayerLocation().distanceTo(VARROCK_EAST_MINE) > 10 ) {
             taskManager.pushTask(new WalkTask(plugin, pathfinderConfig, VARROCK_EAST_MINE, actionService, gameService, humanizerService));
@@ -93,10 +108,18 @@ public class MiningTask implements BotTask {
         this.targetRock = null;
         this.nextRock = null;
         plugin.setTargetRock(null); // Clear overlay
-        this.eventService.unsubscribe(AnimationChanged.class, this::onAnimationChanged);
-        this.eventService.unsubscribe(StatChanged.class, this::onStatChanged);
-        this.eventService.unsubscribe(InteractingChanged.class, this::onInteractingChanged);
-        this.eventService.unsubscribe(GameTick.class, this::onGameTick);
+        
+        // Unsubscribe using the stored handler references
+        this.eventService.unsubscribe(AnimationChanged.class, animationHandler);
+        this.eventService.unsubscribe(StatChanged.class, statHandler);
+        this.eventService.unsubscribe(InteractingChanged.class, interactingHandler);
+        this.eventService.unsubscribe(GameTick.class, gameTickHandler);
+        
+        // Clear handler references
+        this.animationHandler = null;
+        this.statHandler = null;
+        this.interactingHandler = null;
+        this.gameTickHandler = null;
     }
 
     @Override
@@ -287,7 +310,7 @@ public class MiningTask implements BotTask {
             currentState = MiningState.FINDING_ROCK;
             return;
         }
-        actionService.sendClickRequest(gameService.getRandomClickablePoint(targetRock), true);
+        actionService.interactWithGameObject(targetRock, "Mine");
         miningStarted = false;
         xpGainedThisMine = 0;
         idleTicks = 0;

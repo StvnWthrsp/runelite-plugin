@@ -175,6 +175,26 @@ public class GameStateService {
     }
 
     /**
+     * Checks if the local player is currently performing any woodcutting animation.
+     * 
+     * @return true if the player is performing a woodcutting animation, false otherwise
+     */
+    public boolean isCurrentlyWoodcutting() {
+        int currentAnimation = getCurrentAnimation();
+        return currentAnimation == AnimationID.HUMAN_WOODCUTTING_BRONZE_AXE ||
+                currentAnimation == AnimationID.HUMAN_WOODCUTTING_IRON_AXE ||
+                currentAnimation == AnimationID.HUMAN_WOODCUTTING_STEEL_AXE ||
+                currentAnimation == AnimationID.HUMAN_WOODCUTTING_BLACK_AXE ||
+                currentAnimation == AnimationID.HUMAN_WOODCUTTING_MITHRIL_AXE ||
+                currentAnimation == AnimationID.HUMAN_WOODCUTTING_ADAMANT_AXE ||
+                currentAnimation == AnimationID.HUMAN_WOODCUTTING_RUNE_AXE ||
+                currentAnimation == AnimationID.HUMAN_WOODCUTTING_DRAGON_AXE ||
+                currentAnimation == AnimationID.HUMAN_WOODCUTTING_3A_AXE ||
+                currentAnimation == AnimationID.HUMAN_WOODCUTTING_CRYSTAL_AXE ||
+                currentAnimation == AnimationID.HUMAN_WOODCUTTING_INFERNAL_AXE;
+    }
+
+    /**
      * Gets the current world location of the local player.
      * 
      * @return the player's current world location

@@ -9,6 +9,7 @@ import java.awt.Point;
 import java.util.Objects;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.function.Consumer;
 
 import com.runepal.entity.Interactable;
 import com.runepal.entity.NpcEntity;
@@ -27,6 +28,10 @@ public class CombatTask implements BotTask {
     private final EventService eventService;
     private final HumanizerService humanizerService;
     private final PotionService potionService;
+
+    // Event handler references to maintain identity
+    private Consumer<AnimationChanged> animationHandler;
+    private Consumer<InteractingChanged> interactingHandler;
 
     // Internal state for combat FSM
     private enum CombatState {
@@ -73,9 +78,13 @@ public class CombatTask implements BotTask {
         log.info("Starting Combat Task.");
         this.currentState = CombatState.FINDING_NPC;
         
+        // Store event handler references to maintain identity
+        this.animationHandler = this::onAnimationChanged;
+        this.interactingHandler = this::onInteractingChanged;
+        
         // Subscribe to events
-        this.eventService.subscribe(AnimationChanged.class, this::onAnimationChanged);
-        this.eventService.subscribe(InteractingChanged.class, this::onInteractingChanged);
+        this.eventService.subscribe(AnimationChanged.class, animationHandler);
+        this.eventService.subscribe(InteractingChanged.class, interactingHandler);
         
         if (this.scheduler == null || this.scheduler.isShutdown()) {
             this.scheduler = Executors.newSingleThreadScheduledExecutor();
@@ -88,9 +97,13 @@ public class CombatTask implements BotTask {
         this.targetNpc = null;
         plugin.setTargetNpc(null); // Clear overlay
         
-        // Unsubscribe from events
-        this.eventService.unsubscribe(AnimationChanged.class, this::onAnimationChanged);
-        this.eventService.unsubscribe(InteractingChanged.class, this::onInteractingChanged);
+        // Unsubscribe using the stored handler references
+        this.eventService.unsubscribe(AnimationChanged.class, animationHandler);
+        this.eventService.unsubscribe(InteractingChanged.class, interactingHandler);
+        
+        // Clear handler references
+        this.animationHandler = null;
+        this.interactingHandler = null;
         
         if (this.scheduler != null && !this.scheduler.isShutdown()) {
             this.scheduler.shutdownNow();

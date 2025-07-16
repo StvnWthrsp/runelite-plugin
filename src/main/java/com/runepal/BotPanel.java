@@ -125,6 +125,9 @@ public class BotPanel extends PluginPanel {
             case FISHING_BOT:
                 currentBotPanel = createFishingBotPanel();
                 break;
+            case WOODCUTTING_BOT:
+                currentBotPanel = createWoodcuttingBotPanel();
+                break;
             // Add other bot types here in the future
             default:
                 currentBotPanel = createEmptyPanel();
@@ -154,6 +157,11 @@ public class BotPanel extends PluginPanel {
         return new FishingBotPanel(plugin, config, configManager);
     }
     
+    private JPanel createWoodcuttingBotPanel() {
+        // Create the woodcutting-specific panel
+        return new WoodcuttingBotPanel(plugin, config, configManager);
+    }
+    
     private JPanel createEmptyPanel() {
         JPanel emptyPanel = new JPanel();
         emptyPanel.add(new JLabel("Select a bot type from the dropdown above"));
@@ -173,6 +181,8 @@ public class BotPanel extends PluginPanel {
             ((CombatBotPanel) currentBotPanel).setStatus(status);
         } else if (currentBotPanel instanceof FishingBotPanel) {
             ((FishingBotPanel) currentBotPanel).setStatus(status);
+        } else if (currentBotPanel instanceof WoodcuttingBotPanel) {
+            ((WoodcuttingBotPanel) currentBotPanel).setStatus(status);
         }
     }
     
@@ -183,6 +193,8 @@ public class BotPanel extends PluginPanel {
             ((CombatBotPanel) currentBotPanel).setButtonText(text);
         } else if (currentBotPanel instanceof FishingBotPanel) {
             ((FishingBotPanel) currentBotPanel).setButtonText(text);
+        } else if (currentBotPanel instanceof WoodcuttingBotPanel) {
+            ((WoodcuttingBotPanel) currentBotPanel).setButtonText(text);
         }
     }
     

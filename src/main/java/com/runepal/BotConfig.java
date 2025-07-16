@@ -120,12 +120,49 @@ public interface BotConfig extends Config
 		return FishingMode.POWER_DROP;
 	}
 
+	// Woodcutting Bot specific settings
+	@ConfigItem(
+			keyName = "woodcuttingMode",
+			name = "Woodcutting Mode",
+			description = "Choose between power chopping and banking",
+			position = 19,
+			hidden = true
+	)
+	default WoodcuttingMode woodcuttingMode()
+	{
+		return WoodcuttingMode.POWER_CHOP;
+	}
+
+	@ConfigItem(
+			keyName = "treeTypes",
+			name = "Tree Types",
+			description = "Comma-separated list of tree types (e.g., Oak, Willow)",
+			position = 20,
+			hidden = true
+	)
+	default String treeTypes()
+	{
+		return "Oak";
+	}
+
+	@ConfigItem(
+			keyName = "woodcuttingBank",
+			name = "Bank Name",
+			description = "Bank location for banking mode",
+			position = 21,
+			hidden = true
+	)
+	default String woodcuttingBank()
+	{
+		return "VARROCK_EAST";
+	}
+
 	// Combat Bot specific settings
 	@ConfigItem(
 			keyName = "combatNpcNames",
 			name = "Combat NPC Names",
 			description = "Comma-separated list of NPC names to attack (e.g., Goblin,Cow)",
-			position = 20,
+			position = 22,
 			hidden = true
 	)
 	default String combatNpcNames()
@@ -137,7 +174,7 @@ public interface BotConfig extends Config
 			keyName = "combatEatAtHealthPercent",
 			name = "Eat at Health Percent",
 			description = "Health percentage threshold at which to eat food (1-99)",
-			position = 21,
+			position = 23,
 			hidden = true
 	)
 	default int combatEatAtHealthPercent()
@@ -150,7 +187,7 @@ public interface BotConfig extends Config
 			keyName = "combatUsePrayerPotions",
 			name = "Use Prayer Potions",
 			description = "Enable automatic prayer potion consumption",
-			position = 22,
+			position = 24,
 			hidden = true
 	)
 	default boolean combatUsePrayerPotions()
@@ -162,7 +199,7 @@ public interface BotConfig extends Config
 			keyName = "combatPrayerPotionThreshold",
 			name = "Prayer Potion Threshold",
 			description = "Prayer percentage threshold at which to drink prayer potion (1-99)",
-			position = 23,
+			position = 25,
 			hidden = true
 	)
 	default int combatPrayerPotionThreshold()
@@ -401,6 +438,26 @@ public interface BotConfig extends Config
 			section = debugSection
 	)
 	default boolean showMenuDebugOverlay()
+	{
+		return false;
+	}
+
+	// Woodcutting Bot debugging section
+	@ConfigSection(
+			name = "Woodcutting Bot - Debugging",
+			description = "Visual debugging options for woodcutting bot",
+			position = 25
+	)
+	String woodcuttingDebugSection = "woodcuttingDebugging";
+
+	@ConfigItem(
+			keyName = "highlightTargetTree",
+			name = "Highlight Target Tree",
+			description = "Visually highlight the targeted tree (Green: detected, Yellow: cutting)",
+			position = 0,
+			section = woodcuttingDebugSection
+	)
+	default boolean highlightTargetTree()
 	{
 		return false;
 	}
