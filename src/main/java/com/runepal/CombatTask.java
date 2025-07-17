@@ -2,6 +2,7 @@ package com.runepal;
 
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.*;
+import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.events.AnimationChanged;
 import net.runelite.api.events.InteractingChanged;
 
@@ -193,9 +194,22 @@ public class CombatTask implements BotTask {
         if (interactingChanged.getSource() != plugin.getClient().getLocalPlayer()) {
             return;
         }
+
+        Actor target = interactingChanged.getTarget();
+        if (target == null) {
+            log.info("Player stopped interacting");
+        } else {
+            log.info("Player began interacting with {}", target);
+        }
+
+        if (currentState == CombatState.VERIFY_ATTACK) {
+            log.info("Verified attacking started");
+            currentState = CombatState.ATTACKING;
+            waitToVerifyTicks = 0;
+            return;
+        }
         
         if (currentState == CombatState.ATTACKING) {
-            Actor target = interactingChanged.getTarget();
             if (target == null) {
                 // Player stopped attacking
                 log.info("Player stopped attacking, transitioning to waiting for combat end");
@@ -274,44 +288,36 @@ public class CombatTask implements BotTask {
         actionService.interactWithEntity(selectedEntity, "Attack");
         
         currentState = CombatState.VERIFY_ATTACK;
-        waitToVerifyTicks = 10; // Increased for more robust verification
+        waitToVerifyTicks = 5;
         combatStartTicks = 0;
     }
 
     private void doVerifyAttack() {
         waitToVerifyTicks--;
         
-        Player localPlayer = plugin.getClient().getLocalPlayer();
-        
-        // Check if we started attacking
-        if (localPlayer.getInteracting() == targetNpc) {
-            log.info("Successfully started attacking {}", targetNpc.getName());
-            currentState = CombatState.ATTACKING;
-            waitToVerifyTicks = 0;
-            return;
-        }
-        
-        // Check if we're attacking someone else (acceptable)
-        if (localPlayer.getInteracting() != null) {
-            log.info("Started attacking different target, updating targetNpc");
-            targetNpc = (NPC) localPlayer.getInteracting();
-            plugin.setTargetNpc(targetNpc);
-            currentState = CombatState.ATTACKING;
-            waitToVerifyTicks = 0;
-            return;
-        }
+//        Player localPlayer = plugin.getClient().getLocalPlayer();
+//
+//        // Check if we started attacking
+//        if (localPlayer.getInteracting() == targetNpc) {
+//            log.info("Successfully started attacking {}", targetNpc.getName());
+//            currentState = CombatState.ATTACKING;
+//            waitToVerifyTicks = 0;
+//            return;
+//        }
+//
+//        // Check if we're attacking someone else (acceptable)
+//        if (localPlayer.getInteracting() != null) {
+//            log.info("Started attacking different target, updating targetNpc");
+//            targetNpc = (NPC) localPlayer.getInteracting();
+//            plugin.setTargetNpc(targetNpc);
+//            currentState = CombatState.ATTACKING;
+//            waitToVerifyTicks = 0;
+//            return;
+//        }
         
         if (waitToVerifyTicks <= 0) {
-            log.warn("Attack verification failed, retrying with same target");
-            // Retry with same target instead of immediately finding new one
-            if (targetNpc != null && targetNpc.getHealthRatio() > 0) {
-                NpcEntity npcEntity = new NpcEntity(targetNpc);
-                actionService.interactWithEntity(npcEntity, "Attack");
-                waitToVerifyTicks = 10;
-            } else {
-                log.info("Target no longer valid, finding new target");
-                currentState = CombatState.FINDING_NPC;
-            }
+            log.warn("Attack verification failed, retrying");
+            currentState = CombatState.FINDING_NPC;
         }
     }
 
@@ -442,10 +448,7 @@ public class CombatTask implements BotTask {
         }
 
         log.info("Loot detection enabled - performing basic loot scan");
-        
-        // For now, just wait as if collecting loot
         // TODO: Implement proper ground item detection and collection
-        delayTicks = humanizerService.getRandomDelay(3, 5);
         
         // Continue to next target after looting attempt
         currentState = CombatState.FINDING_NPC;

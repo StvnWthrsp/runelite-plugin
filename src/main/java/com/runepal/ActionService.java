@@ -441,13 +441,6 @@ public class ActionService {
             return;
         }
 
-        // Check if NPC is still valid (not dead, still exists)
-        if (npc.getHealthRatio() == 0 && npc.getInteracting() != null) {
-            log.warn("Cannot interact with dead NPC: {}", npc.getName());
-            eventService.publish(new InteractionCompletedEvent(npc, action, false, "NPC is dead"));
-            return;
-        }
-
         Point clickPoint = gameService.getRandomClickablePoint(new NpcEntity(npc));
         if (clickObstructionChecker.isClickObstructed(clickPoint)) {
             log.warn("Click point is obstructed for NPC: {}", npc.getName());
@@ -479,14 +472,6 @@ public class ActionService {
      * Core interaction logic for NPCs
      */
     private boolean performNpcInteractionLogic(NPC npc, String action) {
-        // Check if NPC is still valid before interaction
-        if (npc.getHealthRatio() == 0 && npc.getInteracting() != null) {
-            log.warn("NPC {} died before interaction could complete", npc.getName());
-            isCurrentlyInteracting = false;
-            eventService.publish(new InteractionCompletedEvent(npc, action, false, "NPC died"));
-            return false;
-        }
-
         // Get the menu entries that are present on hover
         MenuEntry[] menuEntries = plugin.getClient().getMenu().getMenuEntries();
 
@@ -562,7 +547,7 @@ public class ActionService {
                 log.warn("Right-click menu did not contain expected option {}", action);
                 eventService.publish(new InteractionCompletedEvent(npc, action, false, "Menu option not found"));
             }
-        }, 100, TimeUnit.MILLISECONDS);
+        }, 300, TimeUnit.MILLISECONDS);
         return true;
     }
 
@@ -648,7 +633,7 @@ public class ActionService {
                 log.warn("Right-click menu did not contain expected option {}", action);
                 eventService.publish(new InteractionCompletedEvent(gameObject, action, false, "Menu option not found"));
             }
-        }, 100, TimeUnit.MILLISECONDS);
+        }, 300, TimeUnit.MILLISECONDS);
         return true;
     }
 
