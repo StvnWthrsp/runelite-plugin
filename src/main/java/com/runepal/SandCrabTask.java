@@ -824,7 +824,7 @@ public class SandCrabTask implements BotTask {
         }
         
         // Create and push banking task
-        // TODO: Add itemsToWithdraw to BankTask
+        // TODO: Add itemsToWithdraw Map<Integer, Integer> to BankTask
         BankTask bankTask = new BankTask(plugin, actionService, gameService, eventService);
         
         taskManager.pushTask(bankTask);

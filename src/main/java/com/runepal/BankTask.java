@@ -3,8 +3,12 @@ package com.runepal;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.api.GameObject;
+import net.runelite.api.ItemContainer;
 import net.runelite.api.gameval.InterfaceID;
+import net.runelite.api.gameval.InventoryID;
 import net.runelite.api.widgets.Widget;
+
+import java.util.Map;
 
 import javax.inject.Inject;
 
@@ -17,7 +21,10 @@ public class BankTask implements BotTask {
         DEPOSITING,
         WAITING_FOR_DEPOSIT,
         FINISHED,
-        INTERACTING_WITH_BANK, FAILED
+        INTERACTING_WITH_BANK,
+        FAILED,
+        WITHDRAWING,
+        DEPOSITING_ALL_ITEMS
     }
 
     private final Client client;
@@ -43,6 +50,15 @@ public class BankTask implements BotTask {
         this.eventService = eventService;
     }
 
+    private Map<Integer, Integer> itemsToWithdraw;
+
+    public BankTask(RunepalPlugin plugin, Map<Integer, Integer> itemsToWithdraw, ActionService actionService, GameService gameService) {
+        this.client = plugin.getClient();
+        this.actionService = actionService;
+        this.gameService = gameService;
+        this.itemsToWithdraw = itemsToWithdraw;
+    }
+
     @Override
     public void onStart() {
         log.info("Starting bank task.");
@@ -65,13 +81,36 @@ public class BankTask implements BotTask {
                 waitForBankWidget();
                 break;
             case DEPOSITING:
-                depositItems();
+                depositAllItems();
+                break;
+            case WITHDRAWING:
+                doWithdrawing();
+                break;
+            case DEPOSITING_ALL_ITEMS:
+                depositAllItems();
                 break;
             case WAITING_FOR_DEPOSIT:
                 waitForDeposit();
                 break;
             default:
                 break;
+        }
+    }
+
+    private void doWithdrawing() {
+        ItemContainer bankContainer = client.getItemContainer(InventoryID.BANK);
+        if (bankContainer == null) {
+            log.warn("Bank container not found. Trying again.");
+            currentState = BankState.OPENING_BANK;
+            return;
+        }
+        for (Map.Entry<Integer, Integer> entry : itemsToWithdraw.entrySet()) { 
+            int itemId = entry.getKey();
+            int quantity = entry.getValue();
+            int itemIndex = bankContainer.find(itemId);
+            if (itemIndex != -1) {
+                actionService.sendClickRequest(gameService.getBankItemPoint(itemIndex), true);
+            }
         }
     }
 
@@ -105,7 +144,7 @@ public class BankTask implements BotTask {
         }
     }
 
-    private void depositItems() {
+    private void depositAllItems() {
         if (gameService.isInventoryEmpty()) {
             log.info("Inventory is empty, skipping deposit.");
             currentState = BankState.FINISHED;
