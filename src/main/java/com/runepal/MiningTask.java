@@ -11,7 +11,7 @@ import net.runelite.api.events.AnimationChanged;
 import net.runelite.api.events.GameTick;
 import net.runelite.api.events.InteractingChanged;
 import net.runelite.api.events.StatChanged;
-import shortestpath.pathfinder.PathfinderConfig;
+import com.runepal.shortestpath.pathfinder.PathfinderConfig;
 
 import java.util.*;
 import java.util.stream.Collectors;

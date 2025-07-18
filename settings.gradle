@@ -1,2 +1,1 @@
 rootProject.name = 'runepal'
-include 'shortest-path'

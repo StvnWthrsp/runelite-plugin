@@ -22,8 +22,8 @@ public class PipeService {
     private final AtomicBoolean connected = new AtomicBoolean(false);
     
     @Inject
-    public PipeService() {
-        this.gson = new Gson();
+    public PipeService(Gson gson) {
+        this.gson = gson;
     }
     
     /**
