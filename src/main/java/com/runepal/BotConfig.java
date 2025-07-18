@@ -367,6 +367,91 @@ public interface BotConfig extends Config
 		return "";
 	}
 
+	// Sand Crab Bot specific settings
+	@ConfigItem(
+			keyName = "sandCrabFood",
+			name = "Sand Crab Food",
+			description = "Type of food to use for sand crab training",
+			position = 37,
+			hidden = true
+	)
+	default String sandCrabFood()
+	{
+		return "COOKED_KARAMBWAN";
+	}
+
+	@ConfigItem(
+			keyName = "sandCrabFoodQuantity",
+			name = "Sand Crab Food Quantity",
+			description = "Number of food items to withdraw from bank (0-28)",
+			position = 38,
+			hidden = true
+	)
+	default int sandCrabFoodQuantity()
+	{
+		return 20;
+	}
+
+	@ConfigItem(
+			keyName = "sandCrabPotion",
+			name = "Sand Crab Potion",
+			description = "Type of potion to use for sand crab training",
+			position = 39,
+			hidden = true
+	)
+	default String sandCrabPotion()
+	{
+		return "SUPER_COMBAT";
+	}
+
+	@ConfigItem(
+			keyName = "sandCrabPotionQuantity",
+			name = "Sand Crab Potion Quantity",
+			description = "Number of potion items to withdraw from bank (0-28)",
+			position = 40,
+			hidden = true
+	)
+	default int sandCrabPotionQuantity()
+	{
+		return 1;
+	}
+
+	@ConfigItem(
+			keyName = "sandCrabCount",
+			name = "Sand Crab Count",
+			description = "Number of sand crabs to engage simultaneously (1-4)",
+			position = 41,
+			hidden = true
+	)
+	default int sandCrabCount()
+	{
+		return 3;
+	}
+
+	@ConfigItem(
+			keyName = "sandCrabEatAtHp",
+			name = "Sand Crab Eat At HP",
+			description = "HP threshold for eating food (1-99)",
+			position = 42,
+			hidden = true
+	)
+	default int sandCrabEatAtHp()
+	{
+		return 50;
+	}
+
+	@ConfigItem(
+			keyName = "sandCrabInventoryAction",
+			name = "Sand Crab Inventory Action",
+			description = "Action to take when consumables are depleted",
+			position = 43,
+			hidden = true
+	)
+	default String sandCrabInventoryAction()
+	{
+		return "BANK";
+	}
+
 	// Combat Bot debugging section
 	@ConfigSection(
 			name = "Combat Bot - Debugging",

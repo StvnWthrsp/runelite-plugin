@@ -284,6 +284,9 @@ public class RunepalPlugin extends Plugin
 				case WOODCUTTING_BOT:
 					taskManager.pushTask(new WoodcuttingTask(this, config, taskManager, pathfinderConfig, actionService, gameService, eventService, humanizerService));
 					break;
+				case SAND_CRAB_BOT:
+					taskManager.pushTask(new SandCrabTask(this, config, taskManager, pathfinderConfig, actionService, gameService, eventService, humanizerService, potionService, supplyManager));
+					break;
 				default:
 					log.warn("Unknown bot type: {}", botType);
 					stopBot();
