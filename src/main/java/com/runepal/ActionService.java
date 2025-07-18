@@ -797,6 +797,12 @@ public class ActionService {
             case "shift":
                 keyCode = KeyEvent.VK_SHIFT;
                 break;
+            case "left":
+                keyCode = KeyEvent.VK_LEFT;
+                break;
+            case "right":
+                keyCode = KeyEvent.VK_RIGHT;
+                break;
             default:
                 log.warn("Unknown key: {}", key);
                 return;
