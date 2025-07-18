@@ -90,31 +90,29 @@ public class SandCrabTask implements BotTask {
     // Sand crab spot configurations (Varlamore south of agility course)
     private static final Map<Integer, CrabSpot> CRAB_SPOTS = new HashMap<>();
     static {
-        // These are example coordinates - need to be updated with actual Varlamore coordinates
         CRAB_SPOTS.put(1, new CrabSpot(
-            new WorldPoint(1500, 3100, 0), // Combat spot
-            new WorldPoint(1480, 3100, 0), // Reset spot
+            new WorldPoint(1600, 2935, 0), // Combat spot
+            new WorldPoint(1620, 2941, 0), // Reset spot
             1, "Single crab spot"
         ));
         CRAB_SPOTS.put(2, new CrabSpot(
-            new WorldPoint(1502, 3102, 0), // Combat spot
-            new WorldPoint(1482, 3102, 0), // Reset spot
+            new WorldPoint(1586, 2918, 0), // Combat spot
+            new WorldPoint(1620, 2941, 0), // Reset spot
             2, "Double crab spot"
         ));
         CRAB_SPOTS.put(3, new CrabSpot(
-            new WorldPoint(1504, 3104, 0), // Combat spot
-            new WorldPoint(1484, 3104, 0), // Reset spot
+            new WorldPoint(1597, 2941, 0), // Combat spot
+            new WorldPoint(1620, 2941, 0), // Reset spot
             3, "Triple crab spot"
         ));
         CRAB_SPOTS.put(4, new CrabSpot(
-            new WorldPoint(1506, 3106, 0), // Combat spot
-            new WorldPoint(1486, 3106, 0), // Reset spot
+            new WorldPoint(1612, 2891, 0),
+            new WorldPoint(1620, 2941, 0),
             4, "Quad crab spot"
         ));
     }
 
     // Constants
-    private static final int SAND_CRAB_NPC_ID = 9459; // TODO: Research actual sand crab NPC ID
     private static final int HUNTER_GUILD_BANK_CHEST_ID = 53015;
     private static final long AGGRESSION_TIMER_MS = 10 * 60 * 1000; // 10 minutes
     private static final int PLAYER_DETECTION_RANGE = 5; // tiles
@@ -131,7 +129,6 @@ public class SandCrabTask implements BotTask {
 
     // Sand crab specific state
     private CrabSpot currentSpot;
-    private List<NPC> activeCrabs = new ArrayList<>();
     private long lastAggressionResetTime = 0;
     private WorldPoint targetPosition;
     private boolean needsAggression = false;
@@ -226,9 +223,6 @@ public class SandCrabTask implements BotTask {
     public void onStop() {
         log.info("Stopping Sand Crab Task.");
         this.isStarted = false;
-        
-        // Clear target objects
-        this.activeCrabs.clear();
         this.targetPosition = null;
         plugin.setTargetNpc(null); // Clear overlay
         
@@ -439,19 +433,10 @@ public class SandCrabTask implements BotTask {
             }
         } else {
             log.debug("Player began interacting with {}", target);
-            // Check if we're fighting a sand crab
-            if (target instanceof NPC && isSandCrab((NPC) target)) {
-                actionQueue.add(() -> {
-                    log.info("Combat with sand crab detected");
-                    currentState = SandCrabState.COMBAT_ACTIVE;
-                });
-            }
         }
     }
 
     public void onGameTick(GameTick gameTick) {
-        // Update active crabs list
-        updateActiveCrabs();
         
         // Check for aggression timer
         if (System.currentTimeMillis() - lastAggressionResetTime > AGGRESSION_TIMER_MS) {
@@ -540,12 +525,6 @@ public class SandCrabTask implements BotTask {
             resetIdleTracking();
             return;
         }
-        
-        // Update active crabs
-        updateActiveCrabs();
-        
-        // Monitor combat - sand crabs auto-attack when adjacent, no clicking needed
-        log.debug("In combat with {} sand crabs", activeCrabs.size());
         
         // Safety timeout for stuck combat
         if (idleTicks > TIMEOUT_TICKS * 2) {
@@ -685,11 +664,14 @@ public class SandCrabTask implements BotTask {
         
         // Check food supplies
         int foodCount = getFoodCount();
-        if (foodCount < 5) { // Keep some food threshold
+        // TODO: Make this a real threshold from config
+        if (foodCount < 0) {
             return true;
         }
         
         // Check potion supplies
+        // TODO: This will need to be improved to account for any potion dosage
+        // TODO: And it needs to take into account the NUMBER because the user could say 0
         String potionType = config.sandCrabPotion();
         if (!"NONE".equals(potionType)) {
             try {
@@ -768,28 +750,7 @@ public class SandCrabTask implements BotTask {
 
     private boolean isInCombat() {
         Player localPlayer = plugin.getClient().getLocalPlayer();
-        return localPlayer.getInteracting() != null && isSandCrab((NPC) localPlayer.getInteracting());
-    }
-
-    private boolean isSandCrab(NPC npc) {
-        return npc.getId() == SAND_CRAB_NPC_ID;
-    }
-
-    private void updateActiveCrabs() {
-        activeCrabs.clear();
-        
-        // Find all sand crabs in combat range
-        for (NPC npc : plugin.getClient().getNpcs()) {
-            if (isSandCrab(npc)) {
-                WorldPoint npcLocation = npc.getWorldLocation();
-                WorldPoint playerLocation = gameService.getPlayerLocation();
-                
-                // Check if crab is within combat range
-                if (npcLocation.distanceTo(playerLocation) <= 1) {
-                    activeCrabs.add(npc);
-                }
-            }
-        }
+        return localPlayer.getInteracting() != null;
     }
 
     private void pushWalkToSpotTask() {
