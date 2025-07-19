@@ -130,6 +130,8 @@ public class SandCrabTask implements BotTask {
     // Sand crab specific state
     private CrabSpot currentSpot;
     private long lastAggressionResetTime = 0;
+    private long cameraRotateTimerMs = 0;
+    private long lastRotateTime = 0;
     private WorldPoint targetPosition;
     private boolean needsAggression = false;
     private boolean playersDetected = false;
@@ -208,6 +210,11 @@ public class SandCrabTask implements BotTask {
         
         // Initialize aggression timer
         this.lastAggressionResetTime = System.currentTimeMillis();
+
+        // Initialize camera rotation timer
+        this.cameraRotateTimerMs = Math.round(humanizerService.getGaussian(5, 1.2, 0.0) * 60 * 1000);
+        this.lastRotateTime = System.currentTimeMillis();
+        log.info("Camera will rotate after {} ms", cameraRotateTimerMs);
         
         // Determine starting state
         if (needsToBank()) {
@@ -310,6 +317,12 @@ public class SandCrabTask implements BotTask {
         } else if (detectPlayersNearby()) {
             log.info("Players detected nearby, switching to world hopping");
             currentState = SandCrabState.WORLD_HOPPING;
+        } else if (System.currentTimeMillis() - lastRotateTime > cameraRotateTimerMs) {
+            taskManager.pushTask(new CameraRotationTask(plugin, actionService, eventService));
+            lastRotateTime = System.currentTimeMillis();
+            cameraRotateTimerMs = Math.round(humanizerService.getGaussian(5, 1.2, 0.0) * 60 * 1000);
+            log.info("Rotating camera, next rotation at {}", cameraRotateTimerMs);
+            currentState = SandCrabState.WAITING_FOR_SUBTASK;
         }
 
         // FSM state machine
@@ -402,7 +415,7 @@ public class SandCrabTask implements BotTask {
         }
         
         if (gainedXp > 0) {
-            log.info("Gained {} {} XP", gainedXp, skill.getName());
+            log.trace("Gained {} {} XP", gainedXp, skill.getName());
             // Reset idle tracking on XP gain
             this.idleTicks = 0;
             
@@ -595,13 +608,15 @@ public class SandCrabTask implements BotTask {
         // Walk to reset point
         WorldPoint resetPoint = currentSpot.getResetPoint();
         WalkTask resetWalkTask = new WalkTask(plugin, pathfinderConfig, resetPoint, actionService, gameService, humanizerService);
-        
+
         taskManager.pushTask(resetWalkTask);
-        currentState = SandCrabState.WAITING_FOR_SUBTASK;
         
         // Set flag to return to combat spot after reset
         actionQueue.add(() -> {
             log.info("Reset walk completed, now walking back to combat spot");
+            // Reset aggression timer
+            lastAggressionResetTime = System.currentTimeMillis();
+            needsAggression = false;
             currentState = SandCrabState.WALKING_TO_RESET;
         });
     }
@@ -611,11 +626,7 @@ public class SandCrabTask implements BotTask {
         
         // Walk back to combat spot
         pushWalkToSpotTask();
-        
-        // Reset aggression timer
-        lastAggressionResetTime = System.currentTimeMillis();
-        needsAggression = false;
-        
+
         actionQueue.add(() -> {
             log.info("Returned to combat spot, waiting for aggression");
             currentState = SandCrabState.WAITING_FOR_AGGRESSION;

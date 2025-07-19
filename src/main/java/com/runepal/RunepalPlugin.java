@@ -11,11 +11,7 @@ import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
-import net.runelite.api.events.GameStateChanged;
-import net.runelite.api.events.GameTick;
-import net.runelite.api.events.AnimationChanged;
-import net.runelite.api.events.StatChanged;
-import net.runelite.api.events.InteractingChanged;
+import net.runelite.api.events.*;
 import net.runelite.api.Skill;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
@@ -306,6 +302,11 @@ public class RunepalPlugin extends Plugin
 		if (isRunning) {
 			taskManager.onLoop();
 		}
+	}
+
+	@Subscribe
+	public void onClientTick(ClientTick clientTick) {
+		eventService.publish(clientTick);
 	}
 
 	public void stopBot() {

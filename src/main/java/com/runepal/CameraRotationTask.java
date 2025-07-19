@@ -2,6 +2,7 @@ package com.runepal;
 
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
+import net.runelite.api.events.ClientTick;
 import net.runelite.api.events.GameTick;
 
 import javax.inject.Inject;
@@ -46,7 +47,7 @@ public class CameraRotationTask implements BotTask {
     private static final int JAGEX_ANGLE_MAX = 2048; // Jagex angle units for full circle
     
     // Event handler stored as instance variable for proper unsubscription
-    private Consumer<GameTick> gameTickHandler;
+    private Consumer<ClientTick> clientTickHandler;
 
     @Inject
     public CameraRotationTask(RunepalPlugin plugin, ActionService actionService, EventService eventService) {
@@ -63,8 +64,8 @@ public class CameraRotationTask implements BotTask {
         timeoutTicks = 0;
         
         // Store event handler reference for proper unsubscription
-        this.gameTickHandler = this::onGameTick;
-        eventService.subscribe(GameTick.class, gameTickHandler);
+        this.clientTickHandler = this::onClientTick;
+        eventService.subscribe(ClientTick.class, clientTickHandler);
         
         // Initialize state transition via ActionQueue
         actionQueue.add(() -> currentState = CameraRotationState.CALCULATING_TARGET);
@@ -93,9 +94,9 @@ public class CameraRotationTask implements BotTask {
                 break;
                 
             case MONITORING_ANGLE:
-                // Angle monitoring handled by GameTick event
+                // Angle monitoring handled by ClientTick event
                 // Check for timeout here
-                if (timeoutTicks >= MAX_TIMEOUT_TICKS) {
+                if (timeoutTicks / 30 >= MAX_TIMEOUT_TICKS) {
                     log.warn("Camera rotation timed out after {} ticks", timeoutTicks);
                     handleTimeout();
                 }
@@ -115,9 +116,9 @@ public class CameraRotationTask implements BotTask {
         forceKeyRelease();
         
         // Unsubscribe from GameTick events
-        if (gameTickHandler != null) {
-            eventService.unsubscribe(GameTick.class, gameTickHandler);
-            gameTickHandler = null;
+        if (clientTickHandler != null) {
+            eventService.unsubscribe(ClientTick.class, clientTickHandler);
+            clientTickHandler = null;
         }
         
         isStarted = false;
@@ -141,7 +142,7 @@ public class CameraRotationTask implements BotTask {
     /**
      * GameTick event handler for precise angle monitoring every ~600ms
      */
-    public void onGameTick(GameTick gameTick) {
+    public void onClientTick(ClientTick clientTick) {
         timeoutTicks++;
         
         if (currentState == CameraRotationState.MONITORING_ANGLE) {
@@ -149,7 +150,7 @@ public class CameraRotationTask implements BotTask {
             
             // Check if target angle has been reached within tolerance
             if (isAngleWithinTolerance(currentYaw, targetYaw, ANGLE_TOLERANCE)) {
-                log.debug("Target angle reached: current={}, target={}", currentYaw, targetYaw);
+                log.info("Target angle reached: current={}, target={}", currentYaw, targetYaw);
                 
                 // Release key and finish task
                 actionQueue.add(() -> {
@@ -183,7 +184,7 @@ public class CameraRotationTask implements BotTask {
         // Handle 360° wraparound
         targetYaw = normalizeJagexAngle(targetYaw);
         
-        log.debug("Camera rotation calculated: initial={}, target={}, offset={}°, direction={}", 
+        log.info("Camera rotation calculated: initial={}, target={}, offset={}°, direction={}",
                   initialYaw, targetYaw, offsetDegrees, rotateLeft ? "left" : "right");
         
         // Transition to rotation state
@@ -196,7 +197,7 @@ public class CameraRotationTask implements BotTask {
     private void startRotation() {
         String keyToHold = rotatingLeft ? "left" : "right";
         
-        log.debug("Starting camera rotation: holding {} arrow key", keyToHold);
+        log.info("Starting camera rotation: holding {} arrow key", keyToHold);
         actionService.sendKeyRequest("/key_hold", keyToHold);
         
         // Reset timeout counter and transition to monitoring state

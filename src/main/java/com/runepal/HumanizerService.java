@@ -84,12 +84,22 @@ public class HumanizerService {
     private int getGaussianDelay(int mean, int stdDev, int minimum) {
         double gaussianValue = random.nextGaussian() * stdDev + mean;
         int delay = (int) Math.round(gaussianValue);
-        
+
         // Ensure we never return a value below the minimum
         delay = Math.max(delay, minimum);
-        
+
         log.debug("Generated humanized delay: {} ticks (~{}ms)", delay, delay * 600);
         return delay;
+    }
+
+    public double getGaussian(double mean, double stdDev, double minimum) {
+        double gaussianValue = random.nextGaussian() * stdDev + mean;
+
+        // Ensure we never return a value below the minimum
+        gaussianValue = Math.max(gaussianValue, minimum);
+
+        log.info("Generated gaussian value: {}", gaussianValue);
+        return gaussianValue;
     }
     
     /**

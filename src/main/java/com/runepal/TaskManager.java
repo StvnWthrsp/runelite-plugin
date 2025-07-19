@@ -30,7 +30,9 @@ public class TaskManager {
 
             // If there's a new task on the stack, start it.
             if (!tasks.isEmpty()) {
-                tasks.peek().onStart();
+                if (!tasks.peek().isStarted()) {
+                    tasks.peek().onStart();
+                }
             }
             return; // Return to process the new task on the next tick
         }
