@@ -41,22 +41,28 @@ public class SandCrabBotPanel extends PluginPanel {
         this.minPotionCountSpinner = new JSpinner(new SpinnerNumberModel(config.sandCrabMinPotionCount(), 0, 28, 1));
         
         setLayout(new BorderLayout());
-
-        // Configuration panel
-        JPanel configPanel = createConfigurationPanel();
         
-        // Status panel
-        JPanel statusPanel = new JPanel(new BorderLayout());
-        statusPanel.setBorder(BorderFactory.createTitledBorder("Status"));
-        statusPanel.add(statusLabel, BorderLayout.CENTER);
-
-        // Button panel
-        JPanel buttonPanel = new JPanel(new BorderLayout());
-        buttonPanel.add(toggleButton, BorderLayout.CENTER);
-
-        add(configPanel, BorderLayout.NORTH);
-        add(statusPanel, BorderLayout.CENTER);
-        add(buttonPanel, BorderLayout.SOUTH);
+        // Create main content panel with vertical layout
+        JPanel contentPanel = new JPanel();
+        contentPanel.setLayout(new BoxLayout(contentPanel, BoxLayout.Y_AXIS));
+        contentPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+        
+        // Add configuration sections
+        contentPanel.add(createBasicConfigurationPanel());
+        contentPanel.add(Box.createVerticalStrut(5));
+        contentPanel.add(createSupplyConfigurationPanel());
+        contentPanel.add(Box.createVerticalStrut(5));
+        contentPanel.add(createBankingConfigurationPanel());
+        contentPanel.add(Box.createVerticalStrut(10));
+        
+        // Add control section
+        contentPanel.add(createControlPanel());
+        contentPanel.add(Box.createVerticalStrut(10));
+        
+        // Add status section
+        contentPanel.add(createStatusPanel());
+        
+        add(contentPanel, BorderLayout.NORTH);
 
         // Load current configuration values
         loadConfigurationValues();
@@ -67,91 +73,147 @@ public class SandCrabBotPanel extends PluginPanel {
         });
     }
     
-    private JPanel createConfigurationPanel() {
+    private JPanel createBasicConfigurationPanel() {
         JPanel configPanel = new JPanel(new GridBagLayout());
-        configPanel.setBorder(BorderFactory.createTitledBorder("Sand Crab Configuration"));
-        
+        configPanel.setBorder(BorderFactory.createTitledBorder("Basic Sand Crab Configuration"));
         GridBagConstraints gbc = new GridBagConstraints();
-        gbc.insets = new Insets(5, 5, 5, 5);
-        gbc.anchor = GridBagConstraints.WEST;
+        gbc.insets = new Insets(3, 5, 3, 5);
         
-        // Food Type
-        gbc.gridx = 0; gbc.gridy = 0;
-        configPanel.add(new JLabel("Food Type:"), gbc);
-        gbc.gridx = 1; gbc.fill = GridBagConstraints.HORIZONTAL;
-        foodTypeComboBox.setToolTipText("Type of food to use for healing");
-        configPanel.add(foodTypeComboBox, gbc);
-        
-        // Food Quantity
-        gbc.gridx = 0; gbc.gridy = 1; gbc.fill = GridBagConstraints.NONE;
-        configPanel.add(new JLabel("Food Quantity:"), gbc);
-        gbc.gridx = 1; gbc.fill = GridBagConstraints.HORIZONTAL;
-        foodQuantitySpinner.setToolTipText("Number of food items to withdraw (0-28)");
-        configPanel.add(foodQuantitySpinner, gbc);
-        
-        // Potion Type
-        gbc.gridx = 0; gbc.gridy = 2; gbc.fill = GridBagConstraints.NONE;
-        configPanel.add(new JLabel("Potion Type:"), gbc);
-        gbc.gridx = 1; gbc.fill = GridBagConstraints.HORIZONTAL;
-        potionTypeComboBox.setToolTipText("Type of potion to use for stat boosts");
-        configPanel.add(potionTypeComboBox, gbc);
-        
-        // Potion Quantity
-        gbc.gridx = 0; gbc.gridy = 3; gbc.fill = GridBagConstraints.NONE;
-        configPanel.add(new JLabel("Potion Quantity:"), gbc);
-        gbc.gridx = 1; gbc.fill = GridBagConstraints.HORIZONTAL;
-        potionQuantitySpinner.setToolTipText("Number of potion items to withdraw (0-28)");
-        configPanel.add(potionQuantitySpinner, gbc);
-        
-        // Crab Count
-        gbc.gridx = 0; gbc.gridy = 4; gbc.fill = GridBagConstraints.NONE;
+        // Crab Count label
+        gbc.gridx = 0; gbc.gridy = 0; gbc.anchor = GridBagConstraints.WEST;
         configPanel.add(new JLabel("Crab Count:"), gbc);
-        gbc.gridx = 1; gbc.fill = GridBagConstraints.HORIZONTAL;
+        
+        // Crab Count spinner
+        gbc.gridx = 0; gbc.gridy = 1; gbc.fill = GridBagConstraints.HORIZONTAL; gbc.weightx = 1.0;
         crabCountSpinner.setToolTipText("Number of sand crabs to engage simultaneously (1-4)");
         configPanel.add(crabCountSpinner, gbc);
         
-        // Eat at HP
-        gbc.gridx = 0; gbc.gridy = 5; gbc.fill = GridBagConstraints.NONE;
+        // Eat at HP label
+        gbc.gridx = 0; gbc.gridy = 2; gbc.fill = GridBagConstraints.NONE; gbc.weightx = 0;
         configPanel.add(new JLabel("Eat at HP:"), gbc);
-        gbc.gridx = 1; gbc.fill = GridBagConstraints.HORIZONTAL;
+        
+        // Eat at HP spinner
+        gbc.gridx = 0; gbc.gridy = 3; gbc.fill = GridBagConstraints.HORIZONTAL; gbc.weightx = 1.0;
         eatAtHpSpinner.setToolTipText("HP threshold for eating food (1-99)");
         configPanel.add(eatAtHpSpinner, gbc);
         
-        // Inventory Action
-        gbc.gridx = 0; gbc.gridy = 6; gbc.fill = GridBagConstraints.NONE;
-        configPanel.add(new JLabel("When Out of Supplies:"), gbc);
-        gbc.gridx = 1; gbc.fill = GridBagConstraints.HORIZONTAL;
-        inventoryActionComboBox.setToolTipText("Action to take when consumables are depleted");
-        configPanel.add(inventoryActionComboBox, gbc);
+        // Add event listeners
+        crabCountSpinner.addChangeListener(e -> saveConfiguration());
+        eatAtHpSpinner.addChangeListener(e -> saveConfiguration());
         
-        // Min Food Count
-        gbc.gridx = 0; gbc.gridy = 7; gbc.fill = GridBagConstraints.NONE;
-        configPanel.add(new JLabel("Min Food Count:"), gbc);
-        gbc.gridx = 1; gbc.fill = GridBagConstraints.HORIZONTAL;
-        minFoodCountSpinner.setToolTipText("Minimum food count before banking (0-28)");
-        configPanel.add(minFoodCountSpinner, gbc);
+        return configPanel;
+    }
+    
+    private JPanel createSupplyConfigurationPanel() {
+        JPanel supplyPanel = new JPanel(new GridBagLayout());
+        supplyPanel.setBorder(BorderFactory.createTitledBorder("Supply Configuration"));
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(3, 5, 3, 5);
         
-        // Min Potion Count
-        gbc.gridx = 0; gbc.gridy = 8; gbc.fill = GridBagConstraints.NONE;
-        configPanel.add(new JLabel("Min Potion Count:"), gbc);
-        gbc.gridx = 1; gbc.fill = GridBagConstraints.HORIZONTAL;
-        minPotionCountSpinner.setToolTipText("Minimum potion count before banking (0-28)");
-        configPanel.add(minPotionCountSpinner, gbc);
+        // Food Type label
+        gbc.gridx = 0; gbc.gridy = 0; gbc.anchor = GridBagConstraints.WEST;
+        supplyPanel.add(new JLabel("Food Type:"), gbc);
         
-        // Add event listeners to save changes
+        // Food Type combo box
+        gbc.gridx = 0; gbc.gridy = 1; gbc.fill = GridBagConstraints.HORIZONTAL; gbc.weightx = 1.0;
+        foodTypeComboBox.setToolTipText("Type of food to use for healing");
+        supplyPanel.add(foodTypeComboBox, gbc);
+        
+        // Food Quantity label
+        gbc.gridx = 0; gbc.gridy = 2; gbc.fill = GridBagConstraints.NONE; gbc.weightx = 0;
+        supplyPanel.add(new JLabel("Food Quantity:"), gbc);
+        
+        // Food Quantity spinner
+        gbc.gridx = 0; gbc.gridy = 3; gbc.fill = GridBagConstraints.HORIZONTAL; gbc.weightx = 1.0;
+        foodQuantitySpinner.setToolTipText("Number of food items to withdraw (0-28)");
+        supplyPanel.add(foodQuantitySpinner, gbc);
+        
+        // Potion Type label
+        gbc.gridx = 0; gbc.gridy = 4; gbc.fill = GridBagConstraints.NONE; gbc.weightx = 0;
+        supplyPanel.add(new JLabel("Potion Type:"), gbc);
+        
+        // Potion Type combo box
+        gbc.gridx = 0; gbc.gridy = 5; gbc.fill = GridBagConstraints.HORIZONTAL; gbc.weightx = 1.0;
+        potionTypeComboBox.setToolTipText("Type of potion to use for stat boosts");
+        supplyPanel.add(potionTypeComboBox, gbc);
+        
+        // Potion Quantity label
+        gbc.gridx = 0; gbc.gridy = 6; gbc.fill = GridBagConstraints.NONE; gbc.weightx = 0;
+        supplyPanel.add(new JLabel("Potion Quantity:"), gbc);
+        
+        // Potion Quantity spinner
+        gbc.gridx = 0; gbc.gridy = 7; gbc.fill = GridBagConstraints.HORIZONTAL; gbc.weightx = 1.0;
+        potionQuantitySpinner.setToolTipText("Number of potion items to withdraw (0-28)");
+        supplyPanel.add(potionQuantitySpinner, gbc);
+        
+        // Add event listeners
         foodTypeComboBox.addActionListener(e -> saveConfiguration());
         foodQuantitySpinner.addChangeListener(e -> saveConfiguration());
         potionTypeComboBox.addActionListener(e -> saveConfiguration());
-
         potionQuantitySpinner.addChangeListener(e -> saveConfiguration());
-        crabCountSpinner.addChangeListener(e -> saveConfiguration());
-        eatAtHpSpinner.addChangeListener(e -> saveConfiguration());
+        
+        return supplyPanel;
+    }
+    
+    private JPanel createBankingConfigurationPanel() {
+        JPanel bankPanel = new JPanel(new GridBagLayout());
+        bankPanel.setBorder(BorderFactory.createTitledBorder("Banking Settings"));
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(3, 5, 3, 5);
+        
+        // Inventory Action label
+        gbc.gridx = 0; gbc.gridy = 0; gbc.anchor = GridBagConstraints.WEST;
+        bankPanel.add(new JLabel("When Out of Supplies:"), gbc);
+        
+        // Inventory Action combo box
+        gbc.gridx = 0; gbc.gridy = 1; gbc.fill = GridBagConstraints.HORIZONTAL; gbc.weightx = 1.0;
+        inventoryActionComboBox.setToolTipText("Action to take when consumables are depleted");
+        bankPanel.add(inventoryActionComboBox, gbc);
+        
+        // Min Food Count label
+        gbc.gridx = 0; gbc.gridy = 2; gbc.fill = GridBagConstraints.NONE; gbc.weightx = 0;
+        bankPanel.add(new JLabel("Min Food Count:"), gbc);
+        
+        // Min Food Count spinner
+        gbc.gridx = 0; gbc.gridy = 3; gbc.fill = GridBagConstraints.HORIZONTAL; gbc.weightx = 1.0;
+        minFoodCountSpinner.setToolTipText("Minimum food count before banking (0-28)");
+        bankPanel.add(minFoodCountSpinner, gbc);
+        
+        // Min Potion Count label
+        gbc.gridx = 0; gbc.gridy = 4; gbc.fill = GridBagConstraints.NONE; gbc.weightx = 0;
+        bankPanel.add(new JLabel("Min Potion Count:"), gbc);
+        
+        // Min Potion Count spinner
+        gbc.gridx = 0; gbc.gridy = 5; gbc.fill = GridBagConstraints.HORIZONTAL; gbc.weightx = 1.0;
+        minPotionCountSpinner.setToolTipText("Minimum potion count before banking (0-28)");
+        bankPanel.add(minPotionCountSpinner, gbc);
+        
+        // Add event listeners
+        inventoryActionComboBox.addActionListener(e -> saveConfiguration());
         minFoodCountSpinner.addChangeListener(e -> saveConfiguration());
         minPotionCountSpinner.addChangeListener(e -> saveConfiguration());
-
-        inventoryActionComboBox.addActionListener(e -> saveConfiguration());
         
-        return configPanel;
+        return bankPanel;
+    }
+    
+    private JPanel createControlPanel() {
+        JPanel controlPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
+        controlPanel.setBorder(BorderFactory.createTitledBorder("Bot Control"));
+        
+        toggleButton.setPreferredSize(new Dimension(200, 40));
+        controlPanel.add(toggleButton);
+        
+        return controlPanel;
+    }
+    
+    private JPanel createStatusPanel() {
+        JPanel statusPanel = new JPanel(new BorderLayout());
+        statusPanel.setBorder(BorderFactory.createTitledBorder("Status"));
+        
+        statusLabel.setHorizontalAlignment(SwingConstants.CENTER);
+        statusPanel.add(statusLabel, BorderLayout.CENTER);
+        
+        return statusPanel;
     }
     
     private void saveConfiguration() {
