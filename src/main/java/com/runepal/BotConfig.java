@@ -452,6 +452,30 @@ public interface BotConfig extends Config
 		return "BANK";
 	}
 
+	@ConfigItem(
+			keyName = "sandCrabMinFoodCount",
+			name = "Sand Crab Min Food Count",
+			description = "Minimum food count before banking (only applies when inventory action is BANK)",
+			position = 44,
+			hidden = true
+	)
+	default int sandCrabMinFoodCount()
+	{
+		return 3;
+	}
+
+	@ConfigItem(
+			keyName = "sandCrabMinPotionCount",
+			name = "Sand Crab Min Potion Count",
+			description = "Minimum potion count before banking (only applies when inventory action is BANK)",
+			position = 45,
+			hidden = true
+	)
+	default int sandCrabMinPotionCount()
+	{
+		return 1;
+	}
+
 	// Combat Bot debugging section
 	@ConfigSection(
 			name = "Combat Bot - Debugging",

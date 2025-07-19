@@ -143,16 +143,102 @@ public class SandCrabTask implements BotTask {
     private int lastMagicXp = 0;
     private int lastRangedXp = 0;
 
-    // Food item IDs based on configuration
-    private static final Map<String, Integer> FOOD_IDS = new HashMap<>();
-    static {
-        FOOD_IDS.put("COOKED_KARAMBWAN", 3144);
-        FOOD_IDS.put("MONKFISH", 7946);
-        FOOD_IDS.put("LOBSTER", 379);
-        FOOD_IDS.put("SHARK", 385);
-        FOOD_IDS.put("SWORDFISH", 373);
-        FOOD_IDS.put("TUNA", 361);
-        FOOD_IDS.put("SALMON", 329);
+    // Food types enum for dropdown selection
+    public enum FoodType {
+        COOKED_KARAMBWAN("Cooked Karambwan", 3144),
+        MONKFISH("Monkfish", 7946),
+        LOBSTER("Lobster", 379),
+        SHARK("Shark", 385),
+        SWORDFISH("Swordfish", 373),
+        TUNA("Tuna", 361),
+        SALMON("Salmon", 329);
+        
+        private final String displayName;
+        private final int itemId;
+        
+        FoodType(String displayName, int itemId) {
+            this.displayName = displayName;
+            this.itemId = itemId;
+        }
+        
+        public String getDisplayName() {
+            return displayName;
+        }
+        
+        public int getItemId() {
+            return itemId;
+        }
+        
+        @Override
+        public String toString() {
+            return displayName;
+        }
+        
+        public static FoodType fromString(String text) {
+            for (FoodType food : FoodType.values()) {
+                if (food.name().equals(text)) {
+                    return food;
+                }
+            }
+            return COOKED_KARAMBWAN; // Default fallback
+        }
+    }
+    
+    // Enhanced potion types for dropdown selection (includes NONE option)
+    public enum PotionType {
+        NONE("None"),
+        SUPER_COMBAT("Super Combat"),
+        PRAYER_POTION("Prayer Potion"),
+        SUPER_STRENGTH("Super Strength"),
+        SUPER_ATTACK("Super Attack"),
+        SUPER_DEFENCE("Super Defence"),
+        ANTIPOISON("Antipoison"),
+        ENERGY("Energy");
+        
+        private final String displayName;
+        
+        PotionType(String displayName) {
+            this.displayName = displayName;
+        }
+        
+        public String getDisplayName() {
+            return displayName;
+        }
+        
+        @Override
+        public String toString() {
+            return displayName;
+        }
+        
+        public static PotionType fromString(String text) {
+            for (PotionType potion : PotionType.values()) {
+                if (potion.name().equals(text)) {
+                    return potion;
+                }
+            }
+            return NONE; // Default fallback
+        }
+        
+        public PotionService.PotionType toPotionServiceType() {
+            switch (this) {
+                case SUPER_COMBAT:
+                    return PotionService.PotionType.SUPER_COMBAT;
+                case PRAYER_POTION:
+                    return PotionService.PotionType.PRAYER_POTION;
+                case SUPER_STRENGTH:
+                    return PotionService.PotionType.SUPER_STRENGTH;
+                case SUPER_ATTACK:
+                    return PotionService.PotionType.SUPER_ATTACK;
+                case SUPER_DEFENCE:
+                    return PotionService.PotionType.SUPER_DEFENCE;
+                case ANTIPOISON:
+                    return PotionService.PotionType.ANTIPOISON;
+                case ENERGY:
+                    return PotionService.PotionType.ENERGY;
+                default:
+                    return null;
+            }
+        }
     }
 
     public SandCrabTask(RunepalPlugin plugin, BotConfig config, TaskManager taskManager, 
@@ -567,18 +653,17 @@ public class SandCrabTask implements BotTask {
 
     private void doDrinkingPotion() {
         String potionType = config.sandCrabPotion();
+        PotionType configuredPotion = PotionType.fromString(potionType);
         
-        if ("NONE".equals(potionType)) {
+        if (configuredPotion == PotionType.NONE) {
             log.warn("No potion configured, continuing without drinking");
             currentState = determineNextCombatState();
             return;
         }
         
-        PotionService.PotionType potionToConsume = null;
+        PotionService.PotionType potionToConsume = configuredPotion.toPotionServiceType();
         
-        try {
-            potionToConsume = PotionService.PotionType.valueOf(potionType);
-        } catch (IllegalArgumentException e) {
+        if (potionToConsume == null) {
             log.warn("Invalid potion type configured: {}", potionType);
             currentState = determineNextCombatState();
             return;
@@ -673,25 +758,23 @@ public class SandCrabTask implements BotTask {
             return false;
         }
         
-        // Check food supplies
+        // Check food supplies against configured minimum threshold
         int foodCount = getFoodCount();
-        // TODO: Make this a real threshold from config
-        if (foodCount < 0) {
+        int minFoodCount = config.sandCrabMinFoodCount();
+        if (foodCount <= minFoodCount) {
+            log.info("Food count ({}) is at or below minimum threshold ({}), need to bank", foodCount, minFoodCount);
             return true;
         }
         
-        // Check potion supplies
-        // TODO: This will need to be improved to account for any potion dosage
-        // TODO: And it needs to take into account the NUMBER because the user could say 0
+        // Check potion supplies against configured minimum threshold
         String potionType = config.sandCrabPotion();
-        if (!"NONE".equals(potionType)) {
-            try {
-                PotionService.PotionType potion = PotionService.PotionType.valueOf(potionType);
-                if (!potionService.hasPotion(potion)) {
-                    return true;
-                }
-            } catch (IllegalArgumentException e) {
-                log.warn("Invalid potion type: {}", potionType);
+        PotionType configuredPotion = PotionType.fromString(potionType);
+        if (configuredPotion != PotionType.NONE) {
+            int potionCount = getPotionCount(configuredPotion);
+            int minPotionCount = config.sandCrabMinPotionCount();
+            if (potionCount <= minPotionCount) {
+                log.info("Potion count ({}) is at or below minimum threshold ({}), need to bank", potionCount, minPotionCount);
+                return true;
             }
         }
         
@@ -714,25 +797,25 @@ public class SandCrabTask implements BotTask {
 
     private boolean shouldDrinkPotion() {
         String potionType = config.sandCrabPotion();
+        PotionType configuredPotion = PotionType.fromString(potionType);
         
-        if ("NONE".equals(potionType)) {
+        if (configuredPotion == PotionType.NONE) {
             return false;
         }
         
-        try {
-            PotionService.PotionType potion = PotionService.PotionType.valueOf(potionType);
-            
-            switch (potion) {
-                case SUPER_COMBAT:
-                    return potionService.needsCombatPotion() && potionService.hasPotion(potion);
-                case PRAYER_POTION:
-                    return potionService.needsPrayerPotion(10) && potionService.hasPotion(potion);
-                default:
-                    return false;
-            }
-        } catch (IllegalArgumentException e) {
+        PotionService.PotionType potion = configuredPotion.toPotionServiceType();
+        if (potion == null) {
             log.warn("Invalid potion type: {}", potionType);
             return false;
+        }
+            
+        switch (potion) {
+            case SUPER_COMBAT:
+                return potionService.needsCombatPotion() && potionService.hasPotion(potion);
+            case PRAYER_POTION:
+                return potionService.needsPrayerPotion(10) && potionService.hasPotion(potion);
+            default:
+                return false;
         }
     }
 
@@ -778,20 +861,17 @@ public class SandCrabTask implements BotTask {
         
         // Add food
         String foodType = config.sandCrabFood();
-        Integer foodId = FOOD_IDS.get(foodType);
-        if (foodId != null) {
-            itemsToWithdraw.put(foodId, config.sandCrabFoodQuantity());
-        }
+        FoodType food = FoodType.fromString(foodType);
+        itemsToWithdraw.put(food.getItemId(), config.sandCrabFoodQuantity());
         
         // Add potions
         String potionType = config.sandCrabPotion();
-        if (!"NONE".equals(potionType)) {
-            try {
-                PotionService.PotionType potion = PotionService.PotionType.valueOf(potionType);
+        PotionType configuredPotion = PotionType.fromString(potionType);
+        if (configuredPotion != PotionType.NONE) {
+            PotionService.PotionType potion = configuredPotion.toPotionServiceType();
+            if (potion != null) {
                 // Add potion IDs - would need to get from PotionService
                 itemsToWithdraw.put(potion.getItemIds()[0], config.sandCrabPotionQuantity());
-            } catch (IllegalArgumentException e) {
-                log.warn("Invalid potion type: {}", potionType);
             }
         }
         
@@ -836,12 +916,8 @@ public class SandCrabTask implements BotTask {
 
     private Point findFoodInInventory() {
         String configuredFood = config.sandCrabFood();
-        Integer foodId = FOOD_IDS.get(configuredFood);
-        
-        if (foodId == null) {
-            log.warn("Invalid food type configured: {}", configuredFood);
-            return null;
-        }
+        FoodType food = FoodType.fromString(configuredFood);
+        int foodId = food.getItemId();
         
         for (int slot = 0; slot < 28; slot++) {
             int itemId = gameService.getInventoryItemId(slot);
@@ -855,11 +931,8 @@ public class SandCrabTask implements BotTask {
 
     private int getFoodCount() {
         String configuredFood = config.sandCrabFood();
-        Integer foodId = FOOD_IDS.get(configuredFood);
-        
-        if (foodId == null) {
-            return 0;
-        }
+        FoodType food = FoodType.fromString(configuredFood);
+        int foodId = food.getItemId();
         
         int count = 0;
         for (int slot = 0; slot < 28; slot++) {
@@ -869,6 +942,28 @@ public class SandCrabTask implements BotTask {
             }
         }
         
+        return count;
+    }
+
+    private int getPotionCount(PotionType potionType) {
+        if (potionType == PotionType.NONE) {
+            return Integer.MAX_VALUE; // Never need to bank if no potion configured
+        }
+        
+        PotionService.PotionType servicePotion = potionType.toPotionServiceType();
+        if (servicePotion == null) {
+            return 0;
+        }
+        
+        int count = 0;
+        for (int slot = 0; slot < 28; slot++) {
+            int itemId = gameService.getInventoryItemId(slot);
+            if (servicePotion.matches(itemId)) {
+                count++;
+            }
+        }
+        
+        log.debug("Found {} potions of type {} in inventory", count, potionType);
         return count;
     }
 
