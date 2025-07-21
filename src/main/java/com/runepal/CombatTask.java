@@ -2,6 +2,7 @@ package com.runepal;
 
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.*;
+import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.events.AnimationChanged;
 import net.runelite.api.events.InteractingChanged;
 
@@ -9,6 +10,7 @@ import java.awt.Point;
 import java.util.Objects;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.function.Consumer;
 
 import com.runepal.entity.Interactable;
 import com.runepal.entity.NpcEntity;
@@ -27,6 +29,10 @@ public class CombatTask implements BotTask {
     private final EventService eventService;
     private final HumanizerService humanizerService;
     private final PotionService potionService;
+
+    // Event handler references to maintain identity
+    private Consumer<AnimationChanged> animationHandler;
+    private Consumer<InteractingChanged> interactingHandler;
 
     // Internal state for combat FSM
     private enum CombatState {
@@ -73,9 +79,13 @@ public class CombatTask implements BotTask {
         log.info("Starting Combat Task.");
         this.currentState = CombatState.FINDING_NPC;
         
+        // Store event handler references to maintain identity
+        this.animationHandler = this::onAnimationChanged;
+        this.interactingHandler = this::onInteractingChanged;
+        
         // Subscribe to events
-        this.eventService.subscribe(AnimationChanged.class, this::onAnimationChanged);
-        this.eventService.subscribe(InteractingChanged.class, this::onInteractingChanged);
+        this.eventService.subscribe(AnimationChanged.class, animationHandler);
+        this.eventService.subscribe(InteractingChanged.class, interactingHandler);
         
         if (this.scheduler == null || this.scheduler.isShutdown()) {
             this.scheduler = Executors.newSingleThreadScheduledExecutor();
@@ -88,9 +98,13 @@ public class CombatTask implements BotTask {
         this.targetNpc = null;
         plugin.setTargetNpc(null); // Clear overlay
         
-        // Unsubscribe from events
-        this.eventService.unsubscribe(AnimationChanged.class, this::onAnimationChanged);
-        this.eventService.unsubscribe(InteractingChanged.class, this::onInteractingChanged);
+        // Unsubscribe using the stored handler references
+        this.eventService.unsubscribe(AnimationChanged.class, animationHandler);
+        this.eventService.unsubscribe(InteractingChanged.class, interactingHandler);
+        
+        // Clear handler references
+        this.animationHandler = null;
+        this.interactingHandler = null;
         
         if (this.scheduler != null && !this.scheduler.isShutdown()) {
             this.scheduler.shutdownNow();
@@ -180,9 +194,22 @@ public class CombatTask implements BotTask {
         if (interactingChanged.getSource() != plugin.getClient().getLocalPlayer()) {
             return;
         }
+
+        Actor target = interactingChanged.getTarget();
+        if (target == null) {
+            log.info("Player stopped interacting");
+        } else {
+            log.info("Player began interacting with {}", target);
+        }
+
+        if (currentState == CombatState.VERIFY_ATTACK) {
+            log.info("Verified attacking started");
+            currentState = CombatState.ATTACKING;
+            waitToVerifyTicks = 0;
+            return;
+        }
         
         if (currentState == CombatState.ATTACKING) {
-            Actor target = interactingChanged.getTarget();
             if (target == null) {
                 // Player stopped attacking
                 log.info("Player stopped attacking, transitioning to waiting for combat end");
@@ -256,30 +283,41 @@ public class CombatTask implements BotTask {
         // Set target NPC for overlay debugging
         plugin.setTargetNpc(targetNpc);
         
-        // Get clickable point and attack using the new unified approach
-        Point clickPoint = gameService.getRandomClickablePoint(selectedEntity);
-        if (clickPoint != null && clickPoint.x != -1 && clickPoint.y != -1) {
-            actionService.sendClickRequest(clickPoint, true);
-            currentState = CombatState.VERIFY_ATTACK;
-            waitToVerifyTicks = 5;
-            combatStartTicks = 0;
-        } else {
-            log.warn("Found {} at {} but could not get clickable point for NPC.", targetNpc.getName(), targetNpc.getWorldLocation());
-        }
+        // Use enhanced interaction system
+        log.info("Attacking NPC {} using enhanced interaction system", targetNpc.getName());
+        actionService.interactWithEntity(selectedEntity, "Attack");
+        
+        currentState = CombatState.VERIFY_ATTACK;
+        waitToVerifyTicks = 5;
+        combatStartTicks = 0;
     }
 
     private void doVerifyAttack() {
         waitToVerifyTicks--;
-
-        if (plugin.getClient().getLocalPlayer().getInteracting() != null) {
-            currentState = CombatState.ATTACKING;
-            waitToVerifyTicks = 0;
-            return;
-        }
+        
+//        Player localPlayer = plugin.getClient().getLocalPlayer();
+//
+//        // Check if we started attacking
+//        if (localPlayer.getInteracting() == targetNpc) {
+//            log.info("Successfully started attacking {}", targetNpc.getName());
+//            currentState = CombatState.ATTACKING;
+//            waitToVerifyTicks = 0;
+//            return;
+//        }
+//
+//        // Check if we're attacking someone else (acceptable)
+//        if (localPlayer.getInteracting() != null) {
+//            log.info("Started attacking different target, updating targetNpc");
+//            targetNpc = (NPC) localPlayer.getInteracting();
+//            plugin.setTargetNpc(targetNpc);
+//            currentState = CombatState.ATTACKING;
+//            waitToVerifyTicks = 0;
+//            return;
+//        }
+        
         if (waitToVerifyTicks <= 0) {
-            log.warn("Attacking did not start after 5 ticks. Finding new target.");
+            log.warn("Attack verification failed, retrying");
             currentState = CombatState.FINDING_NPC;
-            waitToVerifyTicks = 0;
         }
     }
 
@@ -410,10 +448,7 @@ public class CombatTask implements BotTask {
         }
 
         log.info("Loot detection enabled - performing basic loot scan");
-        
-        // For now, just wait as if collecting loot
         // TODO: Implement proper ground item detection and collection
-        delayTicks = humanizerService.getRandomDelay(3, 5);
         
         // Continue to next target after looting attempt
         currentState = CombatState.FINDING_NPC;

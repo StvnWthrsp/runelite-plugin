@@ -11,11 +11,7 @@ import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
-import net.runelite.api.events.GameStateChanged;
-import net.runelite.api.events.GameTick;
-import net.runelite.api.events.AnimationChanged;
-import net.runelite.api.events.StatChanged;
-import net.runelite.api.events.InteractingChanged;
+import net.runelite.api.events.*;
 import net.runelite.api.Skill;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
@@ -34,13 +30,13 @@ import net.runelite.client.util.ImageUtil;
 
 import java.awt.image.BufferedImage;
 import net.runelite.client.ui.overlay.OverlayManager;
-import shortestpath.ShortestPathConfig;
-import shortestpath.pathfinder.PathfinderConfig;
+import com.runepal.shortestpath.pathfinder.PathfinderConfig;
 import net.runelite.api.coords.WorldPoint;
 
 @Slf4j
 @PluginDescriptor(
-	name = "Runepal"
+	name = "Runepal",
+	description = "Runepal automation platform"
 )
 public class RunepalPlugin extends Plugin
 {
@@ -78,6 +74,8 @@ public class RunepalPlugin extends Plugin
 	// Debugging and tracking variables
 	@Getter
 	private GameObject targetRock = null;
+	@Getter
+	private GameObject targetTree = null;
 	@Setter
 	@Getter
 	private NPC targetNpc = null;
@@ -157,8 +155,7 @@ public class RunepalPlugin extends Plugin
 		prayerService = new PrayerService(client, actionService, humanizerService);
 		supplyManager = new SupplyManager(client, gameService, potionService, config);
 
-		ShortestPathConfig shortestPathConfig = configManager.getConfig(ShortestPathConfig.class);
-		pathfinderConfig = new PathfinderConfig(client, shortestPathConfig);
+		pathfinderConfig = new PathfinderConfig(client, config);
 
 		// Don't initialize pipe service automatically - user must click Connect
 		log.info("Runepal initialized. Use the 'Connect' button to connect to the RemoteInput server.");
@@ -280,6 +277,12 @@ public class RunepalPlugin extends Plugin
 				case FISHING_BOT:
 					taskManager.pushTask(new FishingTask(this, config, taskManager, pathfinderConfig, actionService, gameService, eventService, humanizerService));
 					break;
+				case WOODCUTTING_BOT:
+					taskManager.pushTask(new WoodcuttingTask(this, config, taskManager, pathfinderConfig, actionService, gameService, eventService, humanizerService));
+					break;
+				case SAND_CRAB_BOT:
+					taskManager.pushTask(new SandCrabTask(this, config, taskManager, pathfinderConfig, actionService, gameService, eventService, humanizerService, potionService, supplyManager));
+					break;
 				default:
 					log.warn("Unknown bot type: {}", botType);
 					stopBot();
@@ -299,6 +302,11 @@ public class RunepalPlugin extends Plugin
 		if (isRunning) {
 			taskManager.onLoop();
 		}
+	}
+
+	@Subscribe
+	public void onClientTick(ClientTick clientTick) {
+		eventService.publish(clientTick);
 	}
 
 	public void stopBot() {
@@ -349,6 +357,49 @@ public class RunepalPlugin extends Plugin
 				.toArray();
 	}
 
+	public int[] getTreeIds() {
+		String[] treeTypes = config.treeTypes().split(",");
+		List<Integer> idList = new ArrayList<>();
+		for (String treeType : treeTypes) {
+			String trimmedType = treeType.trim();
+			switch (trimmedType) {
+				case "Tree":
+					idList.addAll(TreeTypes.TREE.getTreeIds());
+					break;
+				case "Oak":
+					idList.addAll(TreeTypes.OAK.getTreeIds());
+					break;
+				case "Willow":
+					idList.addAll(TreeTypes.WILLOW.getTreeIds());
+					break;
+				case "Maple":
+					idList.addAll(TreeTypes.MAPLE.getTreeIds());
+					break;
+				case "Yew":
+					idList.addAll(TreeTypes.YEW.getTreeIds());
+					break;
+				case "Magic":
+					idList.addAll(TreeTypes.MAGIC.getTreeIds());
+					break;
+				case "Teak":
+					idList.addAll(TreeTypes.TEAK.getTreeIds());
+					break;
+				case "Mahogany":
+					idList.addAll(TreeTypes.MAHOGANY.getTreeIds());
+					break;
+			}
+		}
+		return idList.stream().mapToInt(Integer::intValue).toArray();
+	}
+
+	public int[] getLogIds() {
+		// A simple map from tree ID to log ID.
+		return Arrays.stream(getTreeIds())
+				.map(TreeTypes::getLogForTree)
+				.filter(logId -> logId != -1)
+				.toArray();
+	}
+
 	public WorldPoint getBankCoordinates() {
 		String bankName = config.miningBank();
 		log.info("Bank name: {}", bankName);
@@ -371,6 +422,12 @@ public class RunepalPlugin extends Plugin
 	public void setTargetRock(GameObject rock) {
 		this.targetRock = rock;
 		rockOverlay.setTarget(rock);
+	}
+
+	public void setTargetTree(GameObject tree) {
+		this.targetTree = tree;
+		// TODO: Add tree overlay when implemented
+		// treeOverlay.setTarget(tree);
 	}
 
 	public long getSessionXpGained()

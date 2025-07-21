@@ -237,6 +237,15 @@ public class GameService {
         return gameStateService.isCurrentlyCooking();
     }
 
+    /**
+     * Checks if the local player is currently performing any woodcutting animation.
+     * 
+     * @return true if the player is performing a woodcutting animation, false otherwise
+     */
+    public boolean isCurrentlyWoodcutting() {
+        return gameStateService.isCurrentlyWoodcutting();
+    }
+
     public Rectangle getMenuEntryBounds(MenuEntry entry, int entryIndex) {
         return gameStateService.getMenuEntryBounds(entry, entryIndex);
     }

@@ -1,41 +1,71 @@
 package com.runepal;
 
 import net.runelite.api.GameObject;
+import net.runelite.api.NPC;
+import com.runepal.entity.Interactable;
+import com.runepal.entity.GameObjectEntity;
+import com.runepal.entity.NpcEntity;
 
 /**
- * Event published when an interaction with a game object completes.
+ * Event published when an interaction with an interactable entity completes.
  * This allows tasks and other systems to react to the success or failure of interactions.
  */
 public class InteractionCompletedEvent {
-    private final GameObject gameObject;
+    private final Interactable entity;
     private final String action;
     private final boolean success;
     private final long timestamp;
     private final String failureReason;
 
-    public InteractionCompletedEvent(GameObject gameObject, String action, boolean success) {
-        this(gameObject, action, success, null);
+    public InteractionCompletedEvent(Interactable entity, String action, boolean success) {
+        this(entity, action, success, null);
     }
 
-    public InteractionCompletedEvent(GameObject gameObject, String action, boolean success, String failureReason) {
-        this.gameObject = gameObject;
+    public InteractionCompletedEvent(Interactable entity, String action, boolean success, String failureReason) {
+        this.entity = entity;
         this.action = action;
         this.success = success;
         this.failureReason = failureReason;
         this.timestamp = System.currentTimeMillis();
     }
 
-    /**
-     * Gets the game object that was interacted with.
-     * @return the game object
-     */
-    public GameObject getGameObject() {
-        return gameObject;
+    public InteractionCompletedEvent(GameObject gameObject, String action, boolean success) {
+        this(new GameObjectEntity(gameObject), action, success, null);
+    }
+
+    public InteractionCompletedEvent(GameObject gameObject, String action, boolean success, String failureReason) {
+        this(new GameObjectEntity(gameObject), action, success, failureReason);
+    }
+
+    public InteractionCompletedEvent(NPC npc, String action, boolean success) {
+        this(new NpcEntity(npc), action, success, null);
+    }
+
+    public InteractionCompletedEvent(NPC npc, String action, boolean success, String failureReason) {
+        this(new NpcEntity(npc), action, success, failureReason);
     }
 
     /**
-     * Gets the action that was performed on the game object.
-     * @return the action string (e.g., "Mine", "Bank", "Open")
+     * Gets the interactable entity that was interacted with.
+     * @return the interactable entity
+     */
+    public Interactable getEntity() {
+        return entity;
+    }
+
+    /**
+     * Gets the game object that was interacted with (for backward compatibility).
+     * @return the game object, or null if the entity is not a game object
+     * @deprecated Use getEntity() instead
+     */
+    @Deprecated
+    public GameObject getGameObject() {
+        return entity instanceof GameObjectEntity ? ((GameObjectEntity) entity).getGameObject() : null;
+    }
+
+    /**
+     * Gets the action that was performed on the interactable entity.
+     * @return the action string (e.g., "Mine", "Bank", "Open", "Attack")
      */
     public String getAction() {
         return action;
@@ -67,7 +97,7 @@ public class InteractionCompletedEvent {
 
     @Override
     public String toString() {
-        return String.format("InteractionCompletedEvent{gameObject=%d, action='%s', success=%s, failureReason='%s', timestamp=%d}", 
-            gameObject != null ? gameObject.getId() : -1, action, success, failureReason, timestamp);
+        return String.format("InteractionCompletedEvent{entity=%s, action='%s', success=%s, failureReason='%s', timestamp=%d}", 
+            entity != null ? entity.getName() : "null", action, success, failureReason, timestamp);
     }
 }

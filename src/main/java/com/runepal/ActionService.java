@@ -9,7 +9,11 @@ import net.runelite.api.MenuEntry;
 import net.runelite.api.widgets.Widget;
 import net.runelite.client.util.Text;
 import net.runelite.api.WallObject;
+import net.runelite.api.NPC;
 import net.runelite.api.gameval.InterfaceID.MagicSpellbook;
+import com.runepal.entity.Interactable;
+import com.runepal.entity.NpcEntity;
+import com.runepal.entity.GameObjectEntity;
 
 import javax.inject.Inject;
 
@@ -40,6 +44,9 @@ public class ActionService {
     
     // Map to track pending click actions for Windmouse movements
     private final ConcurrentHashMap<String, PendingClickAction> pendingClickActions = new ConcurrentHashMap<>();
+    
+    // Map to track pending interactions for Windmouse movements
+    private final ConcurrentHashMap<String, PendingInteraction> pendingInteractions = new ConcurrentHashMap<>();
 
     @Inject
     public ActionService(RunepalPlugin plugin, PipeService pipeService, GameService gameService, EventService eventService, BotConfig config, WindmouseService windmouseService) {
@@ -70,6 +77,21 @@ public class ActionService {
             this.timestamp = System.currentTimeMillis();
         }
     }
+
+    /**
+     * Internal class to track pending interactions after Windmouse movement
+     */
+    private static class PendingInteraction {
+        final Interactable entity;
+        final String action;
+        final long timestamp;
+        
+        PendingInteraction(Interactable entity, String action) {
+            this.entity = entity;
+            this.action = action;
+            this.timestamp = System.currentTimeMillis();
+        }
+    }
     
     /**
      * Handle mouse movement completion events from WindmouseService
@@ -77,32 +99,48 @@ public class ActionService {
     private void handleMouseMovementCompleted(MouseMovementCompletedEvent event) {
         String movementId = event.getMovementId();
         PendingClickAction pendingAction = pendingClickActions.remove(movementId);
+        PendingInteraction pendingInteraction = pendingInteractions.remove(movementId);
         
-        if (pendingAction == null) {
+        if (pendingAction == null && pendingInteraction == null) {
             // No pending action for this movement
             return;
         }
         
         if (event.isCancelled()) {
-            log.debug("Mouse movement {} was cancelled, skipping pending click", movementId);
+            log.debug("Mouse movement {} was cancelled, skipping pending action", movementId);
             return;
         }
         
-        // Calculate delay before clicking (2-5ms for realism)
+        // Calculate delay before action (2-5ms for realism)
         int minDelay = config.windmousePreClickDelay();
         int maxDelay = config.windmouseMaxPreClickDelay();
         int delay = ThreadLocalRandom.current().nextInt(minDelay, maxDelay + 1);
         
-        // Schedule the click
-        scheduler.schedule(() -> {
-            if (pendingAction.isRightClick) {
-                executeRightClick(event.getFinalPosition());
-            } else {
-                executeLeftClick(event.getFinalPosition());
-            }
-        }, delay, TimeUnit.MILLISECONDS);
+        // Handle pending click action
+        if (pendingAction != null) {
+            scheduler.schedule(() -> {
+                if (pendingAction.isRightClick) {
+                    executeRightClick(event.getFinalPosition());
+                } else {
+                    executeLeftClick(event.getFinalPosition());
+                }
+            }, delay, TimeUnit.MILLISECONDS);
+            log.debug("Scheduled click for movement {} with {}ms delay", movementId, delay);
+        }
         
-        log.debug("Scheduled click for movement {} with {}ms delay", movementId, delay);
+        // Handle pending interaction
+        if (pendingInteraction != null) {
+            scheduler.schedule(() -> {
+                if (pendingInteraction.entity instanceof GameObjectEntity) {
+                    GameObject gameObject = ((GameObjectEntity) pendingInteraction.entity).getGameObject();
+                    performInteractionLogic(gameObject, pendingInteraction.action);
+                } else if (pendingInteraction.entity instanceof NpcEntity) {
+                    NPC npc = ((NpcEntity) pendingInteraction.entity).getNpc();
+                    performNpcInteractionLogic(npc, pendingInteraction.action);
+                }
+            }, delay, TimeUnit.MILLISECONDS);
+            log.debug("Scheduled interaction for movement {} with {}ms delay", movementId, delay);
+        }
     }
 
     /**
@@ -311,12 +349,49 @@ public class ActionService {
     }
 
     /**
+     * Interact with any interactable entity (NPC, GameObject, etc.)
+     * @param entity the interactable entity to interact with
+     * @param action the action to perform (e.g., "Attack", "Open", "Mine", "Cut")
+     */
+    public void interactWithEntity(Interactable entity, String action) {
+        if (entity == null) {
+            log.warn("Cannot interact with null entity");
+            return;
+        }
+
+        // Prevent concurrent interactions
+        if (isCurrentlyInteracting) {
+            log.debug("Already interacting with an entity, ignoring new interaction request");
+            return;
+        }
+
+        // Handle different entity types
+        if (entity instanceof NpcEntity) {
+            NPC npc = ((NpcEntity) entity).getNpc();
+            interactWithNpcInternal(npc, action);
+        } else if (entity instanceof GameObjectEntity) {
+            GameObject gameObject = ((GameObjectEntity) entity).getGameObject();
+            interactWithGameObjectInternal(gameObject, action);
+        } else {
+            log.warn("Unknown entity type: {}", entity.getClass().getSimpleName());
+        }
+    }
+
+    /**
      * Interact with a game object
      * @param gameObject the game object to interact with
      * @param action the action to perform (e.g., "Open", "Mine", "Cut")
-     * @return true if the interaction was initiated
      */
     public void interactWithGameObject(GameObject gameObject, String action) {
+        interactWithGameObjectInternal(gameObject, action);
+    }
+
+    /**
+     * Internal method for interacting with game objects
+     * @param gameObject the game object to interact with
+     * @param action the action to perform
+     */
+    private void interactWithGameObjectInternal(GameObject gameObject, String action) {
         if (gameObject == null) {
             log.warn("Cannot interact with null game object");
             return;
@@ -347,17 +422,133 @@ public class ActionService {
         // If mouse is not already over the gameObject, move the mouse
         if (!gameService.isMouseOverObject(gameObject)) {
             log.info("Mouse is not over the object, moving mouse and scheduling interaction");
-            sendMouseMoveRequest(clickPoint);
-            
-            // Schedule the actual interaction after mouse movement
-            scheduler.schedule(() -> {
-                performInteractionLogic(gameObject, action);
-            }, 600, TimeUnit.MILLISECONDS);
+            sendMouseMoveRequestWithPendingInteraction(clickPoint, new GameObjectEntity(gameObject), action);
             return;
         }
 
         // Perform the actual interaction logic
         performInteractionLogic(gameObject, action);
+    }
+
+    /**
+     * Internal method for interacting with NPCs
+     * @param npc the NPC to interact with
+     * @param action the action to perform
+     */
+    private void interactWithNpcInternal(NPC npc, String action) {
+        if (npc == null) {
+            log.warn("Cannot interact with null NPC");
+            return;
+        }
+
+        Point clickPoint = gameService.getRandomClickablePoint(new NpcEntity(npc));
+        if (clickObstructionChecker.isClickObstructed(clickPoint)) {
+            log.warn("Click point is obstructed for NPC: {}", npc.getName());
+            eventService.publish(new InteractionCompletedEvent(npc, action, false, "Click point obstructed"));
+            return;
+        }
+        if (clickPoint.x == -1) {
+            log.warn("Could not get clickable point for NPC: {}", npc.getName());
+            eventService.publish(new InteractionCompletedEvent(npc, action, false, "Could not get clickable point"));
+            return;
+        }
+
+        log.info("Interacting with NPC {} using action '{}'", npc.getName(), action);
+        isCurrentlyInteracting = true;
+        eventService.publish(new InteractionStartedEvent(npc, action));
+
+        // If mouse is not already over the NPC, move the mouse
+        if (!gameService.isMouseOverNpc(npc)) {
+            log.info("Mouse is not over the NPC, moving mouse and scheduling interaction");
+            sendMouseMoveRequestWithPendingInteraction(clickPoint, new NpcEntity(npc), action);
+            return;
+        }
+
+        // Perform the actual interaction logic
+        performNpcInteractionLogic(npc, action);
+    }
+
+    /**
+     * Core interaction logic for NPCs
+     */
+    private boolean performNpcInteractionLogic(NPC npc, String action) {
+        // Get the menu entries that are present on hover
+        MenuEntry[] menuEntries = plugin.getClient().getMenu().getMenuEntries();
+
+        // If there is no menu, we have a problem
+        if (menuEntries.length == 0) {
+            log.warn("No menu detected for NPC {}", npc.getName());
+            isCurrentlyInteracting = false;
+            eventService.publish(new InteractionCompletedEvent(npc, action, false, "No menu detected"));
+            return false;
+        }
+
+        Point currentMousePoint = new Point(plugin.getClient().getMouseCanvasPosition().getX(), plugin.getClient().getMouseCanvasPosition().getY());
+
+        // If left-click option matches action, just click
+        if (Text.removeTags(menuEntries[menuEntries.length - 1].getOption()).equals(action)) {
+            log.info("Left-click action {} matches expected action {}, sending click", Text.removeTags(menuEntries[menuEntries.length - 1].getTarget()), action);
+            sendClickRequest(currentMousePoint, false);
+            isCurrentlyInteracting = false;
+            eventService.publish(new InteractionCompletedEvent(npc, action, true));
+            return true;
+        }
+
+        // Otherwise, right-click and schedule the click on the menu entry
+        log.info("Left-click action did not match, right-clicking");
+        sendRightClickRequest(currentMousePoint);
+        scheduler.schedule(() -> {
+            MenuEntry[] currentMenuEntries = plugin.getClient().getMenu().getMenuEntries();
+            boolean foundAction = false;
+
+            log.trace("----Menu----");
+            for (int i = 0; i < currentMenuEntries.length; i++) {
+                MenuEntry entry = currentMenuEntries[i];
+                int visualIndex = currentMenuEntries.length - 1 - i;
+                log.trace("Visual {}, Index {}: {}", visualIndex, i, entry.getOption());
+                if (action.equals(entry.getOption())) {
+                    log.debug("CLICKING_MENU: options matched, {} and {}", action, entry.getOption());
+                    log.debug("Clicking menu option at array index {} (visual index {})", i, visualIndex);
+                    
+                    // DEBUG: Show the menu entry bounds as an overlay (if enabled in config)
+                    Rectangle menuBounds = gameService.getMenuEntryBounds(entry, visualIndex);
+                    if (menuBounds != null) {
+                        if (config.showMenuDebugOverlay()) {
+                            plugin.getMenuDebugOverlay().addDebugRect(
+                                menuBounds, 
+                                String.format("Menu: %s (arr:%d vis:%d)", action, i, visualIndex), 
+                                Color.RED
+                            );
+                            log.debug("DEBUG: Menu bounds for '{}': {}", action, menuBounds);
+                            
+                            // Clear the debug overlay after 1 seconds
+                            scheduler.schedule(() -> {
+                                plugin.getMenuDebugOverlay().clearDebugRects();
+                            }, 1000, TimeUnit.MILLISECONDS);
+                        }
+                    } else {
+                        log.warn("WARN: getMenuEntryBounds returned null for entry '{}' at visual index {}", action, visualIndex);
+                    }
+
+                    java.awt.Point menuEntryClickPoint = gameService.getRandomPointInBounds(menuBounds);
+                    sendClickRequest(menuEntryClickPoint, true);
+                    
+                    isCurrentlyInteracting = false;
+                    foundAction = true;
+                    break;
+                }
+            }
+            
+            // Always reset the interaction flag and publish completion event
+            isCurrentlyInteracting = false;
+            if (foundAction) {
+                eventService.publish(new InteractionCompletedEvent(npc, action, true));
+            } else {
+                log.warn("Right-click menu did not contain expected option {}", action);
+                eventService.publish(new InteractionCompletedEvent(npc, action, false, "Menu option not found"));
+            }
+        }, 300, TimeUnit.MILLISECONDS);
+        return true;
     }
 
     /**
@@ -442,7 +633,7 @@ public class ActionService {
                 log.warn("Right-click menu did not contain expected option {}", action);
                 eventService.publish(new InteractionCompletedEvent(gameObject, action, false, "Menu option not found"));
             }
-        }, 100, TimeUnit.MILLISECONDS);
+        }, 300, TimeUnit.MILLISECONDS);
         return true;
     }
 
@@ -549,6 +740,47 @@ public class ActionService {
         windmouseService.moveToPoint(currentMousePos, point, movementId);
 	}
 
+    /**
+     * Send mouse move request with a pending interaction to be executed after movement completes
+     */
+    private void sendMouseMoveRequestWithPendingInteraction(Point point, Interactable entity, String action) {
+        if (point == null || point.x == -1) {
+            log.warn("Invalid point provided to sendMouseMoveRequestWithPendingInteraction.");
+            return;
+        }
+        
+        if (plugin.isAutomationConnected()) {
+            // For Python automation, we still need to handle the delay differently
+            // as the Python server doesn't generate movement completion events
+            if (!pipeService.sendMouseMove(point.x, point.y)) {
+                log.warn("Failed to send mouse move command via pipe");
+                plugin.stopBot();
+                return;
+            }
+            // Schedule the interaction with a fixed delay for Python automation
+            scheduler.schedule(() -> {
+                if (entity instanceof GameObjectEntity) {
+                    GameObject gameObject = ((GameObjectEntity) entity).getGameObject();
+                    performInteractionLogic(gameObject, action);
+                } else if (entity instanceof NpcEntity) {
+                    NPC npc = ((NpcEntity) entity).getNpc();
+                    performNpcInteractionLogic(npc, action);
+                }
+            }, 100, TimeUnit.MILLISECONDS);
+            return;
+        }
+        
+        // Use Windmouse for human-like movement when not connected
+        Point currentMousePos = new Point(plugin.getClient().getMouseCanvasPosition().getX(), plugin.getClient().getMouseCanvasPosition().getY());
+        String movementId = UUID.randomUUID().toString();
+        
+        // Store pending interaction
+        pendingInteractions.put(movementId, new PendingInteraction(entity, action));
+        
+        // Start Windmouse movement - interaction will be executed after movement completes
+        windmouseService.moveToPoint(currentMousePos, point, movementId);
+    }
+
 	public void sendKeyRequest(String endpoint, String key) {
 		boolean success;
         int keyCode;
@@ -564,6 +796,12 @@ public class ActionService {
                 break;
             case "shift":
                 keyCode = KeyEvent.VK_SHIFT;
+                break;
+            case "left":
+                keyCode = KeyEvent.VK_LEFT;
+                break;
+            case "right":
+                keyCode = KeyEvent.VK_RIGHT;
                 break;
             default:
                 log.warn("Unknown key: {}", key);

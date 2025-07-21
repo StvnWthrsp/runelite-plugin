@@ -1,5 +1,6 @@
 package com.runepal;
 
+import com.runepal.shortestpath.TeleportationItem;
 import net.runelite.client.config.Config;
 import net.runelite.client.config.ConfigGroup;
 import net.runelite.client.config.ConfigItem;
@@ -120,12 +121,49 @@ public interface BotConfig extends Config
 		return FishingMode.POWER_DROP;
 	}
 
+	// Woodcutting Bot specific settings
+	@ConfigItem(
+			keyName = "woodcuttingMode",
+			name = "Woodcutting Mode",
+			description = "Choose between power chopping and banking",
+			position = 19,
+			hidden = true
+	)
+	default WoodcuttingMode woodcuttingMode()
+	{
+		return WoodcuttingMode.POWER_CHOP;
+	}
+
+	@ConfigItem(
+			keyName = "treeTypes",
+			name = "Tree Types",
+			description = "Comma-separated list of tree types (e.g., Oak, Willow)",
+			position = 20,
+			hidden = true
+	)
+	default String treeTypes()
+	{
+		return "Oak";
+	}
+
+	@ConfigItem(
+			keyName = "woodcuttingBank",
+			name = "Bank Name",
+			description = "Bank location for banking mode",
+			position = 21,
+			hidden = true
+	)
+	default String woodcuttingBank()
+	{
+		return "VARROCK_EAST";
+	}
+
 	// Combat Bot specific settings
 	@ConfigItem(
 			keyName = "combatNpcNames",
 			name = "Combat NPC Names",
 			description = "Comma-separated list of NPC names to attack (e.g., Goblin,Cow)",
-			position = 20,
+			position = 22,
 			hidden = true
 	)
 	default String combatNpcNames()
@@ -137,7 +175,7 @@ public interface BotConfig extends Config
 			keyName = "combatEatAtHealthPercent",
 			name = "Eat at Health Percent",
 			description = "Health percentage threshold at which to eat food (1-99)",
-			position = 21,
+			position = 23,
 			hidden = true
 	)
 	default int combatEatAtHealthPercent()
@@ -150,7 +188,7 @@ public interface BotConfig extends Config
 			keyName = "combatUsePrayerPotions",
 			name = "Use Prayer Potions",
 			description = "Enable automatic prayer potion consumption",
-			position = 22,
+			position = 24,
 			hidden = true
 	)
 	default boolean combatUsePrayerPotions()
@@ -162,7 +200,7 @@ public interface BotConfig extends Config
 			keyName = "combatPrayerPotionThreshold",
 			name = "Prayer Potion Threshold",
 			description = "Prayer percentage threshold at which to drink prayer potion (1-99)",
-			position = 23,
+			position = 25,
 			hidden = true
 	)
 	default int combatPrayerPotionThreshold()
@@ -329,6 +367,115 @@ public interface BotConfig extends Config
 		return "";
 	}
 
+	// Sand Crab Bot specific settings
+	@ConfigItem(
+			keyName = "sandCrabFood",
+			name = "Sand Crab Food",
+			description = "Type of food to use for sand crab training",
+			position = 37,
+			hidden = true
+	)
+	default String sandCrabFood()
+	{
+		return "COOKED_KARAMBWAN";
+	}
+
+	@ConfigItem(
+			keyName = "sandCrabFoodQuantity",
+			name = "Sand Crab Food Quantity",
+			description = "Number of food items to withdraw from bank (0-28)",
+			position = 38,
+			hidden = true
+	)
+	default int sandCrabFoodQuantity()
+	{
+		return 20;
+	}
+
+	@ConfigItem(
+			keyName = "sandCrabPotion",
+			name = "Sand Crab Potion",
+			description = "Type of potion to use for sand crab training",
+			position = 39,
+			hidden = true
+	)
+	default String sandCrabPotion()
+	{
+		return "SUPER_COMBAT";
+	}
+
+	@ConfigItem(
+			keyName = "sandCrabPotionQuantity",
+			name = "Sand Crab Potion Quantity",
+			description = "Number of potion items to withdraw from bank (0-28)",
+			position = 40,
+			hidden = true
+	)
+	default int sandCrabPotionQuantity()
+	{
+		return 1;
+	}
+
+	@ConfigItem(
+			keyName = "sandCrabCount",
+			name = "Sand Crab Count",
+			description = "Number of sand crabs to engage simultaneously (1-4)",
+			position = 41,
+			hidden = true
+	)
+	default int sandCrabCount()
+	{
+		return 3;
+	}
+
+	@ConfigItem(
+			keyName = "sandCrabEatAtHp",
+			name = "Sand Crab Eat At HP",
+			description = "HP threshold for eating food (1-99)",
+			position = 42,
+			hidden = true
+	)
+	default int sandCrabEatAtHp()
+	{
+		return 50;
+	}
+
+	@ConfigItem(
+			keyName = "sandCrabInventoryAction",
+			name = "Sand Crab Inventory Action",
+			description = "Action to take when consumables are depleted",
+			position = 43,
+			hidden = true
+	)
+	default String sandCrabInventoryAction()
+	{
+		return "BANK";
+	}
+
+	@ConfigItem(
+			keyName = "sandCrabMinFoodCount",
+			name = "Sand Crab Min Food Count",
+			description = "Minimum food count before banking (only applies when inventory action is BANK)",
+			position = 44,
+			hidden = true
+	)
+	default int sandCrabMinFoodCount()
+	{
+		return 3;
+	}
+
+	@ConfigItem(
+			keyName = "sandCrabMinPotionCount",
+			name = "Sand Crab Min Potion Count",
+			description = "Minimum potion count before banking (only applies when inventory action is BANK)",
+			position = 45,
+			hidden = true
+	)
+	default int sandCrabMinPotionCount()
+	{
+		return 1;
+	}
+
 	// Combat Bot debugging section
 	@ConfigSection(
 			name = "Combat Bot - Debugging",
@@ -401,6 +548,26 @@ public interface BotConfig extends Config
 			section = debugSection
 	)
 	default boolean showMenuDebugOverlay()
+	{
+		return false;
+	}
+
+	// Woodcutting Bot debugging section
+	@ConfigSection(
+			name = "Woodcutting Bot - Debugging",
+			description = "Visual debugging options for woodcutting bot",
+			position = 25
+	)
+	String woodcuttingDebugSection = "woodcuttingDebugging";
+
+	@ConfigItem(
+			keyName = "highlightTargetTree",
+			name = "Highlight Target Tree",
+			description = "Visually highlight the targeted tree (Green: detected, Yellow: cutting)",
+			position = 0,
+			section = woodcuttingDebugSection
+	)
+	default boolean highlightTargetTree()
 	{
 		return false;
 	}
@@ -506,6 +673,267 @@ public interface BotConfig extends Config
 	)
 	default int windmouseMaxPreClickDelay()
 	{
+		return 5;
+	}
+
+	// Shortest Path section
+	@ConfigSection(
+			name = "Shortest Path - Navigation",
+			description = "Configuration for pathfinding and navigation system",
+			position = 50
+	)
+	String shortestPathSection = "shortestPath";
+
+	@ConfigItem(
+			keyName = "spAvoidWilderness",
+			name = "Avoid wilderness",
+			description = "Whether the wilderness should be avoided if possible (otherwise, will e.g. use wilderness lever from Edgeville to Ardougne)",
+			position = 1,
+			section = shortestPathSection
+	)
+	default boolean spAvoidWilderness() {
+		return true;
+	}
+
+	@ConfigItem(
+			keyName = "spUseAgilityShortcuts",
+			name = "Use agility shortcuts",
+			description = "Whether to include agility shortcuts in the path. You must also have the required agility level",
+			position = 2,
+			section = shortestPathSection
+	)
+	default boolean spUseAgilityShortcuts() {
+		return true;
+	}
+
+	@ConfigItem(
+			keyName = "spUseGrappleShortcuts",
+			name = "Use grapple shortcuts",
+			description = "Whether to include crossbow grapple agility shortcuts in the path. You must also have the required agility, ranged and strength levels",
+			position = 3,
+			section = shortestPathSection
+	)
+	default boolean spUseGrappleShortcuts() {
+		return false;
+	}
+
+	@ConfigItem(
+			keyName = "spUseBoats",
+			name = "Use boats",
+			description = "Whether to include small boats in the path (e.g. the boat to Fishing Platform)",
+			position = 4,
+			section = shortestPathSection
+	)
+	default boolean spUseBoats() {
+		return true;
+	}
+
+	@ConfigItem(
+			keyName = "spUseCanoes",
+			name = "Use canoes",
+			description = "Whether to include canoes in the path",
+			position = 5,
+			section = shortestPathSection
+	)
+	default boolean spUseCanoes() {
+		return false;
+	}
+
+	@ConfigItem(
+			keyName = "spUseCharterShips",
+			name = "Use charter ships",
+			description = "Whether to include charter ships in the path",
+			position = 6,
+			section = shortestPathSection
+	)
+	default boolean spUseCharterShips() {
+		return false;
+	}
+
+	@ConfigItem(
+			keyName = "spUseShips",
+			name = "Use ships",
+			description = "Whether to include passenger ships in the path (e.g. the customs ships to Karamja)",
+			position = 7,
+			section = shortestPathSection
+	)
+	default boolean spUseShips() {
+		return true;
+	}
+
+	@ConfigItem(
+			keyName = "spUseFairyRings",
+			name = "Use fairy rings",
+			description = "Whether to include fairy rings in the path. You must also have completed the required quests or miniquests",
+			position = 8,
+			section = shortestPathSection
+	)
+	default boolean spUseFairyRings() {
+		return true;
+	}
+
+	@ConfigItem(
+			keyName = "spUseGnomeGliders",
+			name = "Use gnome gliders",
+			description = "Whether to include gnome gliders in the path",
+			position = 9,
+			section = shortestPathSection
+	)
+	default boolean spUseGnomeGliders() {
+		return true;
+	}
+
+	@ConfigItem(
+			keyName = "spUseHotAirBalloons",
+			name = "Use hot air balloons",
+			description = "Whether to include hot air balloons in the path",
+			position = 10,
+			section = shortestPathSection
+	)
+	default boolean spUseHotAirBalloons() {
+		return false;
+	}
+
+	@ConfigItem(
+			keyName = "spUseMinecarts",
+			name = "Use minecarts",
+			description = "Whether to include minecarts in the path (e.g. the Keldagrim and Lovakengj minecart networks)",
+			position = 11,
+			section = shortestPathSection
+	)
+	default boolean spUseMinecarts() {
+		return true;
+	}
+
+	@ConfigItem(
+			keyName = "spUseQuetzals",
+			name = "Use quetzals",
+			description = "Whether to include quetzals in the path",
+			position = 12,
+			section = shortestPathSection
+	)
+	default boolean spUseQuetzals() {
+		return true;
+	}
+
+	@ConfigItem(
+			keyName = "spUseSpiritTrees",
+			name = "Use spirit trees",
+			description = "Whether to include spirit trees in the path",
+			position = 13,
+			section = shortestPathSection
+	)
+	default boolean spUseSpiritTrees() {
+		return true;
+	}
+
+	@ConfigItem(
+			keyName = "spUseTeleportationItems",
+			name = "Use teleportation items",
+			description = "Whether to include teleportation items from the player's inventory and equipment. Options labelled (perm) only use permanent non-charge items.",
+			position = 14,
+			section = shortestPathSection
+	)
+	default TeleportationItem spUseTeleportationItems() {
+		return TeleportationItem.INVENTORY_NON_CONSUMABLE;
+	}
+
+	@ConfigItem(
+			keyName = "spUseTeleportationLevers",
+			name = "Use teleportation levers",
+			description = "Whether to include teleportation levers in the path (e.g. the lever from Edgeville to Wilderness)",
+			position = 15,
+			section = shortestPathSection
+	)
+	default boolean spUseTeleportationLevers() {
+		return true;
+	}
+
+	@ConfigItem(
+			keyName = "spUseTeleportationPortals",
+			name = "Use teleportation portals",
+			description = "Whether to include teleportation portals in the path (e.g. the portal from Ferox Enclave to Castle Wars)",
+			position = 16,
+			section = shortestPathSection
+	)
+	default boolean spUseTeleportationPortals() {
+		return true;
+	}
+
+	@ConfigItem(
+			keyName = "spUseTeleportationSpells",
+			name = "Use teleportation spells",
+			description = "Whether to include teleportation spells in the path",
+			position = 17,
+			section = shortestPathSection
+	)
+	default boolean spUseTeleportationSpells() {
+		return true;
+	}
+
+	@ConfigItem(
+			keyName = "spUseTeleportationMinigames",
+			name = "Use teleportation to minigames",
+			description = "Whether to include teleportation to minigames/activities/grouping in the path (e.g. the Nightmare Zone minigame teleport). These teleports share a 20 minute cooldown.",
+			position = 18,
+			section = shortestPathSection
+	)
+	default boolean spUseTeleportationMinigames() {
+		return true;
+	}
+
+	@ConfigItem(
+			keyName = "spUseWildernessObelisks",
+			name = "Use wilderness obelisks",
+			description = "Whether to include wilderness obelisks in the path",
+			position = 19,
+			section = shortestPathSection
+	)
+	default boolean spUseWildernessObelisks() {
+		return true;
+	}
+
+	@ConfigItem(
+			keyName = "spCurrencyThreshold",
+			name = "Currency threshold",
+			description = "The maximum amount of currency to use on a single transportation method. The currencies affected by the threshold are coins, trading sticks, ecto-tokens and warrior guild tokens.",
+			position = 20,
+			section = shortestPathSection
+	)
+	default int spCurrencyThreshold() {
+		return 100000;
+	}
+
+	@ConfigItem(
+			keyName = "spRecalculateDistance",
+			name = "Recalculate distance",
+			description = "Distance from the path the player should be for it to be recalculated (-1 for never)",
+			position = 22,
+			section = shortestPathSection
+	)
+	default int spRecalculateDistance() {
+		return 10;
+	}
+
+	@ConfigItem(
+			keyName = "spReachedDistance",
+			name = "Finish distance",
+			description = "Distance from the target tile at which the path should be ended (-1 for never)",
+			position = 23,
+			section = shortestPathSection
+	)
+	default int spReachedDistance() {
+		return 5;
+	}
+
+	@ConfigItem(
+			keyName = "spCalculationCutoff",
+			name = "Calculation cutoff",
+			description = "The cutoff threshold in number of ticks (0.6 seconds) of no progress being made towards the path target before the calculation will be stopped",
+			position = 26,
+			section = shortestPathSection
+	)
+	default int spCalculationCutoff() {
 		return 5;
 	}
 } 
