@@ -121,6 +121,9 @@ public class SandCrabTask implements BotTask {
 
     // State management
     private SandCrabState currentState;
+    private SandCrabState pendingState = null;           // NEW: Pending state for race condition fix
+    private String pendingStateReason = null;           // NEW: Debug info for pending state
+    private long pendingStateTimestamp = 0;             // NEW: Timestamp for timeout validation
     private final Deque<Runnable> actionQueue = new ArrayDeque<>();
     private int delayTicks = 0;
     private int idleTicks = 0;
@@ -367,9 +370,31 @@ public class SandCrabTask implements BotTask {
         } else {
             if (currentState == SandCrabState.WAITING_FOR_SUBTASK) {
                 log.info("Sub-task finished. Resuming {}.", getTaskName());
-                currentState = determineNextStateAfterSubtask();
+
+                // Check for pending state first (fixes race condition)
+                if (hasPendingState()) {
+                    // Validate pending state is still appropriate
+                    SandCrabState validatedState = validatePendingStateRelevance(pendingState);
+                    if (validatedState != null) {
+                        log.info("Applying {} pending state: {} ({})", 
+                            validatedState == pendingState ? "validated" : "updated", 
+                            validatedState, pendingStateReason);
+                        currentState = validatedState;
+                        clearPendingState();
+                    } else {
+                        log.info("Pending state {} no longer relevant, using fallback logic", pendingState);
+                        clearPendingState();
+                        currentState = determineNextStateAfterSubtask();
+                    }
+                } else {
+                    // Fallback to existing logic for backward compatibility
+                    currentState = determineNextStateAfterSubtask();
+                }
             }
         }
+
+        // Validate pending state hasn't been waiting too long
+        validatePendingStateTimeout();
 
         // Process delays
         if (delayTicks > 0) {
@@ -380,6 +405,28 @@ public class SandCrabTask implements BotTask {
         // Process action queue
         if (!actionQueue.isEmpty()) {
             actionQueue.poll().run();
+            return;
+        }
+
+        // Emergency recovery for stuck states
+        if (currentState == SandCrabState.WALKING_TO_SPOT && idleTicks > TIMEOUT_TICKS) {
+            log.error("EMERGENCY: Stuck in WALKING_TO_SPOT state for {} ticks, forcing recovery", idleTicks);
+            clearPendingState();
+            retryOrFail("emergency walking recovery");
+            return;
+        }
+
+        if (currentState == SandCrabState.WALKING_TO_RESET && idleTicks > TIMEOUT_TICKS) {
+            log.error("EMERGENCY: Stuck in WALKING_TO_RESET state for {} ticks, forcing recovery", idleTicks);
+            clearPendingState();
+            retryOrFail("emergency walking to reset recovery");
+            return;
+        }
+
+        if (currentState == SandCrabState.BANKING && idleTicks > TIMEOUT_TICKS) {
+            log.error("EMERGENCY: Stuck in BANKING state for {} ticks, forcing recovery", idleTicks);
+            clearPendingState();
+            retryOrFail("emergency banking recovery");
             return;
         }
 
@@ -404,10 +451,25 @@ public class SandCrabTask implements BotTask {
             log.info("Players detected nearby, switching to world hopping");
             currentState = SandCrabState.WORLD_HOPPING;
         } else if (System.currentTimeMillis() - lastRotateTime > cameraRotateTimerMs) {
+            // Preserve any existing pending state before camera rotation
+            SandCrabState savedPendingState = pendingState;
+            String savedPendingReason = pendingStateReason;
+            long savedPendingTimestamp = pendingStateTimestamp;
+
             taskManager.pushTask(new CameraRotationTask(plugin, actionService, eventService));
             lastRotateTime = System.currentTimeMillis();
             cameraRotateTimerMs = Math.round(humanizerService.getGaussian(5, 1.2, 0.0) * 60 * 1000);
             log.info("Rotating camera, next rotation at {}", cameraRotateTimerMs);
+
+            // Restore pending state after camera rotation
+            if (savedPendingState != null) {
+                this.pendingState = savedPendingState;
+                this.pendingStateReason = savedPendingReason + " (preserved through camera rotation)";
+                this.pendingStateTimestamp = savedPendingTimestamp;
+                log.debug("Preserved pending state through camera rotation: {} ({})",
+                         pendingState, pendingStateReason);
+            }
+
             currentState = SandCrabState.WAITING_FOR_SUBTASK;
         }
 
@@ -455,8 +517,11 @@ public class SandCrabTask implements BotTask {
         // Update idle tracking
         updateIdleTracking();
         
-        // Update UI
-        plugin.setCurrentState("Sand Crab: " + currentState.toString());
+        // Update UI with detailed state info
+        String statusInfo = String.format("Sand Crab: %s%s",
+            currentState.toString(),
+            hasPendingState() ? " -> " + pendingState + " (" + pendingStateReason + ")" : "");
+        plugin.setCurrentState(statusInfo);
     }
 
     // Event handlers
@@ -507,10 +572,11 @@ public class SandCrabTask implements BotTask {
             
             // Update state if waiting for combat
             if (currentState == SandCrabState.WAITING_FOR_AGGRESSION) {
-                actionQueue.add(() -> {
-                    log.info("Combat detected through XP gain");
-                    currentState = SandCrabState.COMBAT_ACTIVE;
-                });
+                log.info("Combat detected through XP gain");
+                currentState = SandCrabState.COMBAT_ACTIVE;
+            } else if (currentState == SandCrabState.WAITING_FOR_SUBTASK) {
+                // If subtask is running, set pending state to combat
+                setPendingState(SandCrabState.COMBAT_ACTIVE, "combat detected through XP gain during subtask");
             }
         }
     }
@@ -525,10 +591,11 @@ public class SandCrabTask implements BotTask {
             log.debug("Player stopped interacting");
             // Check if we should transition out of combat
             if (currentState == SandCrabState.COMBAT_ACTIVE) {
-                actionQueue.add(() -> {
-                    log.info("Combat ended, transitioning to waiting state");
-                    currentState = SandCrabState.WAITING_FOR_AGGRESSION;
-                });
+                log.info("Combat ended, transitioning to waiting state");
+                currentState = SandCrabState.WAITING_FOR_AGGRESSION;
+            } else if (currentState == SandCrabState.WAITING_FOR_SUBTASK) {
+                // If subtask is running, set pending state to waiting for aggression
+                setPendingState(SandCrabState.WAITING_FOR_AGGRESSION, "combat ended during subtask");
             }
         } else {
             log.debug("Player began interacting with {}", target);
@@ -696,14 +763,11 @@ public class SandCrabTask implements BotTask {
 
         taskManager.pushTask(resetWalkTask);
         
-        // Set flag to return to combat spot after reset
-        actionQueue.add(() -> {
-            log.info("Reset walk completed, now walking back to combat spot");
-            // Reset aggression timer
-            lastAggressionResetTime = System.currentTimeMillis();
-            needsAggression = false;
-            currentState = SandCrabState.WALKING_TO_RESET;
-        });
+        // Execute immediate side effects
+        lastAggressionResetTime = System.currentTimeMillis();
+        needsAggression = false;
+        // Set pending state for when reset walk completes
+        setPendingState(SandCrabState.WALKING_TO_RESET, "reset walk completed");
     }
 
     private void doWalkingToReset() {
@@ -712,31 +776,24 @@ public class SandCrabTask implements BotTask {
         // Walk back to combat spot
         pushWalkToSpotTask();
 
-        actionQueue.add(() -> {
-            log.info("Returned to combat spot, waiting for aggression");
-            currentState = SandCrabState.WAITING_FOR_AGGRESSION;
-        });
+        setPendingState(SandCrabState.WAITING_FOR_AGGRESSION, "returned to combat spot");
     }
 
     private void doBanking() {
         log.info("Banking for supplies");
         pushBankingTask();
         
-        actionQueue.add(() -> {
-            log.info("Banking completed, returning to combat");
-            currentState = SandCrabState.WALKING_TO_SPOT;
-        });
+        setPendingState(SandCrabState.WALKING_TO_SPOT, "banking completed");
     }
 
     private void doWorldHopping() {
         log.info("Hopping worlds due to player detection");
         pushWorldHopTask();
         
-        actionQueue.add(() -> {
-            log.info("World hop completed, returning to combat");
-            playersDetected = false;
-            currentState = SandCrabState.WAITING_FOR_AGGRESSION;
-        });
+        // Execute immediate side effects
+        playersDetected = false;
+        // Set pending state for when world hop completes
+        setPendingState(SandCrabState.WAITING_FOR_AGGRESSION, "world hop completed");
     }
 
     // --- HELPER METHODS ---
@@ -991,5 +1048,86 @@ public class SandCrabTask implements BotTask {
             currentState = SandCrabState.IDLE;
             delayTicks = humanizerService.getRandomDelay(3, 7);
         }
+    }
+
+    // --- PENDING STATE MANAGEMENT METHODS ---
+
+    /**
+     * Sets a pending state to transition to when current subtask completes
+     */
+    private void setPendingState(SandCrabState state, String reason) {
+        // Validation
+        if (state == null) {
+            log.error("Attempted to set null pending state, reason: {}", reason);
+            return;
+        }
+
+        if (state == currentState) {
+            log.warn("Setting pending state same as current state: {}, reason: {}", state, reason);
+        }
+
+        // Log transition details
+        if (pendingState != null) {
+            log.warn("Overriding pending state {} ({}) with {} ({})",
+                    pendingState, pendingStateReason, state, reason);
+        }
+
+        this.pendingState = state;
+        this.pendingStateReason = reason;
+        this.pendingStateTimestamp = System.currentTimeMillis();
+        log.info("Set pending state: {} -> {} ({})", currentState, state, reason);
+    }
+
+    private void clearPendingState() {
+        if (pendingState != null) {
+            log.debug("Clearing pending state: {} ({})", pendingState, pendingStateReason);
+        }
+        this.pendingState = null;
+        this.pendingStateReason = null;
+        this.pendingStateTimestamp = 0;
+    }
+
+    private boolean hasPendingState() {
+        return pendingState != null;
+    }
+
+    /**
+     * Validates pending state and clears if it's been waiting too long
+     */
+    private void validatePendingStateTimeout() {
+        if (hasPendingState() && System.currentTimeMillis() - pendingStateTimestamp > 30000) {
+            log.warn("Pending state {} has been waiting for {}ms, clearing",
+                    pendingState, System.currentTimeMillis() - pendingStateTimestamp);
+            clearPendingState();
+        }
+    }
+
+    /**
+     * Validates if pending state is still appropriate given current conditions
+     * Returns the validated state or null if no longer appropriate
+     */
+    private SandCrabState validatePendingStateRelevance(SandCrabState pendingState) {
+        if (pendingState == null) {
+            return null;
+        }
+
+        // Check if immediate needs override pending state
+        if (shouldEat() && pendingState != SandCrabState.EATING) {
+            log.debug("Pending state {} overridden by immediate eating need", pendingState);
+            return SandCrabState.EATING;
+        }
+
+        if (shouldDrinkPotion() && pendingState != SandCrabState.DRINKING_POTION) {
+            log.debug("Pending state {} overridden by immediate potion need", pendingState);
+            return SandCrabState.DRINKING_POTION;
+        }
+
+        if (needsToBank() && pendingState != SandCrabState.BANKING) {
+            log.debug("Pending state {} overridden by immediate banking need", pendingState);
+            return SandCrabState.BANKING;
+        }
+
+        // Pending state is still relevant
+        return pendingState;
     }
 }
