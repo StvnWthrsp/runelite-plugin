@@ -121,6 +121,7 @@ public class SandCrabTask implements BotTask {
 
     // State management
     private SandCrabState currentState;
+    private SandCrabState prevState;
     private final Deque<Runnable> actionQueue = new ArrayDeque<>();
     private int delayTicks = 0;
     private int idleTicks = 0;
@@ -357,6 +358,8 @@ public class SandCrabTask implements BotTask {
 
     @Override
     public void onLoop() {
+        prevState = currentState;
+
         // Handle subtask execution
         if (taskManager.getCurrentTask() != this) {
             if (currentState != SandCrabState.WAITING_FOR_SUBTASK) {
@@ -638,7 +641,10 @@ public class SandCrabTask implements BotTask {
         
         if (foodPoint == null) {
             log.warn("No food found in inventory, continuing without eating");
-            currentState = determineNextCombatState();
+//            currentState = determineNextCombatState();
+            actionQueue.add(() -> {
+                currentState = prevState;
+            });
             return;
         }
 
@@ -649,7 +655,10 @@ public class SandCrabTask implements BotTask {
         delayTicks = humanizerService.getRandomDelay(3, 5);
         
         // Return to previous state
-        currentState = determineNextCombatState();
+//        currentState = determineNextCombatState();
+        actionQueue.add(() -> {
+            currentState = prevState;
+        });
     }
 
     private void doDrinkingPotion() {
@@ -691,19 +700,18 @@ public class SandCrabTask implements BotTask {
     private void doResettingAggression() {
         log.info("Resetting aggression by walking to reset point");
         
-        // Walk to reset point
+        // Walk to reset point and back
         WorldPoint resetPoint = currentSpot.getResetPoint();
         WalkTask resetWalkTask = new WalkTask(plugin, pathfinderConfig, resetPoint, actionService, gameService, humanizerService);
-
+        WalkTask returnWalkTask = new WalkTask(plugin, pathfinderConfig, plugin.getClient().getLocalPlayer().getWorldLocation(), actionService, gameService, humanizerService);
+        taskManager.pushTask(returnWalkTask);
         taskManager.pushTask(resetWalkTask);
         
-        // Set flag to return to combat spot after reset
         actionQueue.add(() -> {
-            log.info("Reset walk completed, now walking back to combat spot");
-            // Reset aggression timer
+           log.info("Aggression has been reset, combat should resume");
+            currentState = SandCrabState.WAITING_FOR_AGGRESSION;
             lastAggressionResetTime = System.currentTimeMillis();
             needsAggression = false;
-            currentState = SandCrabState.WALKING_TO_RESET;
         });
     }
 
