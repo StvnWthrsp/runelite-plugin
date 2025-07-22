@@ -115,7 +115,7 @@ public class BankTask implements BotTask {
     }
 
     private void findAndOpenBank() {
-        GameObject bankBooth = gameService.findNearestGameObject(10583, 10355, 18491, 27291);
+        GameObject bankBooth = gameService.findNearestGameObject(10583, 10355, 18491, 27291, 53015);
         if (bankBooth != null) {
             log.info("Found bank booth. Clicking it.");
             if (!actionService.isInteracting()) {

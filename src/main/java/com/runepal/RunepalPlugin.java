@@ -410,6 +410,8 @@ public class RunepalPlugin extends Plugin
 				return Banks.VARROCK_WEST.getBankCoordinates();
 			case "INTERIOR_TEST":
 				return Banks.INTERIOR_TEST.getBankCoordinates();
+			case "HUNTER_GUILD":
+				return Banks.HUNTER_GUILD.getBankCoordinates();
 			default:
 				return null;
 		}

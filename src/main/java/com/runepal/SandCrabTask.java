@@ -92,22 +92,22 @@ public class SandCrabTask implements BotTask {
     static {
         CRAB_SPOTS.put(1, new CrabSpot(
             new WorldPoint(1600, 2935, 0), // Combat spot
-            new WorldPoint(1620, 2941, 0), // Reset spot
+            new WorldPoint(1624, 2941, 0), // Reset spot
             1, "Single crab spot"
         ));
         CRAB_SPOTS.put(2, new CrabSpot(
             new WorldPoint(1586, 2918, 0), // Combat spot
-            new WorldPoint(1620, 2941, 0), // Reset spot
+            new WorldPoint(1624, 2941, 0), // Reset spot
             2, "Double crab spot"
         ));
         CRAB_SPOTS.put(3, new CrabSpot(
             new WorldPoint(1597, 2941, 0), // Combat spot
-            new WorldPoint(1620, 2941, 0), // Reset spot
+            new WorldPoint(1624, 2941, 0), // Reset spot
             3, "Triple crab spot"
         ));
         CRAB_SPOTS.put(4, new CrabSpot(
             new WorldPoint(1612, 2891, 0),
-            new WorldPoint(1620, 2941, 0),
+            new WorldPoint(1612, 2918, 0),
             4, "Quad crab spot"
         ));
     }
@@ -761,7 +761,7 @@ public class SandCrabTask implements BotTask {
         // Check food supplies against configured minimum threshold
         int foodCount = getFoodCount();
         int minFoodCount = config.sandCrabMinFoodCount();
-        if (foodCount <= minFoodCount) {
+        if (foodCount < minFoodCount) {
             log.info("Food count ({}) is at or below minimum threshold ({}), need to bank", foodCount, minFoodCount);
             return true;
         }
@@ -772,7 +772,7 @@ public class SandCrabTask implements BotTask {
         if (configuredPotion != PotionType.NONE) {
             int potionCount = getPotionCount(configuredPotion);
             int minPotionCount = config.sandCrabMinPotionCount();
-            if (potionCount <= minPotionCount) {
+            if (potionCount < minPotionCount) {
                 log.info("Potion count ({}) is at or below minimum threshold ({}), need to bank", potionCount, minPotionCount);
                 return true;
             }
@@ -880,6 +880,7 @@ public class SandCrabTask implements BotTask {
         BankTask bankTask = new BankTask(plugin, actionService, gameService, eventService);
         
         taskManager.pushTask(bankTask);
+        taskManager.pushTask(new WalkTask(plugin, pathfinderConfig, Banks.HUNTER_GUILD.getBankCoordinates(), actionService, gameService, humanizerService));
         currentState = SandCrabState.WAITING_FOR_SUBTASK;
     }
 
