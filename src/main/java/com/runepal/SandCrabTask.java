@@ -10,7 +10,6 @@ import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.events.AnimationChanged;
 import net.runelite.api.events.GameTick;
 import net.runelite.api.events.InteractingChanged;
-import net.runelite.api.events.ItemContainerChanged;
 import net.runelite.api.events.StatChanged;
 import net.runelite.api.gameval.InventoryID;
 
@@ -50,7 +49,6 @@ public class SandCrabTask implements BotTask {
     private Consumer<StatChanged> statHandler;
     private Consumer<InteractingChanged> interactingHandler;
     private Consumer<GameTick> gameTickHandler;
-    private Consumer<ItemContainerChanged> itemContainerHandler;
 
     // Internal state for sand crab FSM
     private enum SandCrabState {
@@ -277,14 +275,12 @@ public class SandCrabTask implements BotTask {
         this.statHandler = this::onStatChanged;
         this.interactingHandler = this::onInteractingChanged;
         this.gameTickHandler = this::onGameTick;
-        this.itemContainerHandler = this::onItemContainerChanged;
         
         // Subscribe to events
         this.eventService.subscribe(AnimationChanged.class, animationHandler);
         this.eventService.subscribe(StatChanged.class, statHandler);
         this.eventService.subscribe(InteractingChanged.class, interactingHandler);
         this.eventService.subscribe(GameTick.class, gameTickHandler);
-        this.eventService.subscribe(ItemContainerChanged.class, itemContainerHandler);
         
         // Initialize scheduler
         if (this.scheduler == null || this.scheduler.isShutdown()) {
@@ -311,6 +307,9 @@ public class SandCrabTask implements BotTask {
         } else {
             this.currentState = SandCrabState.WAITING_FOR_AGGRESSION;
         }
+
+        // Update UI
+        plugin.setCurrentState(currentState.toString());
     }
 
     @Override
@@ -325,14 +324,12 @@ public class SandCrabTask implements BotTask {
         this.eventService.unsubscribe(StatChanged.class, statHandler);
         this.eventService.unsubscribe(InteractingChanged.class, interactingHandler);
         this.eventService.unsubscribe(GameTick.class, gameTickHandler);
-        this.eventService.unsubscribe(ItemContainerChanged.class, itemContainerHandler);
         
         // Clear handler references
         this.animationHandler = null;
         this.statHandler = null;
         this.interactingHandler = null;
         this.gameTickHandler = null;
-        this.itemContainerHandler = null;
         
         // Shutdown scheduler
         if (this.scheduler != null && !this.scheduler.isShutdown()) {
@@ -460,7 +457,7 @@ public class SandCrabTask implements BotTask {
         updateIdleTracking();
         
         // Update UI
-        plugin.setCurrentState("Sand Crab: " + currentState.toString());
+        plugin.setCurrentState(currentState.toString());
     }
 
     // Event handlers
@@ -470,7 +467,7 @@ public class SandCrabTask implements BotTask {
         }
         
         int animationId = animationChanged.getActor().getAnimation();
-        log.debug("Player animation changed: {}", animationId);
+        log.debug("Player animation changed, resetting idle tick counter: {}", animationId);
         
         // Reset idle tracking on any animation
         this.idleTicks = 0;
@@ -550,18 +547,6 @@ public class SandCrabTask implements BotTask {
         this.idleTicks++;
     }
 
-    public void onItemContainerChanged(ItemContainerChanged itemContainerChanged) {
-        if (itemContainerChanged.getContainerId() != InventoryID.INV) {
-            return;
-        }
-        
-        // Check if we need to bank due to supply changes
-        if (needsToBank()) {
-            log.info("Supplies depleted, need to bank");
-            // Don't immediately change state here, let the main loop handle it
-        }
-    }
-
     // --- FSM STATE IMPLEMENTATIONS ---
 
     private void doIdle() {
@@ -587,10 +572,7 @@ public class SandCrabTask implements BotTask {
     }
 
     private void doWaitingForAggression() {
-        WorldPoint playerLocation = gameService.getPlayerLocation();
-        
-        // Check if we're at the correct position
-        if (!playerLocation.equals(currentSpot.getCombatPoint())) {
+        if (needsToWalkToSpot()) {
             log.debug("Not at combat position, moving to spot");
             pushWalkToSpotTask();
             return;
