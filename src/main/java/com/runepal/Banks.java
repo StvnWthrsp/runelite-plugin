@@ -8,7 +8,6 @@ public enum Banks {
     LUMBRIDGE("Lumbridge", new WorldPoint(3208, 3220, 2)),
     VARROCK_WEST("Varrock West", new WorldPoint(3183, 3436, 0)),
     HUNTER_GUILD("Hunter Guild", new WorldPoint(1542, 3040, 0));
-    
 
     private final String name;
     private final WorldPoint worldPoint;

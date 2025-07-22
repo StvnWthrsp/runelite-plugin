@@ -292,15 +292,15 @@ public class SandCrabTask implements BotTask {
         
         // Select optimal crab spot based on configuration
         this.currentSpot = selectOptimalCrabSpot();
-        log.info("Selected crab spot: {}", currentSpot.getDescription());
+        log.debug("Selected crab spot: {}", currentSpot.getDescription());
         
         // Initialize aggression timer
         this.lastAggressionResetTime = System.currentTimeMillis();
 
-        // Initialize camera rotation timer
-        this.cameraRotateTimerMs = Math.round(humanizerService.getGaussian(5, 1.2, 0.0) * 60 * 1000);
+        // Initialize camera rotation timer, gaussian distribution with mean 5 minutes
+        this.cameraRotateTimerMs = Math.round(humanizerService.getGaussian(5, 1.5, 0.0) * 60 * 1000);
         this.lastRotateTime = System.currentTimeMillis();
-        log.info("Camera will rotate after {} ms", cameraRotateTimerMs);
+        log.trace("Camera will rotate after {} ms", cameraRotateTimerMs);
         
         // Determine starting state
         if (needsToBank()) {
@@ -384,6 +384,7 @@ public class SandCrabTask implements BotTask {
         }
 
         // Check for critical needs first
+        // TODO: Better state prioritization. Do we even need distinct states for eating, or does that produce an unnecessary delay?
         if (shouldEat()) {
             if (currentState != SandCrabState.EATING) {
                 log.info("Health is low, switching to eating state");
@@ -643,7 +644,7 @@ public class SandCrabTask implements BotTask {
 
         log.info("Eating food at point: {}", foodPoint);
         actionService.sendClickRequest(foodPoint, false);
-        
+
         // Wait for eating animation
         delayTicks = humanizerService.getRandomDelay(3, 5);
         
@@ -754,26 +755,26 @@ public class SandCrabTask implements BotTask {
     }
 
     private boolean needsToBank() {
-        if (!"BANK".equals(config.sandCrabInventoryAction())) {
+        if (!config.sandCrabInventoryAction().equals("BANK")) {
             return false;
         }
-        
+
         // Check food supplies against configured minimum threshold
         int foodCount = getFoodCount();
         int minFoodCount = config.sandCrabMinFoodCount();
-        if (foodCount < minFoodCount) {
-            log.info("Food count ({}) is at or below minimum threshold ({}), need to bank", foodCount, minFoodCount);
+        if (foodCount < minFoodCount && minFoodCount > 0) {
+            log.info("Food count ({}) is below minimum threshold ({}), need to bank", foodCount, minFoodCount);
             return true;
         }
-        
+
         // Check potion supplies against configured minimum threshold
         String potionType = config.sandCrabPotion();
         PotionType configuredPotion = PotionType.fromString(potionType);
         if (configuredPotion != PotionType.NONE) {
             int potionCount = getPotionCount(configuredPotion);
             int minPotionCount = config.sandCrabMinPotionCount();
-            if (potionCount < minPotionCount) {
-                log.info("Potion count ({}) is at or below minimum threshold ({}), need to bank", potionCount, minPotionCount);
+            if (potionCount < minPotionCount && minPotionCount > 0) {
+                log.info("Potion count ({}) is below minimum threshold ({}), need to bank", potionCount, minPotionCount);
                 return true;
             }
         }
@@ -878,9 +879,10 @@ public class SandCrabTask implements BotTask {
         // Create and push banking task
         // TODO: Add itemsToWithdraw Map<Integer, Integer> to BankTask
         BankTask bankTask = new BankTask(plugin, actionService, gameService, eventService);
-        
+        WalkTask walkTask = new WalkTask(plugin, pathfinderConfig, Banks.HUNTER_GUILD.getBankCoordinates(), actionService, gameService, humanizerService);
+
         taskManager.pushTask(bankTask);
-        taskManager.pushTask(new WalkTask(plugin, pathfinderConfig, Banks.HUNTER_GUILD.getBankCoordinates(), actionService, gameService, humanizerService));
+        taskManager.pushTask(walkTask);
         currentState = SandCrabState.WAITING_FOR_SUBTASK;
     }
 

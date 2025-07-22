@@ -70,7 +70,8 @@ public class GameStateService {
         ItemContainer inventory = client.getItemContainer(InventoryID.INV);
         if (inventory == null) return -1;
         Item item = inventory.getItem(slot);
-        return item != null ? item.getId() : -1;
+        if (item == null) return -1;
+        return item.getId();
     }
 
     /**
