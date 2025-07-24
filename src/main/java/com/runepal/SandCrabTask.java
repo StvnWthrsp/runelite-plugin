@@ -509,7 +509,7 @@ public class SandCrabTask implements BotTask {
             // Update state if waiting for combat
             if (currentState == SandCrabState.WAITING_FOR_AGGRESSION) {
                 actionQueue.add(() -> {
-                    log.info("Combat detected through XP gain");
+                    log.debug("Combat detected through XP gain");
                     currentState = SandCrabState.COMBAT_ACTIVE;
                 });
             }
@@ -527,7 +527,7 @@ public class SandCrabTask implements BotTask {
             // Check if we should transition out of combat
             if (currentState == SandCrabState.COMBAT_ACTIVE) {
                 actionQueue.add(() -> {
-                    log.info("Combat ended, transitioning to waiting state");
+                    log.debug("Combat ended, transitioning to waiting state");
                     currentState = SandCrabState.WAITING_FOR_AGGRESSION;
                 });
             }
@@ -580,7 +580,7 @@ public class SandCrabTask implements BotTask {
         
         // Check if crabs are already aggressive
         if (isInCombat()) {
-            log.info("Already in combat, transitioning to combat state");
+            log.debug("Already in combat, transitioning to combat state");
             currentState = SandCrabState.COMBAT_ACTIVE;
             return;
         }

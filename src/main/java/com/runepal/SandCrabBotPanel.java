@@ -6,7 +6,7 @@ import javax.swing.*;
 import java.awt.*;
 
 public class SandCrabBotPanel extends PluginPanel {
-    private final JLabel statusLabel = new JLabel("Status: IDLE");
+    private final JLabel statusLabel = new JLabel("IDLE");
     private final JButton toggleButton = new JButton("Start");
     private final RunepalPlugin plugin;
     private final BotConfig config;
