@@ -36,12 +36,12 @@ public class BotPanel extends PluginPanel {
         JPanel dropdownPanel = new JPanel(new BorderLayout());
         dropdownPanel.setBorder(BorderFactory.createTitledBorder("Select Bot Type"));
         dropdownPanel.add(botTypeComboBox, BorderLayout.CENTER);
-        
+
         // Combine connection and dropdown into top panel
         JPanel topPanel = new JPanel(new BorderLayout());
         topPanel.add(connectionPanel, BorderLayout.NORTH);
         topPanel.add(dropdownPanel, BorderLayout.CENTER);
-        
+
         add(topPanel, BorderLayout.NORTH);
         add(contentPanel, BorderLayout.CENTER);
         
@@ -60,11 +60,10 @@ public class BotPanel extends PluginPanel {
     
     private JPanel createConnectionControlsPanel() {
         JPanel connectionPanel = new JPanel(new BorderLayout());
-        connectionPanel.setBorder(BorderFactory.createTitledBorder("Connection"));
+        connectionPanel.setBorder(BorderFactory.createTitledBorder("Optional Connection"));
         
         // Connection status label
-        JLabel connectionLabel = new JLabel("Connection: DISCONNECTED");
-        connectionLabel.setForeground(Color.RED);
+        JLabel connectionLabel = new JLabel("DISCONNECTED");
         
         // Connection buttons
         JPanel buttonPanel = new JPanel(new GridLayout(1, 2));
@@ -96,13 +95,13 @@ public class BotPanel extends PluginPanel {
     
     private void updateConnectionStatus(JLabel connectionLabel, JButton connectButton, JButton reconnectButton) {
         if (plugin.isAutomationConnected()) {
-            connectionLabel.setText("Connection: CONNECTED");
+            connectionLabel.setText("CONNECTED");
             connectionLabel.setForeground(Color.GREEN);
             connectButton.setEnabled(false);
             reconnectButton.setEnabled(false);
         } else {
-            connectionLabel.setText("Connection: DISCONNECTED");
-            connectionLabel.setForeground(Color.RED);
+            connectionLabel.setText("DISCONNECTED");
+            connectionLabel.setForeground(Color.LIGHT_GRAY);
             connectButton.setEnabled(true);
             reconnectButton.setEnabled(true);
         }
