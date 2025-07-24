@@ -1,10 +1,12 @@
 package com.runepal;
 
+import lombok.extern.slf4j.Slf4j;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.ui.PluginPanel;
 import javax.swing.*;
 import java.awt.*;
 
+@Slf4j
 public class BotPanel extends PluginPanel {
     private final RunepalPlugin plugin;
     private final BotConfig config;
@@ -130,8 +132,11 @@ public class BotPanel extends PluginPanel {
             case SAND_CRAB_BOT:
                 currentBotPanel = createSandCrabBotPanel();
                 break;
-            // Add other bot types here in the future
+            case GEMSTONE_CRAB_BOT:
+                currentBotPanel = createGemstoneCrabBotPanel();
+                break;
             default:
+                log.warn("Unable to load a panel for {}", botType);
                 currentBotPanel = createEmptyPanel();
                 break;
         }
@@ -150,23 +155,23 @@ public class BotPanel extends PluginPanel {
     }
     
     private JPanel createCombatBotPanel() {
-        // Create the combat-specific panel
         return new CombatBotPanel(plugin, config, configManager);
     }
     
     private JPanel createFishingBotPanel() {
-        // Create the fishing-specific panel
         return new FishingBotPanel(plugin, config, configManager);
     }
     
     private JPanel createWoodcuttingBotPanel() {
-        // Create the woodcutting-specific panel
         return new WoodcuttingBotPanel(plugin, config, configManager);
     }
     
     private JPanel createSandCrabBotPanel() {
-        // Create the sand crab-specific panel
         return new SandCrabBotPanel(plugin, config, configManager);
+    }
+
+    private JPanel createGemstoneCrabBotPanel() {
+        return new GemstoneCrabBotPanel(plugin, config, configManager);
     }
     
     private JPanel createEmptyPanel() {
@@ -192,6 +197,8 @@ public class BotPanel extends PluginPanel {
             ((WoodcuttingBotPanel) currentBotPanel).setStatus(status);
         } else if (currentBotPanel instanceof SandCrabBotPanel) {
             ((SandCrabBotPanel) currentBotPanel).setStatus(status);
+        }  else if (currentBotPanel instanceof GemstoneCrabBotPanel) {
+            ((GemstoneCrabBotPanel) currentBotPanel).setStatus(status);
         }
     }
     
@@ -206,6 +213,8 @@ public class BotPanel extends PluginPanel {
             ((WoodcuttingBotPanel) currentBotPanel).setButtonText(text);
         } else if (currentBotPanel instanceof SandCrabBotPanel) {
             ((SandCrabBotPanel) currentBotPanel).setButtonText(text);
+        }  else if (currentBotPanel instanceof GemstoneCrabBotPanel) {
+            ((GemstoneCrabBotPanel) currentBotPanel).setButtonText(text);
         }
     }
     

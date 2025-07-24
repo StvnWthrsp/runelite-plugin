@@ -9,6 +9,7 @@ public enum BotType {
     FISHING_BOT("Fishing"),
     WOODCUTTING_BOT("Woodcutting"),
     SAND_CRAB_BOT("Sand Crab"),
+    GEMSTONE_CRAB_BOT("Gemstone Crab")
     ;
 
     private final String displayName;

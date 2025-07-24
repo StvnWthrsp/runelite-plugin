@@ -421,7 +421,6 @@ public class ActionService {
 
         // If mouse is not already over the gameObject, move the mouse
         if (!gameService.isMouseOverObject(gameObject)) {
-            log.info("Mouse is not over the object, moving mouse and scheduling interaction");
             sendMouseMoveRequestWithPendingInteraction(clickPoint, new GameObjectEntity(gameObject), action);
             return;
         }
@@ -453,13 +452,13 @@ public class ActionService {
             return;
         }
 
-        log.info("Interacting with NPC {} using action '{}'", npc.getName(), action);
+        log.debug("Interacting with NPC {} using action '{}'", npc.getName(), action);
         isCurrentlyInteracting = true;
         eventService.publish(new InteractionStartedEvent(npc, action));
 
         // If mouse is not already over the NPC, move the mouse
         if (!gameService.isMouseOverNpc(npc)) {
-            log.info("Mouse is not over the NPC, moving mouse and scheduling interaction");
+            log.debug("Mouse is not over the NPC, moving mouse and scheduling interaction");
             sendMouseMoveRequestWithPendingInteraction(clickPoint, new NpcEntity(npc), action);
             return;
         }
@@ -487,7 +486,7 @@ public class ActionService {
 
         // If left-click option matches action, just click
         if (Text.removeTags(menuEntries[menuEntries.length - 1].getOption()).equals(action)) {
-            log.info("Left-click action {} matches expected action {}, sending click", Text.removeTags(menuEntries[menuEntries.length - 1].getTarget()), action);
+            log.debug("Left-click action {} matches expected action {}, sending click", Text.removeTags(menuEntries[menuEntries.length - 1].getTarget()), action);
             sendClickRequest(currentMousePoint, false);
             isCurrentlyInteracting = false;
             eventService.publish(new InteractionCompletedEvent(npc, action, true));
@@ -495,7 +494,7 @@ public class ActionService {
         }
 
         // Otherwise, right-click and schedule the click on the menu entry
-        log.info("Left-click action did not match, right-clicking");
+        log.debug("Left-click action did not match, right-clicking");
         sendRightClickRequest(currentMousePoint);
         scheduler.schedule(() -> {
             MenuEntry[] currentMenuEntries = plugin.getClient().getMenu().getMenuEntries();
@@ -570,7 +569,7 @@ public class ActionService {
 
         // If left-click option matches action, just click
         if (Text.removeTags(menuEntries[menuEntries.length - 1].getOption()).equals(action)) {
-            log.info("Left-click action {} matches expected action {}, sending click", Text.removeTags(menuEntries[menuEntries.length - 1].getTarget()), action);
+            log.debug("Left-click action {} matches expected action {}, sending click", Text.removeTags(menuEntries[menuEntries.length - 1].getTarget()), action);
             sendClickRequest(currentMousePoint, false);
             isCurrentlyInteracting = false;
             eventService.publish(new InteractionCompletedEvent(gameObject, action, true));
@@ -578,7 +577,7 @@ public class ActionService {
         }
 
         // Otherwise, right-click and schedule the click on the menu entry
-        log.info("Left-click action did not match, right-clicking");
+        log.debug("Left-click action did not match, right-clicking");
         sendRightClickRequest(currentMousePoint);
         scheduler.schedule(() -> {
             MenuEntry[] currentMenuEntries = plugin.getClient().getMenu().getMenuEntries();
@@ -660,7 +659,7 @@ public class ActionService {
     }
 
     public void sendClickRequest(Point clickPoint, boolean move) {
-        log.info("Sending click request to point: {}, move: {}", clickPoint, move);
+        log.debug("Sending click request to point: {}, move: {}", clickPoint, move);
         if (!move) {
             if (plugin.isAutomationConnected()) {
                 if (!pipeService.sendClick(0, 0, false)) {

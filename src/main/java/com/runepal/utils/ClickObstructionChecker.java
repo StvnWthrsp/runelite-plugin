@@ -36,6 +36,7 @@ public class ClickObstructionChecker {
         }
 
         Widget safeArea = client.getWidget(InterfaceID.ToplevelOsrsStretch.HUD_CONTAINER_FRONT);
+        cameraMode = CameraMode.STRETCH;
         if (safeArea == null) {
             safeArea = client.getWidget(InterfaceID.ToplevelPreEoc.HUD_CONTAINER_FRONT);
             cameraMode = CameraMode.RESIZABLE;
@@ -47,7 +48,6 @@ public class ClickObstructionChecker {
         if (safeArea == null) {
             return false;
         }
-        cameraMode = CameraMode.STRETCH;
 
         if (cameraMode != CameraMode.RESIZABLE) {
             Rectangle safeAreaBounds = safeArea.getBounds();
