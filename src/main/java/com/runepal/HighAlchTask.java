@@ -4,6 +4,7 @@ import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Player;
 import net.runelite.api.events.AnimationChanged;
+import net.runelite.api.events.ClientTick;
 import net.runelite.api.events.InteractingChanged;
 import net.runelite.api.gameval.AnimationID;
 import net.runelite.api.gameval.ItemID;
@@ -28,6 +29,8 @@ public class HighAlchTask implements BotTask {
     private int delayTicks = 0;
     private int idleTicks = 0;
     private int itemIndex = 0;
+    private long elapsedClientTicks = 0;
+    private long elapsedGameTicks = 0;
 
     // State management variables
     @Getter
@@ -37,6 +40,7 @@ public class HighAlchTask implements BotTask {
 
     // Event consumers
     private Consumer<AnimationChanged> animationChangedHandler;
+    private Consumer<ClientTick> clientTickHandler;
 
     private enum HighAlchState {
         IDLE,
@@ -61,7 +65,9 @@ public class HighAlchTask implements BotTask {
     public void onStart() {
         log.info("Starting High Alch Task");
         this.animationChangedHandler = this::onAnimationChanged;
+        this.clientTickHandler = this::onClientTick;
         eventService.subscribe(AnimationChanged.class, animationChangedHandler);
+        eventService.subscribe(ClientTick.class, clientTickHandler);
 
         // Find the item's inventory location here so we don't have to check constantly
         for (int i = 0; i < 28; i++) {
@@ -73,6 +79,9 @@ public class HighAlchTask implements BotTask {
 
         actionService.openMagicInterface();
         isStarted = true;
+        elapsedClientTicks = 0;
+        elapsedGameTicks = 0;
+        currentState = HighAlchState.IDLE;
     }
 
     private void onAnimationChanged(AnimationChanged animationChanged) {
@@ -93,13 +102,46 @@ public class HighAlchTask implements BotTask {
 
     @Override
     public void onLoop() {
+        elapsedGameTicks++;
+        // if (prevState != currentState) {
+        //     log.info("Transitioning from {} to {}", prevState, currentState);
+        // }
+        // prevState = currentState;
+
+        if (delayTicks > 0) {
+            delayTicks--;
+            return;
+        }
+
+        // switch (currentState) {
+        //     case IDLE:
+        //         determineNextState();
+        //         break;
+        //     case WAITING_FOR_CAST:
+        //         doWaitingForCast();
+        //         break;
+        //     case STARTING_ALCH:
+        //         doStartingAlch();
+        //         break;
+        //     case CLICKING_ALCH_ITEM:
+        //         doClickingAlchItem();
+        //         break;
+        //     default:
+        //         log.error("Unknown state: {}", currentState);
+        //         break;
+        // }
+    }
+
+    private void onClientTick(ClientTick clientTick) {
+        elapsedClientTicks++;
         if (prevState != currentState) {
             log.info("Transitioning from {} to {}", prevState, currentState);
         }
         prevState = currentState;
 
-        if (delayTicks > 0) {
-            delayTicks--;
+        int clientDelayTicks = delayTicks * 30;
+
+        if (clientDelayTicks > 0) {
             return;
         }
 
@@ -145,6 +187,7 @@ public class HighAlchTask implements BotTask {
     public void onStop() {
         log.info("Stopping High Alch Task");
         eventService.unsubscribe(AnimationChanged.class, animationChangedHandler);
+        eventService.unsubscribe(ClientTick.class, clientTickHandler);
         isStarted = false;
         currentState = HighAlchState.IDLE;
     }
