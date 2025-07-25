@@ -6,6 +6,7 @@ import net.runelite.api.Player;
 import net.runelite.api.events.AnimationChanged;
 import net.runelite.api.events.InteractingChanged;
 import net.runelite.api.gameval.AnimationID;
+import net.runelite.api.gameval.ItemID;
 
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
@@ -14,7 +15,7 @@ import java.util.function.Consumer;
 @Slf4j
 public class HighAlchTask implements BotTask {
 
-    private static final int ITEM_ID = 0;
+    private static final int ITEM_ID = ItemID.XBOWS_CROSSBOW_BOLTS_RUNITE_TIPPED_ONYX_ENCHANTED;
 
     private final RunepalPlugin plugin;
     private final BotConfig config;
@@ -131,6 +132,9 @@ public class HighAlchTask implements BotTask {
 
     private void doClickingAlchItem() {
         log.info("Clicking alch item");
+        if (gameService.getInventoryItemPoint(itemIndex).getX() < 0 || gameService.getInventoryItemPoint(itemIndex).getY() < 0) {
+            return;
+        }
         actionService.sendClickRequest(gameService.getInventoryItemPoint(itemIndex), true);
         currentState = HighAlchState.WAITING_FOR_CAST;
     }
@@ -140,6 +144,7 @@ public class HighAlchTask implements BotTask {
         log.info("Stopping High Alch Task");
         eventService.unsubscribe(AnimationChanged.class, animationChangedHandler);
         isStarted = false;
+        currentState = HighAlchState.IDLE;
     }
 
     @Override
