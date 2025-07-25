@@ -79,12 +79,14 @@ public class HighAlchTask implements BotTask {
         if (animationChanged.getActor() != plugin.getClient().getLocalPlayer()) {
             return;
         }
-        if (gameService.isCurrentAnimation(AnimationID.HIGHLVLALCHEMY)) {
-            log.info("High alchemy animation started.");
+        int newAnimation = plugin.getClient().getLocalPlayer().getAnimation();
+        log.trace("New animation ID: {}", newAnimation);
+        if (gameService.isCurrentAnimation(AnimationID.HUMAN_CASTHIGHLVLALCHEMY)) {
+            log.debug("High alchemy animation started.");
             return;
         }
-        if (currentState == HighAlchState.WAITING_FOR_CAST && gameService.isCurrentAnimation(plugin.getClient().getLocalPlayer().getIdlePoseAnimation())) {
-            log.info("High alchemy animation ended.");
+        if (currentState == HighAlchState.WAITING_FOR_CAST) {
+            log.debug("High alchemy animation ended.");
             currentState = HighAlchState.STARTING_ALCH;
         }
     }

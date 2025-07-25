@@ -135,6 +135,9 @@ public class BotPanel extends PluginPanel {
             case GEMSTONE_CRAB_BOT:
                 currentBotPanel = createGemstoneCrabBotPanel();
                 break;
+            case HIGH_ALCH_BOT:
+                currentBotPanel = new HighAlchBotPanel(plugin, config, configManager);
+                break;
             default:
                 log.warn("Unable to load a panel for {}", botType);
                 currentBotPanel = createEmptyPanel();
