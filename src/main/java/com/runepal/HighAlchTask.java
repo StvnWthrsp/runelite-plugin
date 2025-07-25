@@ -2,15 +2,19 @@ package com.runepal;
 
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import net.runelite.api.Player;
 import net.runelite.api.events.AnimationChanged;
 import net.runelite.api.events.InteractingChanged;
 import net.runelite.api.gameval.AnimationID;
 
 import java.util.Objects;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 @Slf4j
 public class HighAlchTask implements BotTask {
+
+    private static final int ITEM_ID = 0;
 
     private final RunepalPlugin plugin;
     private final BotConfig config;
@@ -22,6 +26,7 @@ public class HighAlchTask implements BotTask {
 
     private int delayTicks = 0;
     private int idleTicks = 0;
+    private int itemIndex = 0;
 
     // State management variables
     @Getter
@@ -35,7 +40,8 @@ public class HighAlchTask implements BotTask {
     private enum HighAlchState {
         IDLE,
         WAITING_FOR_CAST,
-        STARTING_ALCH
+        STARTING_ALCH,
+        CLICKING_ALCH_ITEM
     }
 
     public HighAlchTask(RunepalPlugin plugin, BotConfig config, TaskManager taskManager,
@@ -55,6 +61,15 @@ public class HighAlchTask implements BotTask {
         log.info("Starting High Alch Task");
         this.animationChangedHandler = this::onAnimationChanged;
         eventService.subscribe(AnimationChanged.class, animationChangedHandler);
+
+        // Find the item's inventory location here so we don't have to check constantly
+        for (int i = 0; i < 28; i++) {
+            int itemId = gameService.getInventoryItemId(i);
+            if (itemId == ITEM_ID) {
+                itemIndex = i;
+            }
+        }
+
         actionService.openMagicInterface();
         isStarted = true;
     }
@@ -67,8 +82,10 @@ public class HighAlchTask implements BotTask {
             log.info("High alchemy animation started.");
             return;
         }
-        log.info("High alchemy animation ended.");
-        currentState = HighAlchState.STARTING_ALCH;
+        if (currentState == HighAlchState.WAITING_FOR_CAST && gameService.isCurrentAnimation(plugin.getClient().getLocalPlayer().getIdlePoseAnimation())) {
+            log.info("High alchemy animation ended.");
+            currentState = HighAlchState.STARTING_ALCH;
+        }
     }
 
     @Override
@@ -93,6 +110,9 @@ public class HighAlchTask implements BotTask {
             case STARTING_ALCH:
                 doStartingAlch();
                 break;
+            case CLICKING_ALCH_ITEM:
+                doClickingAlchItem();
+                break;
             default:
                 log.error("Unknown state: {}", currentState);
                 break;
@@ -106,6 +126,12 @@ public class HighAlchTask implements BotTask {
     private void doStartingAlch() {
         log.info("Starting alch");
         actionService.castSpell("high level alchemy");
+        currentState = HighAlchState.CLICKING_ALCH_ITEM;
+    }
+
+    private void doClickingAlchItem() {
+        log.info("Clicking alch item");
+        actionService.sendClickRequest(gameService.getInventoryItemPoint(itemIndex), true);
         currentState = HighAlchState.WAITING_FOR_CAST;
     }
 

@@ -42,6 +42,7 @@ public class ActionService {
     private volatile boolean isCurrentlyDropping = false;
     private final ClickObstructionChecker clickObstructionChecker;
     private volatile boolean isCurrentlyInteracting;
+    private volatile boolean isCastingSpell = false;
     
     // Map to track pending click actions for Windmouse movements
     private final ConcurrentHashMap<String, PendingClickAction> pendingClickActions = new ConcurrentHashMap<>();
