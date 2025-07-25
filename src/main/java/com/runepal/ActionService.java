@@ -6,6 +6,7 @@ import com.google.inject.Singleton;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.GameObject;
 import net.runelite.api.MenuEntry;
+import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.widgets.Widget;
 import net.runelite.client.util.Text;
 import net.runelite.api.WallObject;
@@ -228,9 +229,39 @@ public class ActionService {
         if (spellName.toLowerCase().contains("camelot")) {
             return castCityTeleport("Camelot Teleport");
         }
+        if (spellName.toLowerCase().contains("high level alchemy")) {
+            return castHighLevelAlchemy();
+        }
         
         // For other spells, try generic spell casting
         return castGenericSpell(spellName);
+    }
+
+    private boolean castHighLevelAlchemy() {
+        log.info("Casting high level alchemy");
+        try {
+            Widget highLevelAlchemySpell = findHighLevelAlchemySpell();
+            if (highLevelAlchemySpell != null) {
+                Point spellPoint = gameService.getRandomPointInBounds(highLevelAlchemySpell.getBounds());
+                sendClickRequest(spellPoint, true);
+                log.info("Clicked high level alchemy spell");
+                return true;
+            }
+        } catch (Exception e) {
+            log.error("Error casting high level alchemy: {}", e.getMessage());
+            return false;
+        }
+        return true;
+    }
+
+    private Widget findHighLevelAlchemySpell() {
+        log.info("Finding high level alchemy spell");
+        Widget highLevelAlchemySpell = plugin.getClient().getWidget(MagicSpellbook.HIGH_ALCHEMY);
+        if (highLevelAlchemySpell != null && !highLevelAlchemySpell.isHidden()) {
+            return highLevelAlchemySpell;
+        }
+        log.info("Failed to find high level alchemy spell");
+        return null;
     }
     
     /**
