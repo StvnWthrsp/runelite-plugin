@@ -202,6 +202,8 @@ public class BotPanel extends PluginPanel {
             ((SandCrabBotPanel) currentBotPanel).setStatus(status);
         }  else if (currentBotPanel instanceof GemstoneCrabBotPanel) {
             ((GemstoneCrabBotPanel) currentBotPanel).setStatus(status);
+        } else if (currentBotPanel instanceof HighAlchBotPanel) {
+            ((HighAlchBotPanel) currentBotPanel).setStatus(status);
         }
     }
     
@@ -218,6 +220,8 @@ public class BotPanel extends PluginPanel {
             ((SandCrabBotPanel) currentBotPanel).setButtonText(text);
         }  else if (currentBotPanel instanceof GemstoneCrabBotPanel) {
             ((GemstoneCrabBotPanel) currentBotPanel).setButtonText(text);
+        }  else if (currentBotPanel instanceof HighAlchBotPanel) {
+            ((HighAlchBotPanel) currentBotPanel).setButtonText(text);
         }
     }
     

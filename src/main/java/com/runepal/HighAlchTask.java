@@ -7,8 +7,11 @@ import net.runelite.api.events.AnimationChanged;
 import net.runelite.api.events.ClientTick;
 import net.runelite.api.events.InteractingChanged;
 import net.runelite.api.gameval.AnimationID;
+import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.gameval.ItemID;
+import net.runelite.api.widgets.Widget;
 
+import java.awt.*;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
@@ -16,7 +19,8 @@ import java.util.function.Consumer;
 @Slf4j
 public class HighAlchTask implements BotTask {
 
-    private static final int ITEM_ID = ItemID.XBOWS_CROSSBOW_BOLTS_RUNITE_TIPPED_ONYX_ENCHANTED;
+//    private static final int ITEM_ID = ItemID.XBOWS_CROSSBOW_BOLTS_RUNITE_TIPPED_ONYX_ENCHANTED;
+    private static final int ITEM_ID = 1306;
 
     private final RunepalPlugin plugin;
     private final BotConfig config;
@@ -27,8 +31,9 @@ public class HighAlchTask implements BotTask {
     private final HumanizerService humanizerService;
 
     private int delayTicks = 0;
+    private int clientDelayTicks;
     private int idleTicks = 0;
-    private int itemIndex = 0;
+    private int itemIndex = -1;
     private long elapsedClientTicks = 0;
     private long elapsedGameTicks = 0;
 
@@ -72,12 +77,18 @@ public class HighAlchTask implements BotTask {
         // Find the item's inventory location here so we don't have to check constantly
         for (int i = 0; i < 28; i++) {
             int itemId = gameService.getInventoryItemId(i);
-            if (itemId == ITEM_ID) {
+            if (itemId == config.highAlchItemId()) {
                 itemIndex = i;
             }
         }
+        if (itemIndex == -1) {
+            log.error("Requested item not found");
+            plugin.stopBot();
+        }
 
         actionService.openMagicInterface();
+        // Wait for a little over a tick to ensure the spellbook has time to open
+        clientDelayTicks = 40;
         isStarted = true;
         elapsedClientTicks = 0;
         elapsedGameTicks = 0;
@@ -97,6 +108,18 @@ public class HighAlchTask implements BotTask {
         if (currentState == HighAlchState.WAITING_FOR_CAST) {
             log.debug("High alchemy animation ended.");
             currentState = HighAlchState.STARTING_ALCH;
+
+            // Get a gaussian distribution value
+            double gaussianValue = humanizerService.getGaussian(1, 0.7, 0);
+            log.info("onAnimationChanged: Got gaussian value = {}", gaussianValue);
+            // Adjust gaussian to represent a number of client ticks
+            double adjustedGaussian = gaussianValue * 30;
+            log.info("onAnimationChanged: Adjusted gaussian value = {}", adjustedGaussian);
+            // Round the value to get the integer value
+            int gaussianInt = (int) Math.round(adjustedGaussian);
+            double gameTickVal = gaussianInt / 20.0;
+            log.info("Delaying spell cast for {} client ticks, {} game ticks", gaussianInt, gameTickVal);
+            clientDelayTicks = gaussianInt;
         }
     }
 
@@ -108,10 +131,10 @@ public class HighAlchTask implements BotTask {
         // }
         // prevState = currentState;
 
-        if (delayTicks > 0) {
-            delayTicks--;
-            return;
-        }
+//        if (delayTicks > 0) {
+//            delayTicks--;
+//            return;
+//        }
 
         // switch (currentState) {
         //     case IDLE:
@@ -139,9 +162,8 @@ public class HighAlchTask implements BotTask {
         }
         prevState = currentState;
 
-        int clientDelayTicks = delayTicks * 30;
-
         if (clientDelayTicks > 0) {
+            clientDelayTicks--;
             return;
         }
 
@@ -165,21 +187,41 @@ public class HighAlchTask implements BotTask {
     }
 
     private void doWaitingForCast() {
-        log.info("Waiting for cast");
     }
 
     private void doStartingAlch() {
         log.info("Starting alch");
         actionService.castSpell("high level alchemy");
         currentState = HighAlchState.CLICKING_ALCH_ITEM;
+
+        // Get a gaussian distribution value
+        double gaussianValue = humanizerService.getGaussian(1, 0.7, 0);
+        log.info("doStartingAlch: Got gaussian value = {}", gaussianValue);
+        // Adjust gaussian to represent a number of client ticks
+        double adjustedGaussian = gaussianValue * 30;
+        log.info("doStartingAlch: Adjusted gaussian value = {}", adjustedGaussian);
+        // Round the value to get the integer value
+        int gaussianInt = (int) Math.round(adjustedGaussian);
+        double gameTickVal = gaussianInt / 20.0;
+        log.info("Delaying item click for {} client ticks, {} game ticks", gaussianInt, gameTickVal);
+        clientDelayTicks = gaussianInt;
     }
 
     private void doClickingAlchItem() {
-        log.info("Clicking alch item");
+        log.trace("Clicking alch item");
         if (gameService.getInventoryItemPoint(itemIndex).getX() < 0 || gameService.getInventoryItemPoint(itemIndex).getY() < 0) {
             return;
         }
-        actionService.sendClickRequest(gameService.getInventoryItemPoint(itemIndex), true);
+        Widget inventoryWidget = plugin.getClient().getWidget(InterfaceID.Inventory.ITEMS);
+        if (inventoryWidget == null) return;
+        Widget itemWidget = inventoryWidget.getChild(itemIndex);
+        if (itemWidget == null) return;
+        if (itemWidget.getBounds().contains(plugin.getClient().getMouseCanvasPosition().getX(), plugin.getClient().getMouseCanvasPosition().getY())) {
+            actionService.sendClickRequest(null, false);
+        } else {
+            actionService.sendClickRequest(gameService.getInventoryItemPoint(itemIndex), true);
+        }
+//        actionService.sendClickRequest(gameService.getInventoryItemPoint(itemIndex), true);
         currentState = HighAlchState.WAITING_FOR_CAST;
     }
 

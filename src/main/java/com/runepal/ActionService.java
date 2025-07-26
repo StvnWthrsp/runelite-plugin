@@ -243,9 +243,13 @@ public class ActionService {
         try {
             Widget highLevelAlchemySpell = findHighLevelAlchemySpell();
             if (highLevelAlchemySpell != null) {
-                Point spellPoint = gameService.getRandomPointInBounds(highLevelAlchemySpell.getBounds());
-                sendClickRequest(spellPoint, true);
-                log.info("Clicked high level alchemy spell");
+                if (highLevelAlchemySpell.getBounds().contains(plugin.getClient().getMouseCanvasPosition().getX(), plugin.getClient().getMouseCanvasPosition().getY())) {
+                    sendClickRequest(null, false);
+                } else {
+                    Point spellPoint = gameService.getRandomPointInBounds(highLevelAlchemySpell.getBounds());
+                    sendClickRequest(spellPoint, true);
+                }
+                log.debug("Clicked high level alchemy spell");
                 return true;
             }
         } catch (Exception e) {
@@ -693,6 +697,7 @@ public class ActionService {
     public void sendClickRequest(Point clickPoint, boolean move) {
         log.debug("Sending click request to point: {}, move: {}", clickPoint, move);
         if (!move) {
+            Point currentMousePos = new Point(plugin.getClient().getMouseCanvasPosition().getX(), plugin.getClient().getMouseCanvasPosition().getY());
             if (plugin.isAutomationConnected()) {
                 if (!pipeService.sendClick(0, 0, false)) {
                     log.warn("Failed to send click command via pipe");
@@ -700,9 +705,9 @@ public class ActionService {
                 }
                 return;
             }
-            MouseEvent mousePressed = new MouseEvent(plugin.getClient().getCanvas(), MouseEvent.MOUSE_PRESSED, System.currentTimeMillis(), 0, clickPoint.x, clickPoint.y, 1, false, MouseEvent.BUTTON1);
+            MouseEvent mousePressed = new MouseEvent(plugin.getClient().getCanvas(), MouseEvent.MOUSE_PRESSED, System.currentTimeMillis(), 0, currentMousePos.x, currentMousePos.y, 1, false, MouseEvent.BUTTON1);
             plugin.getClient().getCanvas().dispatchEvent(mousePressed);
-            MouseEvent mouseReleased = new MouseEvent(plugin.getClient().getCanvas(), MouseEvent.MOUSE_RELEASED, System.currentTimeMillis(), 0, clickPoint.x, clickPoint.y, 1, false, MouseEvent.BUTTON1);
+            MouseEvent mouseReleased = new MouseEvent(plugin.getClient().getCanvas(), MouseEvent.MOUSE_RELEASED, System.currentTimeMillis(), 0, currentMousePos.x, currentMousePos.y, 1, false, MouseEvent.BUTTON1);
             plugin.getClient().getCanvas().dispatchEvent(mouseReleased);
             return;
         }
