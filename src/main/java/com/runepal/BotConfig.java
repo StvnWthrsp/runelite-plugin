@@ -489,6 +489,19 @@ public interface BotConfig extends Config
 		return 1306;
 	}
 
+	// Grinding bot specific settings
+	@ConfigItem(
+			keyName = "grindingItemId",
+			name = "Item",
+			description = "ID of Item to grind with pestle & mortar",
+			position = 47,
+			hidden = true
+	)
+	default int grindingItemId()
+	{
+		return 237;
+	}
+
 	// Combat Bot debugging section
 	@ConfigSection(
 			name = "Combat Bot - Debugging",

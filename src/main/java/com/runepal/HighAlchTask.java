@@ -19,9 +19,6 @@ import java.util.function.Consumer;
 @Slf4j
 public class HighAlchTask implements BotTask {
 
-//    private static final int ITEM_ID = ItemID.XBOWS_CROSSBOW_BOLTS_RUNITE_TIPPED_ONYX_ENCHANTED;
-    private static final int ITEM_ID = 1306;
-
     private final RunepalPlugin plugin;
     private final BotConfig config;
     private final TaskManager taskManager;
@@ -30,12 +27,8 @@ public class HighAlchTask implements BotTask {
     private final EventService eventService;
     private final HumanizerService humanizerService;
 
-    private int delayTicks = 0;
     private int clientDelayTicks;
-    private int idleTicks = 0;
     private int itemIndex = -1;
-    private long elapsedClientTicks = 0;
-    private long elapsedGameTicks = 0;
 
     // State management variables
     @Getter
@@ -44,7 +37,6 @@ public class HighAlchTask implements BotTask {
     private boolean isStarted = false;
 
     // Event consumers
-    private Consumer<AnimationChanged> animationChangedHandler;
     private Consumer<ClientTick> clientTickHandler;
 
     private enum HighAlchState {
@@ -69,9 +61,7 @@ public class HighAlchTask implements BotTask {
     @Override
     public void onStart() {
         log.info("Starting High Alch Task");
-        this.animationChangedHandler = this::onAnimationChanged;
         this.clientTickHandler = this::onClientTick;
-        eventService.subscribe(AnimationChanged.class, animationChangedHandler);
         eventService.subscribe(ClientTick.class, clientTickHandler);
 
         // Find the item's inventory location here so we don't have to check constantly
@@ -82,7 +72,7 @@ public class HighAlchTask implements BotTask {
             }
         }
         if (itemIndex == -1) {
-            log.error("Requested item not found");
+            log.error("Requested item not found. Stopping.");
             plugin.stopBot();
         }
 
@@ -90,73 +80,14 @@ public class HighAlchTask implements BotTask {
         // Wait for a little over a tick to ensure the spellbook has time to open
         clientDelayTicks = 40;
         isStarted = true;
-        elapsedClientTicks = 0;
-        elapsedGameTicks = 0;
         currentState = HighAlchState.IDLE;
-    }
-
-    private void onAnimationChanged(AnimationChanged animationChanged) {
-//        if (animationChanged.getActor() != plugin.getClient().getLocalPlayer()) {
-//            return;
-//        }
-//        int newAnimation = plugin.getClient().getLocalPlayer().getAnimation();
-//        log.trace("New animation ID: {}", newAnimation);
-//        if (gameService.isCurrentAnimation(AnimationID.HUMAN_CASTHIGHLVLALCHEMY)) {
-//            log.debug("High alchemy animation started.");
-//            return;
-//        }
-//        if (currentState == HighAlchState.WAITING_FOR_CAST) {
-//            log.debug("High alchemy animation ended.");
-//            currentState = HighAlchState.STARTING_ALCH;
-//
-//            // Get a gaussian distribution value
-//            double gaussianValue = humanizerService.getGaussian(1, 0.7, 0);
-//            log.info("onAnimationChanged: Got gaussian value = {}", gaussianValue);
-//            // Adjust gaussian to represent a number of client ticks
-//            double adjustedGaussian = gaussianValue * 30;
-//            log.info("onAnimationChanged: Adjusted gaussian value = {}", adjustedGaussian);
-//            // Round the value to get the integer value
-//            int gaussianInt = (int) Math.round(adjustedGaussian);
-//            double gameTickVal = gaussianInt / 20.0;
-//            log.info("Delaying spell cast for {} client ticks, {} game ticks", gaussianInt, gameTickVal);
-//            clientDelayTicks = gaussianInt;
-//        }
     }
 
     @Override
     public void onLoop() {
-        elapsedGameTicks++;
-        // if (prevState != currentState) {
-        //     log.info("Transitioning from {} to {}", prevState, currentState);
-        // }
-        // prevState = currentState;
-
-//        if (delayTicks > 0) {
-//            delayTicks--;
-//            return;
-//        }
-
-        // switch (currentState) {
-        //     case IDLE:
-        //         determineNextState();
-        //         break;
-        //     case WAITING_FOR_CAST:
-        //         doWaitingForCast();
-        //         break;
-        //     case STARTING_ALCH:
-        //         doStartingAlch();
-        //         break;
-        //     case CLICKING_ALCH_ITEM:
-        //         doClickingAlchItem();
-        //         break;
-        //     default:
-        //         log.error("Unknown state: {}", currentState);
-        //         break;
-        // }
     }
 
     private void onClientTick(ClientTick clientTick) {
-        elapsedClientTicks++;
         if (prevState != currentState) {
             log.info("Transitioning from {} to {}", prevState, currentState);
         }
@@ -165,6 +96,20 @@ public class HighAlchTask implements BotTask {
         if (clientDelayTicks > 0) {
             clientDelayTicks--;
             return;
+        }
+
+        // We need to look for the item again if it moves, if the config changes, or we run out of items to alch
+        if (gameService.getInventoryItemId(itemIndex) != config.highAlchItemId()) {
+            for (int i = 0; i < 28; i++) {
+                int itemId = gameService.getInventoryItemId(i);
+                if (itemId == config.highAlchItemId()) {
+                    itemIndex = i;
+                }
+            }
+            if (itemIndex == -1) {
+                log.error("Could not find item to continue alching. Stopping.");
+                plugin.stopBot();
+            }
         }
 
         switch (currentState) {
@@ -237,14 +182,12 @@ public class HighAlchTask implements BotTask {
         } else {
             actionService.sendClickRequest(gameService.getInventoryItemPoint(itemIndex), true);
         }
-//        actionService.sendClickRequest(gameService.getInventoryItemPoint(itemIndex), true);
         currentState = HighAlchState.WAITING_FOR_CAST;
     }
 
     @Override
     public void onStop() {
         log.info("Stopping High Alch Task");
-        eventService.unsubscribe(AnimationChanged.class, animationChangedHandler);
         eventService.unsubscribe(ClientTick.class, clientTickHandler);
         isStarted = false;
         currentState = HighAlchState.IDLE;
