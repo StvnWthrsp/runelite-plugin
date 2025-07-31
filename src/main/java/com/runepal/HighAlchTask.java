@@ -96,31 +96,31 @@ public class HighAlchTask implements BotTask {
     }
 
     private void onAnimationChanged(AnimationChanged animationChanged) {
-        if (animationChanged.getActor() != plugin.getClient().getLocalPlayer()) {
-            return;
-        }
-        int newAnimation = plugin.getClient().getLocalPlayer().getAnimation();
-        log.trace("New animation ID: {}", newAnimation);
-        if (gameService.isCurrentAnimation(AnimationID.HUMAN_CASTHIGHLVLALCHEMY)) {
-            log.debug("High alchemy animation started.");
-            return;
-        }
-        if (currentState == HighAlchState.WAITING_FOR_CAST) {
-            log.debug("High alchemy animation ended.");
-            currentState = HighAlchState.STARTING_ALCH;
-
-            // Get a gaussian distribution value
-            double gaussianValue = humanizerService.getGaussian(1, 0.7, 0);
-            log.info("onAnimationChanged: Got gaussian value = {}", gaussianValue);
-            // Adjust gaussian to represent a number of client ticks
-            double adjustedGaussian = gaussianValue * 30;
-            log.info("onAnimationChanged: Adjusted gaussian value = {}", adjustedGaussian);
-            // Round the value to get the integer value
-            int gaussianInt = (int) Math.round(adjustedGaussian);
-            double gameTickVal = gaussianInt / 20.0;
-            log.info("Delaying spell cast for {} client ticks, {} game ticks", gaussianInt, gameTickVal);
-            clientDelayTicks = gaussianInt;
-        }
+//        if (animationChanged.getActor() != plugin.getClient().getLocalPlayer()) {
+//            return;
+//        }
+//        int newAnimation = plugin.getClient().getLocalPlayer().getAnimation();
+//        log.trace("New animation ID: {}", newAnimation);
+//        if (gameService.isCurrentAnimation(AnimationID.HUMAN_CASTHIGHLVLALCHEMY)) {
+//            log.debug("High alchemy animation started.");
+//            return;
+//        }
+//        if (currentState == HighAlchState.WAITING_FOR_CAST) {
+//            log.debug("High alchemy animation ended.");
+//            currentState = HighAlchState.STARTING_ALCH;
+//
+//            // Get a gaussian distribution value
+//            double gaussianValue = humanizerService.getGaussian(1, 0.7, 0);
+//            log.info("onAnimationChanged: Got gaussian value = {}", gaussianValue);
+//            // Adjust gaussian to represent a number of client ticks
+//            double adjustedGaussian = gaussianValue * 30;
+//            log.info("onAnimationChanged: Adjusted gaussian value = {}", adjustedGaussian);
+//            // Round the value to get the integer value
+//            int gaussianInt = (int) Math.round(adjustedGaussian);
+//            double gameTickVal = gaussianInt / 20.0;
+//            log.info("Delaying spell cast for {} client ticks, {} game ticks", gaussianInt, gameTickVal);
+//            clientDelayTicks = gaussianInt;
+//        }
     }
 
     @Override
@@ -187,6 +187,22 @@ public class HighAlchTask implements BotTask {
     }
 
     private void doWaitingForCast() {
+        Widget highLevelAlchemySpell = plugin.getClient().getWidget(InterfaceID.MagicSpellbook.HIGH_ALCHEMY);
+        if (highLevelAlchemySpell != null && !highLevelAlchemySpell.isHidden()) {
+            currentState = HighAlchState.STARTING_ALCH;
+
+            // Get a gaussian distribution value
+            double gaussianValue = humanizerService.getGaussian(1, 0.7, 0);
+            log.info("onAnimationChanged: Got gaussian value = {}", gaussianValue);
+            // Adjust gaussian to represent a number of client ticks
+            double adjustedGaussian = gaussianValue * 20;
+            log.info("onAnimationChanged: Adjusted gaussian value = {}", adjustedGaussian);
+            // Round the value to get the integer value
+            int gaussianInt = (int) Math.round(adjustedGaussian);
+            double gameTickVal = gaussianInt / 20.0;
+            log.info("Delaying spell cast for {} client ticks, {} game ticks", gaussianInt, gameTickVal);
+            clientDelayTicks = gaussianInt;
+        }
     }
 
     private void doStartingAlch() {
@@ -198,7 +214,7 @@ public class HighAlchTask implements BotTask {
         double gaussianValue = humanizerService.getGaussian(1, 0.7, 0);
         log.info("doStartingAlch: Got gaussian value = {}", gaussianValue);
         // Adjust gaussian to represent a number of client ticks
-        double adjustedGaussian = gaussianValue * 30;
+        double adjustedGaussian = gaussianValue * 40;
         log.info("doStartingAlch: Adjusted gaussian value = {}", adjustedGaussian);
         // Round the value to get the integer value
         int gaussianInt = (int) Math.round(adjustedGaussian);
