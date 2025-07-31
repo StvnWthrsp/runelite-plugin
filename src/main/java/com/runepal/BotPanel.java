@@ -135,6 +135,9 @@ public class BotPanel extends PluginPanel {
             case GEMSTONE_CRAB_BOT:
                 currentBotPanel = createGemstoneCrabBotPanel();
                 break;
+            case HIGH_ALCH_BOT:
+                currentBotPanel = new HighAlchBotPanel(plugin, config, configManager);
+                break;
             default:
                 log.warn("Unable to load a panel for {}", botType);
                 currentBotPanel = createEmptyPanel();
@@ -199,6 +202,8 @@ public class BotPanel extends PluginPanel {
             ((SandCrabBotPanel) currentBotPanel).setStatus(status);
         }  else if (currentBotPanel instanceof GemstoneCrabBotPanel) {
             ((GemstoneCrabBotPanel) currentBotPanel).setStatus(status);
+        } else if (currentBotPanel instanceof HighAlchBotPanel) {
+            ((HighAlchBotPanel) currentBotPanel).setStatus(status);
         }
     }
     
@@ -215,6 +220,8 @@ public class BotPanel extends PluginPanel {
             ((SandCrabBotPanel) currentBotPanel).setButtonText(text);
         }  else if (currentBotPanel instanceof GemstoneCrabBotPanel) {
             ((GemstoneCrabBotPanel) currentBotPanel).setButtonText(text);
+        }  else if (currentBotPanel instanceof HighAlchBotPanel) {
+            ((HighAlchBotPanel) currentBotPanel).setButtonText(text);
         }
     }
     

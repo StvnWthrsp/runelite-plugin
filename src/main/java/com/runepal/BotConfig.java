@@ -476,6 +476,19 @@ public interface BotConfig extends Config
 		return 1;
 	}
 
+	// High Alch bot specific settings
+	@ConfigItem(
+			keyName = "highAlchItemId",
+			name = "Item",
+			description = "ID of Item to cast High Level Alchemy on",
+			position = 46,
+			hidden = true
+	)
+	default int highAlchItemId()
+	{
+		return 1306;
+	}
+
 	// Combat Bot debugging section
 	@ConfigSection(
 			name = "Combat Bot - Debugging",

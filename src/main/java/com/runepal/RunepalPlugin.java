@@ -286,6 +286,9 @@ public class RunepalPlugin extends Plugin
 				case GEMSTONE_CRAB_BOT:
 					taskManager.pushTask(new GemstoneCrabTask(this, config, taskManager, actionService, gameService, eventService, humanizerService));
 					break;
+				case HIGH_ALCH_BOT:
+					taskManager.pushTask(new HighAlchTask(this, config, taskManager, actionService, gameService, eventService, humanizerService));
+					break;
 				default:
 					log.warn("Unknown bot type: {}", botType);
 					stopBot();

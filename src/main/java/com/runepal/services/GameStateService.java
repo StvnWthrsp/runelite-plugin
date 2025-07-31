@@ -82,7 +82,7 @@ public class GameStateService {
      */
     public Point getInventoryItemPoint(int slot) {
         Widget inventoryWidget = client.getWidget(InterfaceID.Inventory.ITEMS);
-        if (inventoryWidget == null) return new Point(-1, -1);
+        if (inventoryWidget == null || inventoryWidget.isHidden()) return new Point(-1, -1);
         Widget itemWidget = inventoryWidget.getChild(slot);
         if (itemWidget == null) return new Point(-1, -1);
         return getRandomPointInBounds(itemWidget.getBounds());
