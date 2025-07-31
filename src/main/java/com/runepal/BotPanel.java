@@ -138,6 +138,9 @@ public class BotPanel extends PluginPanel {
             case HIGH_ALCH_BOT:
                 currentBotPanel = new HighAlchBotPanel(plugin, config, configManager);
                 break;
+            case GRINDING_BOT:
+                currentBotPanel = new GrindingBotPanel(plugin, config, configManager);
+                break;
             default:
                 log.warn("Unable to load a panel for {}", botType);
                 currentBotPanel = createEmptyPanel();
@@ -204,6 +207,8 @@ public class BotPanel extends PluginPanel {
             ((GemstoneCrabBotPanel) currentBotPanel).setStatus(status);
         } else if (currentBotPanel instanceof HighAlchBotPanel) {
             ((HighAlchBotPanel) currentBotPanel).setStatus(status);
+        } else if (currentBotPanel instanceof GrindingBotPanel) {
+            ((GrindingBotPanel) currentBotPanel).setStatus(status);
         }
     }
     
@@ -222,6 +227,8 @@ public class BotPanel extends PluginPanel {
             ((GemstoneCrabBotPanel) currentBotPanel).setButtonText(text);
         }  else if (currentBotPanel instanceof HighAlchBotPanel) {
             ((HighAlchBotPanel) currentBotPanel).setButtonText(text);
+        } else if (currentBotPanel instanceof GrindingBotPanel) {
+            ((GrindingBotPanel) currentBotPanel).setButtonText(text);
         }
     }
     

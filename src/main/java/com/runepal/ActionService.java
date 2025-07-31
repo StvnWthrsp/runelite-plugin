@@ -40,6 +40,7 @@ public class ActionService {
     private final BotConfig config;
     private final WindmouseService windmouseService;
     private volatile boolean isCurrentlyDropping = false;
+    private volatile boolean isCurrentlyGrinding = false;
     private final ClickObstructionChecker clickObstructionChecker;
     private volatile boolean isCurrentlyInteracting;
     private volatile boolean isCastingSpell = false;
@@ -183,12 +184,53 @@ public class ActionService {
         }, delay, TimeUnit.MILLISECONDS);
     }
 
+    public void powerGrind(int itemId) {
+        if (isCurrentlyGrinding) return;
+
+        int pestleAndMortarSlot = -1;
+
+        for (int i = 0; i < 28; i++) {
+            int slotItem = gameService.getInventoryItemId(i);
+            if (slotItem == 233) {
+                pestleAndMortarSlot = i;
+            }
+        }
+        if (pestleAndMortarSlot < 0) {
+            log.info("No pestle and mortar item found in inventory. Stopping.");
+            plugin.stopBot();
+        }
+
+        isCurrentlyGrinding = true;
+        log.info("Starting to grind inventory.");
+
+        long delay = (long) (Math.random() * (250 - 350)) + 350; // Initial delay before first click
+
+        for (int i = 0; i < 28; i++) {
+            int slotItem = gameService.getInventoryItemId(i);
+            if (itemId == slotItem) {
+                log.info("Clicking mortar at slot {} then item at slot {}", pestleAndMortarSlot, i);
+                sendClickRequest(gameService.getInventoryItemPoint(pestleAndMortarSlot), true);
+                sendClickRequest(gameService.getInventoryItemPoint(i), true);
+            }
+        }
+
+        // Schedule the final actions after all drops are scheduled
+        scheduler.schedule(() -> {
+            log.info("Finished grinding inventory.");
+            isCurrentlyGrinding = false; // Signal to the main loop
+        }, delay, TimeUnit.MILLISECONDS);
+    }
+
     /**
      * Check whether dropping is currently happening
      * @return true if power drop is not yet finished
      */
     public boolean isDropping() {
         return isCurrentlyDropping;
+    }
+
+    public boolean isGrinding() {
+        return isCurrentlyGrinding;
     }
 
         /**
@@ -428,6 +470,7 @@ public class ActionService {
      * @param action the action to perform
      */
     private void interactWithGameObjectInternal(GameObject gameObject, String action) {
+        int retries = 0;
         if (gameObject == null) {
             log.warn("Cannot interact with null game object");
             return;
@@ -440,15 +483,22 @@ public class ActionService {
         }
 
         Point clickPoint = gameService.getRandomClickablePoint(gameObject);
-        if (clickObstructionChecker.isClickObstructed(clickPoint)) {
-            log.warn("Click point is obstructed");
-            eventService.publish(new InteractionCompletedEvent(gameObject, action, false, "Click point obstructed"));
-            return;
-        }
-        if (clickPoint.x == -1) {
-            log.warn("Could not get clickable point for game object {}", gameObject.getId());
-            eventService.publish(new InteractionCompletedEvent(gameObject, action, false, "Could not get clickable point"));
-            return;
+        while(retries < 6) {
+            if (clickObstructionChecker.isClickObstructed(clickPoint)) {
+                log.warn("Click point is obstructed");
+                eventService.publish(new InteractionCompletedEvent(gameObject, action, false, "Click point obstructed"));
+                retries++;
+                clickPoint = gameService.getRandomClickablePoint(gameObject);
+                continue;
+            }
+            if (clickPoint.x == -1) {
+                log.warn("Could not get clickable point for game object {}", gameObject.getId());
+                eventService.publish(new InteractionCompletedEvent(gameObject, action, false, "Could not get clickable point"));
+                retries++;
+                clickPoint = gameService.getRandomClickablePoint(gameObject);
+                continue;
+            }
+            break;
         }
 
         log.info("Interacting with game object {} using action '{}'", gameObject.getId(), action);

@@ -98,7 +98,7 @@ public class HumanizerService {
         // Ensure we never return a value below the minimum
         gaussianValue = Math.max(gaussianValue, minimum);
 
-        log.info("Generated gaussian value: {}", gaussianValue);
+        log.trace("Generated gaussian value: {}", gaussianValue);
         return gaussianValue;
     }
     

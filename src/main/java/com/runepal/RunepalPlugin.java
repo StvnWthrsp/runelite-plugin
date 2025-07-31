@@ -289,6 +289,9 @@ public class RunepalPlugin extends Plugin
 				case HIGH_ALCH_BOT:
 					taskManager.pushTask(new HighAlchTask(this, config, taskManager, actionService, gameService, eventService, humanizerService));
 					break;
+				case GRINDING_BOT:
+					taskManager.pushTask(new GrindingTask(this, config, taskManager, actionService, gameService, eventService, humanizerService));
+					break;
 				default:
 					log.warn("Unknown bot type: {}", botType);
 					stopBot();
