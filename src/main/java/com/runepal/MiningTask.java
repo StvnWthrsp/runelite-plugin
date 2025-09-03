@@ -9,6 +9,7 @@ import net.runelite.api.Constants;
 import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.events.AnimationChanged;
 import net.runelite.api.events.GameTick;
+import net.runelite.api.events.ClientTick;
 import net.runelite.api.events.InteractingChanged;
 import net.runelite.api.events.StatChanged;
 import com.runepal.shortestpath.pathfinder.PathfinderConfig;
@@ -35,6 +36,8 @@ public class MiningTask implements BotTask {
     private Consumer<StatChanged> statHandler;
     private Consumer<InteractingChanged> interactingHandler;
     private Consumer<GameTick> gameTickHandler;
+    private Consumer<ClientTick> clientTickHandler;
+    private Consumer<MouseMovementCompletedEvent> mouseMovementCompletedHandler;
     
     // Internal state for this task only
     private enum MiningState {
@@ -58,9 +61,11 @@ public class MiningTask implements BotTask {
     private final Deque<Runnable> actionQueue = new ArrayDeque<>();
     private int idleTicks = 0;
     private int delayTicks = 0;
+    private int clientDelayTicks = 0;
     private GameObject targetRock = null;
     private GameObject nextRock = null;
     private volatile boolean droppingFinished = false;
+    private volatile boolean isMouseMoving = false;
 
     // Mining completion detection variables
     private long lastMiningXp = 0;
@@ -88,11 +93,15 @@ public class MiningTask implements BotTask {
         this.statHandler = this::onStatChanged;
         this.interactingHandler = this::onInteractingChanged;
         this.gameTickHandler = this::onGameTick;
+	this.clientTickHandler = this::onClientTick;
+	this.mouseMovementCompletedHandler = this::onMouseMovementCompleted;
         
         this.eventService.subscribe(AnimationChanged.class, animationHandler);
         this.eventService.subscribe(StatChanged.class, statHandler);
         this.eventService.subscribe(InteractingChanged.class, interactingHandler);
         this.eventService.subscribe(GameTick.class, gameTickHandler);
+	this.eventService.subscribe(ClientTick.class, clientTickHandler);
+	this.eventService.subscribe(MouseMovementCompletedEvent.class, mouseMovementCompletedHandler);
 
         if( gameService.getPlayerLocation().distanceTo(VARROCK_EAST_MINE) > 10 ) {
             taskManager.pushTask(new WalkTask(plugin, pathfinderConfig, VARROCK_EAST_MINE, actionService, gameService, humanizerService));
@@ -114,6 +123,9 @@ public class MiningTask implements BotTask {
         this.eventService.unsubscribe(StatChanged.class, statHandler);
         this.eventService.unsubscribe(InteractingChanged.class, interactingHandler);
         this.eventService.unsubscribe(GameTick.class, gameTickHandler);
+	this.eventService.unsubscribe(ClientTick.class, clientTickHandler);
+	this.eventService.unsubscribe(MouseMovementCompletedEvent.class, mouseMovementCompletedHandler);
+
         
         // Clear handler references
         this.animationHandler = null;
@@ -139,6 +151,10 @@ public class MiningTask implements BotTask {
     @Override
     public String getTaskName() {
         return "Mining";
+    }
+
+    private void onMouseMovementCompleted(MouseMovementCompletedEvent mouseMovementCompletedEvent) {
+        isMouseMoving = false;
     }
 
     @Override
@@ -188,10 +204,12 @@ public class MiningTask implements BotTask {
                 doCheckInventory();
                 break;
             case DROPPING:
-                if (!actionService.isDropping()) {
+		/*
+		if (!actionService.isDropping()) {
                     log.info("Dropping complete. Resuming mining.");
                     currentState = MiningState.FINDING_ROCK;
                 }
+		*/
                 break;
             case IDLE:
                 currentState = MiningState.FINDING_ROCK;
@@ -203,6 +221,17 @@ public class MiningTask implements BotTask {
                 break;
         }
         plugin.setCurrentState(currentState.toString());
+    }
+
+    private void onClientTick(ClientTick clientTick) {
+	    if (currentState == MiningState.DROPPING) {
+		    if (isMouseMoving) return;
+		    if (clientDelayTicks > 0) {
+			    clientDelayTicks--;
+			    return;
+		    }
+		    doDropping();
+	    }
     }
 
     // Event handlers, called by the main plugin class
@@ -373,15 +402,32 @@ public class MiningTask implements BotTask {
     }
 
     private void doDropping() {
-        currentState = MiningState.DROPPING;
-        int[] oreIds = plugin.getOreIds();
-        if (oreIds.length == 0) {
-            log.info("No ore ids found. Cannot drop inventory. Stopping bot.");
-            plugin.stopBot();
-            return;
-        }
-        log.debug("Inventory contains ore ids: {}", Arrays.toString(oreIds));
-        actionService.powerDrop(oreIds);
+	boolean keepDropping = false;
+	for (int oreId : plugin.getOreIds()) {
+		if (gameService.hasItem(oreId)) {
+			keepDropping = true;
+		}
+	}
+	if (!keepDropping) {
+		log.info("No ores to drop, continuing mining.");
+		currentState = MiningState.FINDING_ROCK;
+		return;
+	}
+        double gaussianValue = humanizerService.getGaussian(1, 0.7, 0);
+        int clientTickDelay = (int) Math.round(gaussianValue) * 3;
+
+	for (int slotIndex = 0; slotIndex < 28; slotIndex++) {
+		int itemInSlot = gameService.getInventoryItemId(slotIndex);
+		for (int itemIndex = 0; itemIndex < plugin.getOreIds().length; itemIndex++) {
+			int itemFromList = plugin.getOreIds()[itemIndex];
+			if (itemInSlot == itemFromList) {
+				actionService.sendClickRequest(gameService.getInventoryItemPoint(slotIndex), true);
+				isMouseMoving = true;
+			}
+		}
+		continue;
+	}
+	clientDelayTicks = clientTickDelay;
     }
 
     private void doHoverNextRock() {
