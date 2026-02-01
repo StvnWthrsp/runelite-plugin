@@ -34,23 +34,17 @@ import com.runepal.shortestpath.pathfinder.PathfinderConfig;
 import net.runelite.api.coords.WorldPoint;
 
 @Slf4j
-@PluginDescriptor(
-	name = "Runepal",
-	description = "Runepal automation platform"
-)
-public class RunepalPlugin extends Plugin
-{
+@PluginDescriptor(name = "Runepal", description = "Runepal automation platform")
+public class RunepalPlugin extends Plugin {
 	@Getter
 	@Inject
 	private Client client;
 
-	@Inject
-	private PipeService pipeService;
 	@Getter
-    private final Random random = new Random();
+	private final Random random = new Random();
 	@Getter
-    @Setter
-    private String currentState = "IDLE";
+	@Setter
+	private String currentState = "IDLE";
 	private BotPanel panel;
 	private NavigationButton navButton;
 	private boolean wasRunning = false;
@@ -70,6 +64,8 @@ public class RunepalPlugin extends Plugin
 	private PrayerService prayerService = null;
 	@Getter
 	private SupplyManager supplyManager = null;
+	@Getter
+	private RemoteInputService remoteInputService = null;
 
 	// Debugging and tracking variables
 	@Getter
@@ -87,7 +83,7 @@ public class RunepalPlugin extends Plugin
 
 	@Inject
 	private MiningBotRockOverlay rockOverlay;
-	
+
 	@Getter
 	@Inject
 	private MenuDebugOverlay menuDebugOverlay;
@@ -114,18 +110,17 @@ public class RunepalPlugin extends Plugin
 	private OverlayManager overlayManager;
 
 	@Override
-	protected void startUp() throws Exception
-	{
+	protected void startUp() throws Exception {
 		log.info("Runepal started!");
 		this.currentState = "IDLE";
 		panel = new BotPanel(this, config, configManager);
 		final BufferedImage icon = ImageUtil.loadImageResource(getClass(), "/images/icon.png");
 		navButton = NavigationButton.builder()
-			.tooltip("Runepal")
-			.icon(icon)
-			.priority(1)
-			.panel(panel)
-			.build();
+				.tooltip("Runepal")
+				.icon(icon)
+				.priority(1)
+				.panel(panel)
+				.build();
 		clientToolbar.addNavigation(navButton);
 
 		// Register overlays
@@ -136,20 +131,29 @@ public class RunepalPlugin extends Plugin
 		overlayManager.add(combatNpcOverlay);
 		overlayManager.add(menuDebugOverlay);
 
+		// Initialize RemoteInput first (inject and connect)
+		remoteInputService = new RemoteInputService();
+		if (!remoteInputService.injectAndConnect()) {
+			log.error("Failed to connect to RemoteInput. Bot may not function correctly.");
+		} else {
+			log.info("RemoteInput connected successfully to PID: {}", remoteInputService.getPid());
+		}
+
 		// Initialize core services
 		eventService = new EventService();
 		humanizerService = new HumanizerService();
-		
+
 		// Initialize game services in correct dependency order
 		GameStateService gameStateService = new GameStateService(client);
 		EntityService entityService = new EntityService(client, gameStateService);
 		ClickService clickService = new ClickService();
 		UtilityService utilityService = new UtilityService(client);
-		WindmouseService windMouseService = new WindmouseService(this, eventService, config);
-		
+		WindmouseService windMouseService = new WindmouseService(this, eventService, config, remoteInputService);
+
 		gameService = new GameService(gameStateService, entityService, clickService, utilityService);
-		actionService = new ActionService(this, pipeService, gameService, eventService, config, windMouseService);
-		
+		actionService = new ActionService(this, gameService, eventService, config, windMouseService,
+				remoteInputService);
+
 		// Initialize combat-specific services
 		potionService = new PotionService(client, gameService, actionService, humanizerService);
 		prayerService = new PrayerService(client, actionService, humanizerService);
@@ -157,13 +161,11 @@ public class RunepalPlugin extends Plugin
 
 		pathfinderConfig = new PathfinderConfig(client, config);
 
-		// Don't initialize pipe service automatically - user must click Connect
-		log.info("Runepal initialized. Use the 'Connect' button to connect to the RemoteInput server.");
+		log.info("Runepal initialized with RemoteInput.");
 	}
 
 	@Override
-	protected void shutDown() throws Exception
-	{
+	protected void shutDown() throws Exception {
 		log.info("Runepal shut down!");
 		clientToolbar.removeNavigation(navButton);
 		overlayManager.remove(mouseIndicatorOverlay);
@@ -184,31 +186,26 @@ public class RunepalPlugin extends Plugin
 			prayerService.shutdown();
 		}
 
-		// Kill the client if using RemoteInput
-		if (isAutomationConnected()) {
-			pipeService.sendExit();
+		// Disconnect RemoteInput
+		if (remoteInputService != null) {
+			remoteInputService.disconnect();
 		}
-		
 	}
 
 	@Subscribe
-	public void onGameStateChanged(GameStateChanged gameStateChanged)
-	{
-		if (gameStateChanged.getGameState() == GameState.LOGGED_IN)
-		{
+	public void onGameStateChanged(GameStateChanged gameStateChanged) {
+		if (gameStateChanged.getGameState() == GameState.LOGGED_IN) {
 			log.info("Runepal is running - player logged in.");
-		}
-		else if (gameStateChanged.getGameState() == GameState.LOGIN_SCREEN)
-		{
+		} else if (gameStateChanged.getGameState() == GameState.LOGIN_SCREEN) {
 			log.info("Player logged out - gracefully stopping bot.");
-			
+
 			// Gracefully stop the bot when player logs out
 			if (config.startBot()) {
 				stopBot();
 				log.info("Bot stopped due to logout.");
 			}
 		}
-		
+
 		// Publish game state change event
 		if (eventService != null) {
 			eventService.publish(gameStateChanged);
@@ -237,8 +234,7 @@ public class RunepalPlugin extends Plugin
 	}
 
 	@Provides
-	BotConfig provideConfig(ConfigManager configManager)
-	{
+	BotConfig provideConfig(ConfigManager configManager) {
 		return configManager.getConfig(BotConfig.class);
 	}
 
@@ -259,7 +255,8 @@ public class RunepalPlugin extends Plugin
 
 		if (isRunning && !wasRunning) {
 			if (!isAutomationConnected()) {
-				log.warn("Automation server not connected. RemoteInput will be disabled. Please click 'Connect' first.");
+				log.warn(
+						"Automation server not connected. RemoteInput will be disabled. Please click 'Connect' first.");
 				// stopBot();
 				// return;
 			}
@@ -269,25 +266,32 @@ public class RunepalPlugin extends Plugin
 			BotType botType = config.botType();
 			switch (botType) {
 				case MINING_BOT:
-					taskManager.pushTask(new MiningTask(this, config, taskManager, pathfinderConfig, actionService, gameService, eventService, humanizerService));
+					taskManager.pushTask(new MiningTask(this, config, taskManager, pathfinderConfig, actionService,
+							gameService, eventService, humanizerService));
 					break;
 				case COMBAT_BOT:
-					taskManager.pushTask(new CombatTask(this, config, taskManager, actionService, gameService, eventService, humanizerService, potionService));
+					taskManager.pushTask(new CombatTask(this, config, taskManager, actionService, gameService,
+							eventService, humanizerService, potionService));
 					break;
 				case FISHING_BOT:
-					taskManager.pushTask(new FishingTask(this, config, taskManager, pathfinderConfig, actionService, gameService, eventService, humanizerService));
+					taskManager.pushTask(new FishingTask(this, config, taskManager, pathfinderConfig, actionService,
+							gameService, eventService, humanizerService));
 					break;
 				case WOODCUTTING_BOT:
-					taskManager.pushTask(new WoodcuttingTask(this, config, taskManager, pathfinderConfig, actionService, gameService, eventService, humanizerService));
+					taskManager.pushTask(new WoodcuttingTask(this, config, taskManager, pathfinderConfig, actionService,
+							gameService, eventService, humanizerService));
 					break;
 				case SAND_CRAB_BOT:
-					taskManager.pushTask(new SandCrabTask(this, config, taskManager, pathfinderConfig, actionService, gameService, eventService, humanizerService, potionService, supplyManager));
+					taskManager.pushTask(new SandCrabTask(this, config, taskManager, pathfinderConfig, actionService,
+							gameService, eventService, humanizerService, potionService, supplyManager));
 					break;
 				case GEMSTONE_CRAB_BOT:
-					taskManager.pushTask(new GemstoneCrabTask(this, config, taskManager, actionService, gameService, eventService, humanizerService));
+					taskManager.pushTask(new GemstoneCrabTask(this, config, taskManager, actionService, gameService,
+							eventService, humanizerService));
 					break;
 				case HIGH_ALCH_BOT:
-					taskManager.pushTask(new HighAlchTask(this, config, taskManager, actionService, gameService, eventService, humanizerService));
+					taskManager.pushTask(new HighAlchTask(this, config, taskManager, actionService, gameService,
+							eventService, humanizerService));
 					break;
 				default:
 					log.warn("Unknown bot type: {}", botType);
@@ -438,15 +442,15 @@ public class RunepalPlugin extends Plugin
 		// treeOverlay.setTarget(tree);
 	}
 
-	public long getSessionXpGained()
-	{
-		if (sessionStartTime == null) return 0;
+	public long getSessionXpGained() {
+		if (sessionStartTime == null)
+			return 0;
 		return client.getSkillExperience(Skill.MINING) - sessionStartXp;
 	}
 
-	public Duration getSessionRuntime()
-	{
-		if (sessionStartTime == null) return Duration.ZERO;
+	public Duration getSessionRuntime() {
+		if (sessionStartTime == null)
+			return Duration.ZERO;
 		return Duration.between(sessionStartTime, Instant.now());
 	}
 
@@ -462,48 +466,7 @@ public class RunepalPlugin extends Plugin
 		return String.format("%,d", xpPerHour);
 	}
 
-	public boolean isAutomationConnected()
-	{
-		return pipeService.isConnected();
+	public boolean isAutomationConnected() {
+		return remoteInputService != null && remoteInputService.isConnected();
 	}
-
-	public boolean connectAutomation()
-	{
-		if (gameService == null || actionService == null) {
-			log.error("Unable to connect because plugin failed to initialize.");
-			return false;
-		}
-		try {
-			if (pipeService.connect()) {
-				// After connecting, send a "connect" command to the Python server
-				// to initialize the RemoteInput client.
-				if (pipeService.sendConnect()) {
-					log.info("Successfully connected and initialized automation server.");
-					panel.updateConnectionStatus();
-					return true;
-				} else {
-					log.error("Connected to pipe, but failed to send connect command.");
-					pipeService.disconnect();
-					panel.updateConnectionStatus();
-					return false;
-				}
-			} else {
-				log.error("Failed to establish connection with automation server.");
-				panel.updateConnectionStatus();
-				return false;
-			}
-		} catch (Exception e) {
-			log.error("Error connecting to automation server: {}", e.getMessage(), e);
-			pipeService.disconnect();
-			panel.updateConnectionStatus();
-			return false;
-		}
-	}
-
-	public boolean reconnectAutomation()
-	{
-		log.info("Attempting to reconnect to the automation server...");
-		pipeService.disconnect();
-		return connectAutomation();
-	}
-} 
+}
