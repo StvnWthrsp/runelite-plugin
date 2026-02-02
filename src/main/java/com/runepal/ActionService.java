@@ -155,7 +155,7 @@ public class ActionService {
         if (isCurrentlyDropping)
             return;
         if (itemIds.length == 0) {
-            log.info("No ore ids found. Cannot drop inventory. Stopping bot.");
+            log.warn("Attempted to start power drop, but itemIds array was empty. Check for logic mistakes. Stopping RunePal.");
             plugin.stopBot();
             return;
         }
@@ -163,27 +163,69 @@ public class ActionService {
         isCurrentlyDropping = true;
         log.info("Starting to drop inventory.");
 
-        sendKeyRequest("/key_hold", "shift");
-
-        long delay = (long) (Math.random() * (250 - 350)) + 350; // Initial delay before first click
-
+        // Build list of slots and their points to drop, must be done on client thread
+        java.util.List<Point> itemPointsList = new java.util.ArrayList<>();
         for (int i = 0; i < 28; i++) {
             int itemId = gameService.getInventoryItemId(i);
             if (gameService.isItemInList(itemId, itemIds)) {
-                final int finalI = i;
-                scheduler.schedule(() -> {
-                    sendClickRequest(gameService.getInventoryItemPoint(finalI), true);
-                }, delay, TimeUnit.MILLISECONDS);
-                delay += (long) (Math.random() * (250 - 350)) + 350; // Stagger subsequent clicks
+                Point itemPoint = gameService.getInventoryItemPoint(i);
+                if (itemPoint != null && itemPoint.x != -1) {
+                    itemPointsList.add(itemPoint);
+                }
             }
         }
 
-        // Schedule the final actions after all drops are scheduled
-        scheduler.schedule(() -> {
-            sendKeyRequest("/key_release", "shift");
-            log.info("Finished dropping inventory.");
-            isCurrentlyDropping = false; // Signal to the main loop
-        }, delay, TimeUnit.MILLISECONDS);
+        if (itemPointsList.isEmpty()) {
+            log.info("No items to drop.");
+            isCurrentlyDropping = false;
+            return;
+        }
+
+        final Point[] itemPoints = itemPointsList.toArray(new Point[0]);
+        log.info("Prepared {} item points for dropping", itemPoints.length);
+
+        // Execute drops serially in a background thread
+        java.util.concurrent.CompletableFuture.runAsync(() -> {
+            try {
+                sendKeyRequest("/key_hold", "shift");
+                Thread.sleep(50);
+
+                for (Point itemPoint : itemPoints) {
+                    if (!isCurrentlyDropping) {
+                        log.info("Dropping cancelled, exiting loop");
+                        break;
+                    }
+
+                    log.debug("Moving to item at point: {}", itemPoint);
+                    Point currentMousePos = new Point(
+                            plugin.getClient().getMouseCanvasPosition().getX(),
+                            plugin.getClient().getMouseCanvasPosition().getY());
+                    windmouseService.moveToPoint(currentMousePos, itemPoint, UUID.randomUUID().toString());
+
+                    while (windmouseService.isMoving()) {
+                        Thread.sleep(10);
+                    }
+
+                    log.debug("Clicking item at: {}", itemPoint);
+                    remoteInputService.leftClick();
+
+                    // Small delay between drops for realism
+                    int dropDelay = ThreadLocalRandom.current().nextInt(80, 180);
+                    Thread.sleep(dropDelay);
+                }
+
+                sendKeyRequest("/key_release", "shift");
+                log.info("Finished dropping inventory.");
+
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                log.warn("Power drop interrupted");
+            } catch (Exception e) {
+                log.error("Error during power drop: {}", e.getMessage(), e);
+            } finally {
+                isCurrentlyDropping = false;
+            }
+        });
     }
 
     /**
@@ -416,10 +458,10 @@ public class ActionService {
         // Handle different entity types
         if (entity instanceof NpcEntity) {
             NPC npc = ((NpcEntity) entity).getNpc();
-            interactWithNpcInternal(npc, action);
+            interactWithNpc(npc, action);
         } else if (entity instanceof GameObjectEntity) {
             GameObject gameObject = ((GameObjectEntity) entity).getGameObject();
-            interactWithGameObjectInternal(gameObject, action);
+            interactWithGameObject(gameObject, action);
         } else {
             log.warn("Unknown entity type: {}", entity.getClass().getSimpleName());
         }
@@ -429,19 +471,9 @@ public class ActionService {
      * Interact with a game object
      * 
      * @param gameObject the game object to interact with
-     * @param action     the action to perform (e.g., "Open", "Mine", "Cut")
-     */
-    public void interactWithGameObject(GameObject gameObject, String action) {
-        interactWithGameObjectInternal(gameObject, action);
-    }
-
-    /**
-     * Internal method for interacting with game objects
-     * 
-     * @param gameObject the game object to interact with
      * @param action     the action to perform
      */
-    private void interactWithGameObjectInternal(GameObject gameObject, String action) {
+    public void interactWithGameObject(GameObject gameObject, String action) {
         if (gameObject == null) {
             log.warn("Cannot interact with null game object");
             return;
@@ -481,12 +513,12 @@ public class ActionService {
     }
 
     /**
-     * Internal method for interacting with NPCs
+     * Interact with an NPC
      * 
      * @param npc    the NPC to interact with
      * @param action the action to perform
      */
-    private void interactWithNpcInternal(NPC npc, String action) {
+    public void interactWithNpc(NPC npc, String action) {
         if (npc == null) {
             log.warn("Cannot interact with null NPC");
             return;
