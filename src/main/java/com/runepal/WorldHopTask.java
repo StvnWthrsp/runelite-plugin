@@ -15,8 +15,6 @@ import java.util.concurrent.ScheduledExecutorService;
 public class WorldHopTask implements BotTask {
 
     private final RunepalPlugin plugin;
-    private final GameService gameService;
-    private final ActionService actionService;
     private final EventService eventService;
     private final HumanizerService humanizerService;
     private ScheduledExecutorService scheduler;
@@ -40,15 +38,10 @@ public class WorldHopTask implements BotTask {
     private int targetWorld = -1;
 
     private static final int TIMEOUT_LIMIT = 100; // ~60 seconds
-    private static final int WORLD_HOP_BUTTON_X = 100; // Approximate coordinates
-    private static final int WORLD_HOP_BUTTON_Y = 100;
-
     public WorldHopTask(RunepalPlugin plugin,
-                       GameService gameService, ActionService actionService, 
-                       EventService eventService, HumanizerService humanizerService) {
+                        EventService eventService,
+                        HumanizerService humanizerService) {
         this.plugin = plugin;
-        this.gameService = Objects.requireNonNull(gameService, "gameService cannot be null");
-        this.actionService = Objects.requireNonNull(actionService, "actionService cannot be null");
         this.eventService = Objects.requireNonNull(eventService, "eventService cannot be null");
         this.humanizerService = Objects.requireNonNull(humanizerService, "humanizerService cannot be null");
     }

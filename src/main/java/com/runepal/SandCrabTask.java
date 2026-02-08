@@ -866,9 +866,7 @@ public class SandCrabTask implements BotTask {
 
     private void pushWorldHopTask() {
         // Create world hop task
-        WorldHopTask worldHopTask = new WorldHopTask(plugin,
-                                                    gameService, actionService, eventService, 
-                                                    humanizerService);
+        WorldHopTask worldHopTask = new WorldHopTask(plugin, eventService, humanizerService);
         
         taskManager.pushTask(worldHopTask);
         currentState = SandCrabState.WAITING_FOR_SUBTASK;
