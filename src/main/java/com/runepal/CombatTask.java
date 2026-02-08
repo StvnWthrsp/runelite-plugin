@@ -51,6 +51,7 @@ public class CombatTask implements BotTask {
     private int delayTicks = 0;
     private int combatStartTicks = 0;
     private int waitToVerifyTicks = 0;
+    private boolean prayerManagementEnabled = false;
     
     // Food item IDs (common foods)
     private static final int[] FOOD_IDS = {
@@ -110,9 +111,8 @@ public class CombatTask implements BotTask {
             this.scheduler.shutdownNow();
         }
 
-        if (config.combatUsePrayers()) {
-            prayerService.deactivateAllPrayers();
-        }
+        prayerService.deactivateAllPrayers();
+        prayerManagementEnabled = false;
     }
 
     @Override
@@ -487,8 +487,14 @@ public class CombatTask implements BotTask {
 
     private void managePrayers() {
         if (!config.combatUsePrayers()) {
+            if (prayerManagementEnabled) {
+                prayerService.deactivateAllPrayers();
+                prayerManagementEnabled = false;
+            }
             return;
         }
+
+        prayerManagementEnabled = true;
 
         if (prayerService.needsPrayerRestore(config.combatPrayerPointThreshold())) {
             prayerService.deactivateAllPrayers();

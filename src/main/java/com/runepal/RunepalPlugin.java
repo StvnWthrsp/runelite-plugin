@@ -418,7 +418,10 @@ public class RunepalPlugin extends Plugin {
 	}
 
 	public WorldPoint getBankCoordinates() {
-		String bankName = config.botType() == BotType.WOODCUTTING_BOT ? config.woodcuttingBank() : config.miningBank();
+		return getBankCoordinates(config.miningBank());
+	}
+
+	public WorldPoint getBankCoordinates(String bankName) {
 		log.info("Bank name: {}", bankName);
 		switch (bankName) {
 			case "VARROCK_EAST":

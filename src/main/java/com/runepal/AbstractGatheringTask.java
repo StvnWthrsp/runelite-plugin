@@ -252,7 +252,7 @@ public abstract class AbstractGatheringTask implements BotTask {
             log.info("Inventory full. Banking.");
             taskManager.pushTask(new WalkTask(plugin, pathfinderConfig, gameService.getPlayerLocation(), actionService, gameService, humanizerService));
             taskManager.pushTask(new BankTask(plugin, actionService, gameService, eventService));
-            WorldPoint bankCoordinates = plugin.getBankCoordinates();
+            WorldPoint bankCoordinates = getBankCoordinatesForTask();
             log.info("Banking to: {}", bankCoordinates);
             taskManager.pushTask(new WalkTask(plugin, pathfinderConfig, bankCoordinates, actionService, gameService, humanizerService));
             currentState = GatheringState.WAITING_FOR_SUBTASK;
@@ -465,6 +465,8 @@ public abstract class AbstractGatheringTask implements BotTask {
     protected abstract void setTargetOverlay(GameObject gameObject);
 
     protected abstract boolean shouldBankWhenInventoryFull();
+
+    protected abstract WorldPoint getBankCoordinatesForTask();
 
     protected WorldPoint getInitialDestination() {
         return null;

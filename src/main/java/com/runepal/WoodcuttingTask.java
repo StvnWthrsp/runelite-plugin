@@ -3,6 +3,7 @@ package com.runepal;
 import com.runepal.shortestpath.pathfinder.PathfinderConfig;
 import net.runelite.api.GameObject;
 import net.runelite.api.Skill;
+import net.runelite.api.coords.WorldPoint;
 
 import java.util.Objects;
 
@@ -78,5 +79,10 @@ public class WoodcuttingTask extends AbstractGatheringTask {
     @Override
     protected boolean shouldBankWhenInventoryFull() {
         return config.woodcuttingMode() == WoodcuttingMode.BANK;
+    }
+
+    @Override
+    protected WorldPoint getBankCoordinatesForTask() {
+        return plugin.getBankCoordinates(config.woodcuttingBank());
     }
 }

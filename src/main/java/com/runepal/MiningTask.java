@@ -84,6 +84,11 @@ public class MiningTask extends AbstractGatheringTask {
     }
 
     @Override
+    protected WorldPoint getBankCoordinatesForTask() {
+        return plugin.getBankCoordinates(config.miningBank());
+    }
+
+    @Override
     protected WorldPoint getInitialDestination() {
         return gameService.getPlayerLocation().distanceTo(VARROCK_EAST_MINE) > 10 ? VARROCK_EAST_MINE : null;
     }
