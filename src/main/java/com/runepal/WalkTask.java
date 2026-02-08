@@ -692,6 +692,8 @@ public class WalkTask implements BotTask {
      * @param path the path from a pathfinder
      */
     private void getAllTransportPointsInPath(List<WorldPoint> path) {
+        transportPoints.clear();
+        transportsInPath.clear();
         int packedPoint;
         int i = 0;
         for (WorldPoint point : path) {
@@ -703,7 +705,7 @@ public class WalkTask implements BotTask {
                 for (Transport transport : transportSet) {
                     originPoint = WorldPointUtil.unpackWorldPoint(transport.getOrigin());
                     destinationPoint = WorldPointUtil.unpackWorldPoint(transport.getDestination());
-                    if (originPoint.equals(path.get(i)) && destinationPoint.equals(path.get(i+1))) {
+                    if (i + 1 < path.size() && originPoint.equals(path.get(i)) && destinationPoint.equals(path.get(i + 1))) {
                         transportsInPath.add(transport);
                         transportPoints.add(point);
                     }

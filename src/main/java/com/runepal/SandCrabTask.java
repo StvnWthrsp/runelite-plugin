@@ -867,8 +867,7 @@ public class SandCrabTask implements BotTask {
         }
         
         // Create and push banking task
-        // TODO: Add itemsToWithdraw Map<Integer, Integer> to BankTask
-        BankTask bankTask = new BankTask(plugin, actionService, gameService, eventService);
+        BankTask bankTask = new BankTask(plugin, actionService, gameService, eventService, itemsToWithdraw);
         WalkTask walkTask = new WalkTask(plugin, pathfinderConfig, Banks.HUNTER_GUILD.getBankCoordinates(), actionService, gameService, humanizerService);
 
         taskManager.pushTask(bankTask);

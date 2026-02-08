@@ -173,9 +173,13 @@ public class RunepalPlugin extends Plugin {
 		overlayManager.remove(statusOverlay);
 		overlayManager.remove(inventoryOverlay);
 		overlayManager.remove(combatNpcOverlay);
+		overlayManager.remove(menuDebugOverlay);
 		taskManager.clearTasks();
 
 		// Clean up services
+		if (actionService != null) {
+			actionService.shutdown();
+		}
 		if (eventService != null) {
 			eventService.clearAllSubscribers();
 		}
@@ -261,6 +265,8 @@ public class RunepalPlugin extends Plugin {
 				// return;
 			}
 			log.info("Bot starting...");
+			sessionStartXp = client.getSkillExperience(Skill.MINING);
+			sessionStartTime = Instant.now();
 
 			// Start the appropriate task based on bot type
 			BotType botType = config.botType();
@@ -306,6 +312,8 @@ public class RunepalPlugin extends Plugin {
 			log.info("Bot stopping...");
 			taskManager.clearTasks();
 			currentState = "IDLE";
+			sessionStartXp = 0;
+			sessionStartTime = null;
 			wasRunning = false;
 		}
 
@@ -316,7 +324,9 @@ public class RunepalPlugin extends Plugin {
 
 	@Subscribe
 	public void onClientTick(ClientTick clientTick) {
-		eventService.publish(clientTick);
+		if (eventService != null) {
+			eventService.publish(clientTick);
+		}
 	}
 
 	public void stopBot() {
@@ -411,7 +421,7 @@ public class RunepalPlugin extends Plugin {
 	}
 
 	public WorldPoint getBankCoordinates() {
-		String bankName = config.miningBank();
+		String bankName = config.botType() == BotType.WOODCUTTING_BOT ? config.woodcuttingBank() : config.miningBank();
 		log.info("Bank name: {}", bankName);
 		switch (bankName) {
 			case "VARROCK_EAST":

@@ -90,7 +90,11 @@ public class MiningBotPanel extends PluginPanel {
 
         // Create the dropdown for bot type selection
         bankComboBox = new JComboBox<>(Banks.values());
-        bankComboBox.setSelectedItem(config.miningBank());
+        try {
+            bankComboBox.setSelectedItem(Banks.valueOf(config.miningBank()));
+        } catch (IllegalArgumentException ignored) {
+            bankComboBox.setSelectedItem(Banks.VARROCK_EAST);
+        }
         
         // Dropdown panel
         JPanel dropdownPanel = new JPanel(new BorderLayout());
@@ -107,7 +111,7 @@ public class MiningBotPanel extends PluginPanel {
         bankComboBox.addActionListener(e -> {
             Banks selectedBank = (Banks) bankComboBox.getSelectedItem();
             if (selectedBank != null) {
-                configManager.setConfiguration("runepal", "miningBank", selectedBank);
+                configManager.setConfiguration("runepal", "miningBank", selectedBank.name());
             }
         });
 

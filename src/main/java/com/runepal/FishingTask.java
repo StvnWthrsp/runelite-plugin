@@ -9,8 +9,10 @@ import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.events.GameTick;
 import net.runelite.api.gameval.InventoryID;
 import com.runepal.shortestpath.pathfinder.PathfinderConfig;
+import com.runepal.runtime.SubscriptionBag;
 
 import java.util.*;
+import java.util.function.Consumer;
 
 @Slf4j
 public class FishingTask implements BotTask {
@@ -68,6 +70,9 @@ public class FishingTask implements BotTask {
     private GameObject cookingRange = null;
     private boolean fishingStarted = false;
     private boolean cookingStarted = false;
+    private SubscriptionBag subscriptionBag;
+    private Consumer<GameTick> gameTickHandler;
+    private Consumer<InteractionCompletedEvent> interactionCompletedHandler;
 
     public FishingTask(RunepalPlugin plugin, BotConfig config, TaskManager taskManager, 
                       PathfinderConfig pathfinderConfig, ActionService actionService, 
@@ -91,8 +96,11 @@ public class FishingTask implements BotTask {
             log.info("Task just started. Determining next step.");
         }
         determineNextState();
-        this.eventService.subscribe(GameTick.class, this::onGameTick);
-        eventService.subscribe(InteractionCompletedEvent.class, this::onInteractionCompleted);
+        gameTickHandler = this::onGameTick;
+        interactionCompletedHandler = this::onInteractionCompleted;
+        subscriptionBag = new SubscriptionBag(eventService);
+        subscriptionBag.subscribe(GameTick.class, gameTickHandler);
+        subscriptionBag.subscribe(InteractionCompletedEvent.class, interactionCompletedHandler);
     }
 
     @Override
@@ -100,8 +108,12 @@ public class FishingTask implements BotTask {
         log.info("Stopping Fishing Task.");
         this.fishingSpot = null;
         this.cookingRange = null;
-        this.eventService.unsubscribe(GameTick.class, this::onGameTick);
-        this.eventService.unsubscribe(InteractionCompletedEvent.class, this::onInteractionCompleted);
+        if (subscriptionBag != null) {
+            subscriptionBag.clear();
+            subscriptionBag = null;
+        }
+        gameTickHandler = null;
+        interactionCompletedHandler = null;
     }
 
     @Override
@@ -409,42 +421,14 @@ public class FishingTask implements BotTask {
 
     private void doDepositing() {
         log.info("Banking all items");
-        taskManager.pushTask(new BankTask(plugin, actionService, gameService, eventService));
+        taskManager.pushTask(new BankTask(plugin, actionService, gameService, eventService, buildWithdrawalPlan()));
         currentState = FishingState.WAITING_FOR_SUBTASK;
     }
 
     private void doWithdrawing() {
-        int requiredTool = getRequiredToolId();
-        int requiredBait = getRequiredBaitId();
-        String toolName = config.fishingSpot() == FishingSpot.NET ? "small fishing net" : "fly fishing rod";
-        log.info("Withdrawing {}", toolName);
-        
-        // TODO: Move withdrawing logic to BankTask
-        ItemContainer bankContainer = plugin.getClient().getItemContainer(InventoryID.BANK);
-        if (bankContainer == null) {
-            log.warn("Bank container not found. Walking to bank again.");
-            currentState = FishingState.WALKING_TO_BANK;
-            return;
-        }
-        int toolIndex = bankContainer.find(requiredTool);
-        if (toolIndex != -1) {
-            actionService.sendClickRequest(gameService.getBankItemPoint(toolIndex), true);
-            currentState = FishingState.WAITING_FOR_SUBTASK;
-            delayTicks = humanizerService.getRandomDelay(1, 2);
-            return;
-        } else {
-            log.warn("Required tool {} not found in bank", toolName);
-        }
-        if (requiredBait != -1) {
-            int baitIndex = bankContainer.find(requiredBait);
-            if (baitIndex != -1) {
-                actionService.sendClickRequest(gameService.getBankItemPoint(baitIndex), true);
-            }
-        } else {
-            log.warn("Required bait not found in bank");
-        }
+        log.info("Withdrawing fishing supplies");
+        taskManager.pushTask(new BankTask(plugin, actionService, gameService, eventService, buildWithdrawalPlan()));
         currentState = FishingState.WAITING_FOR_SUBTASK;
-        delayTicks = humanizerService.getRandomDelay(1, 2);
     }
 
     private void determineNextState() {
@@ -462,12 +446,25 @@ public class FishingTask implements BotTask {
                 currentState = FishingState.WALKING_TO_BANK;
             }
         } else if (!(gameService.hasItem(requiredTool))) {
-            currentState = FishingState.WITHDRAWING;
+            currentState = FishingState.WALKING_TO_BANK;
         } else if (requiredBait != -1 && !gameService.hasItem(requiredBait)){
-            currentState = FishingState.WITHDRAWING;
+            currentState = FishingState.WALKING_TO_BANK;
         } else {
             currentState = FishingState.WALKING_TO_FISHING;
         }
+    }
+
+    private Map<Integer, Integer> buildWithdrawalPlan() {
+        Map<Integer, Integer> itemsToWithdraw = new HashMap<>();
+        int requiredTool = getRequiredToolId();
+        itemsToWithdraw.put(requiredTool, 1);
+
+        int requiredBait = getRequiredBaitId();
+        if (requiredBait != -1) {
+            itemsToWithdraw.put(requiredBait, 100);
+        }
+
+        return itemsToWithdraw;
     }
 
     private boolean hasRawFish() {

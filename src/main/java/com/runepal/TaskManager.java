@@ -60,9 +60,13 @@ public class TaskManager {
      * Clears the entire task stack, stopping any current task.
      */
     public void clearTasks() {
-        if (!tasks.isEmpty()) {
-            tasks.peek().onStop();
-            tasks.clear();
+        while (!tasks.isEmpty()) {
+            BotTask task = tasks.pop();
+            try {
+                task.onStop();
+            } catch (Exception e) {
+                log.warn("Error stopping task {} during clearTasks", task.getTaskName(), e);
+            }
         }
     }
 
