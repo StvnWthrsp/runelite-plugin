@@ -1,6 +1,7 @@
 package com.runepal;
 
 import lombok.extern.slf4j.Slf4j;
+import com.runepal.banking.BankingService;
 import com.runepal.banking.BankPlan;
 import net.runelite.api.Actor;
 import net.runelite.api.Client;
@@ -42,6 +43,7 @@ public class SandCrabTask implements BotTask {
     private final EventService eventService;
     private final HumanizerService humanizerService;
     private final PotionService potionService;
+    private final BankingService bankingService = new BankingService();
     private ScheduledExecutorService scheduler;
 
     // Event handler references to maintain identity
@@ -871,7 +873,7 @@ public class SandCrabTask implements BotTask {
         
         // Create and push banking task
         BankTask bankTask = new BankTask(plugin, actionService, gameService, eventService,
-                BankPlan.depositAndWithdraw(itemsToWithdraw));
+                buildBankPlan(itemsToWithdraw));
         WalkTask walkTask = new WalkTask(plugin, pathfinderConfig, Banks.HUNTER_GUILD.getBankCoordinates(), actionService, gameService, humanizerService);
 
         taskManager.pushTask(bankTask);
@@ -987,5 +989,9 @@ public class SandCrabTask implements BotTask {
             currentState = SandCrabState.IDLE;
             delayTicks = humanizerService.getRandomDelay(3, 7);
         }
+    }
+
+    private BankPlan buildBankPlan(Map<Integer, Integer> itemsToWithdraw) {
+        return bankingService.createPlan(itemsToWithdraw);
     }
 }
