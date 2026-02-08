@@ -87,8 +87,9 @@ public abstract class AbstractGatheringBotPanel<T extends Enum<T>> extends Plugi
         configPanel.add(dropdownPanel, gbc);
 
         modeComboBox.addActionListener(e -> {
-            T selectedMode = (T) modeComboBox.getSelectedItem();
-            if (selectedMode != null) {
+            int selectedIndex = modeComboBox.getSelectedIndex();
+            if (selectedIndex >= 0) {
+                T selectedMode = modeComboBox.getItemAt(selectedIndex);
                 saveMode(selectedMode);
             }
         });
