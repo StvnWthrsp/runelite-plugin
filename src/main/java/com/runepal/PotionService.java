@@ -164,7 +164,7 @@ public class PotionService {
         int delay = humanizerService.getRandomDelay(300, 600);
         
         scheduler.schedule(() -> {
-            actionService.sendClickRequest(potionPoint, false);
+            actionService.clickAt(potionPoint);
             log.info("Consumed {} potion", potionType);
         }, delay, TimeUnit.MILLISECONDS);
         

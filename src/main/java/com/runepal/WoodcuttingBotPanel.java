@@ -87,7 +87,11 @@ public class WoodcuttingBotPanel extends PluginPanel {
 
         // Create the dropdown for bank selection
         bankComboBox = new JComboBox<>(Banks.values());
-        bankComboBox.setSelectedItem(Banks.valueOf(config.woodcuttingBank()));
+        try {
+            bankComboBox.setSelectedItem(Banks.valueOf(config.woodcuttingBank()));
+        } catch (IllegalArgumentException ignored) {
+            bankComboBox.setSelectedItem(Banks.VARROCK_EAST);
+        }
         
         // Dropdown panel
         JPanel dropdownPanel = new JPanel(new BorderLayout());
@@ -111,7 +115,7 @@ public class WoodcuttingBotPanel extends PluginPanel {
         woodcuttingModeComboBox.addActionListener(e -> {
             WoodcuttingMode selectedMode = (WoodcuttingMode) woodcuttingModeComboBox.getSelectedItem();
             if (selectedMode != null) {
-                configManager.setConfiguration("runepal", "woodcuttingMode", selectedMode);
+                configManager.setConfiguration("runepal", "woodcuttingMode", selectedMode.name());
             }
         });
         

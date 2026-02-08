@@ -118,7 +118,7 @@ public class MiningBotPanel extends PluginPanel {
         miningModeComboBox.addActionListener(e -> {
             MiningMode selectedMode = (MiningMode) miningModeComboBox.getSelectedItem();
             if (selectedMode != null) {
-                configManager.setConfiguration("runepal", "miningMode", selectedMode);
+                configManager.setConfiguration("runepal", "miningMode", selectedMode.name());
             }
         });
         

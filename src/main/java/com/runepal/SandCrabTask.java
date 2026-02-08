@@ -630,7 +630,7 @@ public class SandCrabTask implements BotTask {
         }
 
         log.info("Eating food at point: {}", foodPoint);
-        actionService.sendClickRequest(foodPoint, false);
+        actionService.clickAt(foodPoint);
 
         // Wait for eating animation
         delayTicks = humanizerService.getRandomDelay(3, 5);
