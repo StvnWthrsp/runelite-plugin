@@ -274,7 +274,7 @@ public class RunepalPlugin extends Plugin {
 					break;
 				case COMBAT_BOT:
 					taskManager.pushTask(new CombatTask(this, config, taskManager, actionService, gameService,
-							eventService, humanizerService, potionService));
+							eventService, humanizerService, potionService, prayerService));
 					break;
 				case FISHING_BOT:
 					taskManager.pushTask(new FishingTask(this, config, taskManager, pathfinderConfig, actionService,

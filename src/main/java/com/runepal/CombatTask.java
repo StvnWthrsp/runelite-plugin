@@ -29,6 +29,7 @@ public class CombatTask implements BotTask {
     private final EventService eventService;
     private final HumanizerService humanizerService;
     private final PotionService potionService;
+    private final PrayerService prayerService;
 
     // Event handler references to maintain identity
     private Consumer<AnimationChanged> animationHandler;
@@ -63,7 +64,7 @@ public class CombatTask implements BotTask {
         329   // Salmon
     };
 
-    public CombatTask(RunepalPlugin plugin, BotConfig config, TaskManager taskManager, ActionService actionService, GameService gameService, EventService eventService, HumanizerService humanizerService, PotionService potionService) {
+    public CombatTask(RunepalPlugin plugin, BotConfig config, TaskManager taskManager, ActionService actionService, GameService gameService, EventService eventService, HumanizerService humanizerService, PotionService potionService, PrayerService prayerService) {
         this.plugin = plugin;
         this.config = config;
         this.taskManager = taskManager;
@@ -72,6 +73,7 @@ public class CombatTask implements BotTask {
         this.eventService = Objects.requireNonNull(eventService, "eventService cannot be null");
         this.humanizerService = Objects.requireNonNull(humanizerService, "humanizerService cannot be null");
         this.potionService = Objects.requireNonNull(potionService, "potionService cannot be null");
+        this.prayerService = Objects.requireNonNull(prayerService, "prayerService cannot be null");
     }
 
     @Override
@@ -109,6 +111,10 @@ public class CombatTask implements BotTask {
         if (this.scheduler != null && !this.scheduler.isShutdown()) {
             this.scheduler.shutdownNow();
         }
+
+        if (config.combatUsePrayers()) {
+            prayerService.deactivateAllPrayers();
+        }
     }
 
     @Override
@@ -136,6 +142,8 @@ public class CombatTask implements BotTask {
             delayTicks--;
             return;
         }
+
+        managePrayers();
 
         // Check critical needs first, regardless of current state
         if (shouldEat()) {
@@ -477,6 +485,50 @@ public class CombatTask implements BotTask {
             currentState = CombatState.LOOTING;
             combatStartTicks = 0;
         }
+    }
+
+    private void managePrayers() {
+        if (!config.combatUsePrayers()) {
+            return;
+        }
+
+        if (prayerService.needsPrayerRestore(config.combatPrayerPointThreshold())) {
+            prayerService.deactivateAllPrayers();
+            return;
+        }
+
+        boolean inCombat = currentState == CombatState.ATTACKING
+                || currentState == CombatState.VERIFY_ATTACK
+                || currentState == CombatState.WAITING_FOR_COMBAT_END;
+        if (!inCombat) {
+            prayerService.deactivateAllPrayers();
+            return;
+        }
+
+        PrayerService.CombatPrayer offensivePrayer = parsePrayer(config.combatOffensivePrayer());
+        if (offensivePrayer != null) {
+            prayerService.activatePrayer(offensivePrayer);
+        } else {
+            prayerService.activateBestOffensivePrayer();
+        }
+
+        PrayerService.CombatPrayer defensivePrayer = parsePrayer(config.combatDefensivePrayer());
+        if (defensivePrayer != null) {
+            prayerService.activatePrayer(defensivePrayer);
+        }
+    }
+
+    private PrayerService.CombatPrayer parsePrayer(String prayerName) {
+        if (prayerName == null || prayerName.trim().isEmpty() || "None".equalsIgnoreCase(prayerName)) {
+            return null;
+        }
+
+        for (PrayerService.CombatPrayer prayer : PrayerService.CombatPrayer.values()) {
+            if (prayer.getName().equalsIgnoreCase(prayerName) || prayer.name().equalsIgnoreCase(prayerName)) {
+                return prayer;
+            }
+        }
+        return null;
     }
 
     // --- HELPER METHODS ---
