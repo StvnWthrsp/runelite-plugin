@@ -1,6 +1,7 @@
 package com.runepal;
 
 import lombok.extern.slf4j.Slf4j;
+import com.runepal.banking.BankPlan;
 import net.runelite.api.Actor;
 import net.runelite.api.Client;
 import net.runelite.api.NPC;
@@ -41,7 +42,6 @@ public class SandCrabTask implements BotTask {
     private final EventService eventService;
     private final HumanizerService humanizerService;
     private final PotionService potionService;
-    private final SupplyManager supplyManager;
     private ScheduledExecutorService scheduler;
 
     // Event handler references to maintain identity
@@ -244,7 +244,7 @@ public class SandCrabTask implements BotTask {
                        PathfinderConfig pathfinderConfig,
                        ActionService actionService, GameService gameService, 
                        EventService eventService, HumanizerService humanizerService, 
-                       PotionService potionService, SupplyManager supplyManager) {
+                       PotionService potionService) {
         this.plugin = plugin;
         this.config = config;
         this.taskManager = taskManager;
@@ -254,7 +254,6 @@ public class SandCrabTask implements BotTask {
         this.eventService = Objects.requireNonNull(eventService, "eventService cannot be null");
         this.humanizerService = Objects.requireNonNull(humanizerService, "humanizerService cannot be null");
         this.potionService = Objects.requireNonNull(potionService, "potionService cannot be null");
-        this.supplyManager = Objects.requireNonNull(supplyManager, "supplyManager cannot be null");
     }
 
     @Override
@@ -867,7 +866,8 @@ public class SandCrabTask implements BotTask {
         }
         
         // Create and push banking task
-        BankTask bankTask = new BankTask(plugin, actionService, gameService, eventService, itemsToWithdraw);
+        BankTask bankTask = new BankTask(plugin, actionService, gameService, eventService,
+                BankPlan.depositAndWithdraw(itemsToWithdraw));
         WalkTask walkTask = new WalkTask(plugin, pathfinderConfig, Banks.HUNTER_GUILD.getBankCoordinates(), actionService, gameService, humanizerService);
 
         taskManager.pushTask(bankTask);

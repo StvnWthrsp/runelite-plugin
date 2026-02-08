@@ -63,8 +63,6 @@ public class RunepalPlugin extends Plugin {
 	@Getter
 	private PrayerService prayerService = null;
 	@Getter
-	private SupplyManager supplyManager = null;
-	@Getter
 	private RemoteInputService remoteInputService = null;
 
 	// Debugging and tracking variables
@@ -157,7 +155,6 @@ public class RunepalPlugin extends Plugin {
 		// Initialize combat-specific services
 		potionService = new PotionService(client, gameService, actionService, humanizerService);
 		prayerService = new PrayerService(client, actionService, humanizerService);
-		supplyManager = new SupplyManager(client, gameService, potionService, config);
 
 		pathfinderConfig = new PathfinderConfig(client, config);
 
@@ -289,7 +286,7 @@ public class RunepalPlugin extends Plugin {
 					break;
 				case SAND_CRAB_BOT:
 					taskManager.pushTask(new SandCrabTask(this, config, taskManager, pathfinderConfig, actionService,
-							gameService, eventService, humanizerService, potionService, supplyManager));
+							gameService, eventService, humanizerService, potionService));
 					break;
 				case GEMSTONE_CRAB_BOT:
 					taskManager.pushTask(new GemstoneCrabTask(this, config, taskManager, actionService, gameService,

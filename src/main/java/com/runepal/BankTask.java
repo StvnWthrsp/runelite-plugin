@@ -1,5 +1,6 @@
 package com.runepal;
 
+import com.runepal.banking.BankPlan;
 import com.runepal.runtime.SubscriptionBag;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
@@ -46,7 +47,7 @@ public class BankTask implements BotTask {
     }
 
     public BankTask(RunepalPlugin plugin, ActionService actionService, GameService gameService, EventService eventService) {
-        this(plugin, actionService, gameService, eventService, Collections.emptyMap());
+        this(plugin, actionService, gameService, eventService, BankPlan.depositOnly());
     }
 
     public BankTask(RunepalPlugin plugin,
@@ -54,11 +55,21 @@ public class BankTask implements BotTask {
                     GameService gameService,
                     EventService eventService,
                     Map<Integer, Integer> itemsToWithdraw) {
+        this(plugin, actionService, gameService, eventService, BankPlan.depositAndWithdraw(itemsToWithdraw));
+    }
+
+    public BankTask(RunepalPlugin plugin,
+                    ActionService actionService,
+                    GameService gameService,
+                    EventService eventService,
+                    BankPlan bankPlan) {
         this.client = Objects.requireNonNull(plugin, "plugin cannot be null").getClient();
         this.actionService = Objects.requireNonNull(actionService, "actionService cannot be null");
         this.gameService = Objects.requireNonNull(gameService, "gameService cannot be null");
         this.eventService = eventService;
-        this.itemsToWithdraw = itemsToWithdraw == null ? Collections.emptyMap() : new HashMap<>(itemsToWithdraw);
+        this.itemsToWithdraw = bankPlan == null
+                ? Collections.emptyMap()
+                : new HashMap<>(bankPlan.getItemsToWithdraw());
     }
 
     public BankTask(RunepalPlugin plugin,

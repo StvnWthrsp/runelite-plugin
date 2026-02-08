@@ -1,13 +1,12 @@
 package com.runepal;
 
 import lombok.extern.slf4j.Slf4j;
+import com.runepal.banking.BankPlan;
 import net.runelite.api.GameObject;
-import net.runelite.api.ItemContainer;
 import net.runelite.api.NPC;
 import net.runelite.api.gameval.ItemID;
 import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.events.GameTick;
-import net.runelite.api.gameval.InventoryID;
 import com.runepal.shortestpath.pathfinder.PathfinderConfig;
 import com.runepal.runtime.SubscriptionBag;
 
@@ -421,13 +420,15 @@ public class FishingTask implements BotTask {
 
     private void doDepositing() {
         log.info("Banking all items");
-        taskManager.pushTask(new BankTask(plugin, actionService, gameService, eventService, buildWithdrawalPlan()));
+        taskManager.pushTask(new BankTask(plugin, actionService, gameService, eventService,
+                BankPlan.depositAndWithdraw(buildWithdrawalPlan())));
         currentState = FishingState.WAITING_FOR_SUBTASK;
     }
 
     private void doWithdrawing() {
         log.info("Withdrawing fishing supplies");
-        taskManager.pushTask(new BankTask(plugin, actionService, gameService, eventService, buildWithdrawalPlan()));
+        taskManager.pushTask(new BankTask(plugin, actionService, gameService, eventService,
+                BankPlan.depositAndWithdraw(buildWithdrawalPlan())));
         currentState = FishingState.WAITING_FOR_SUBTASK;
     }
 
