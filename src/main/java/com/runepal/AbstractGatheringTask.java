@@ -1,6 +1,7 @@
 package com.runepal;
 
 import com.runepal.shortestpath.pathfinder.PathfinderConfig;
+import com.runepal.runtime.SubscriptionBag;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Constants;
 import net.runelite.api.GameObject;
@@ -20,7 +21,6 @@ import java.util.Comparator;
 import java.util.Deque;
 import java.util.List;
 import java.util.Objects;
-import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -44,10 +44,7 @@ public abstract class AbstractGatheringTask implements BotTask {
     protected final EventService eventService;
     protected final HumanizerService humanizerService;
 
-    private Consumer<AnimationChanged> animationHandler;
-    private Consumer<StatChanged> statHandler;
-    private Consumer<InteractingChanged> interactingHandler;
-    private Consumer<GameTick> gameTickHandler;
+    private SubscriptionBag subscriptionBag;
 
     private final Deque<Runnable> actionQueue = new ArrayDeque<>();
     private GatheringState currentState;
@@ -82,15 +79,11 @@ public abstract class AbstractGatheringTask implements BotTask {
         log.info("Starting {} Task.", getTaskName());
         this.lastSkillXp = plugin.getClient().getSkillExperience(getTrackedSkill());
 
-        this.animationHandler = this::onAnimationChanged;
-        this.statHandler = this::onStatChanged;
-        this.interactingHandler = this::onInteractingChanged;
-        this.gameTickHandler = this::onGameTick;
-
-        eventService.subscribe(AnimationChanged.class, animationHandler);
-        eventService.subscribe(StatChanged.class, statHandler);
-        eventService.subscribe(InteractingChanged.class, interactingHandler);
-        eventService.subscribe(GameTick.class, gameTickHandler);
+        this.subscriptionBag = new SubscriptionBag(eventService);
+        subscriptionBag.subscribe(AnimationChanged.class, this::onAnimationChanged);
+        subscriptionBag.subscribe(StatChanged.class, this::onStatChanged);
+        subscriptionBag.subscribe(InteractingChanged.class, this::onInteractingChanged);
+        subscriptionBag.subscribe(GameTick.class, this::onGameTick);
 
         WorldPoint initialDestination = getInitialDestination();
         if (initialDestination != null && gameService.getPlayerLocation().distanceTo(initialDestination) > 10) {
@@ -109,15 +102,10 @@ public abstract class AbstractGatheringTask implements BotTask {
         this.nextObject = null;
         setTargetOverlay(null);
 
-        eventService.unsubscribe(AnimationChanged.class, animationHandler);
-        eventService.unsubscribe(StatChanged.class, statHandler);
-        eventService.unsubscribe(InteractingChanged.class, interactingHandler);
-        eventService.unsubscribe(GameTick.class, gameTickHandler);
-
-        this.animationHandler = null;
-        this.statHandler = null;
-        this.interactingHandler = null;
-        this.gameTickHandler = null;
+        if (subscriptionBag != null) {
+            subscriptionBag.clear();
+            subscriptionBag = null;
+        }
     }
 
     @Override

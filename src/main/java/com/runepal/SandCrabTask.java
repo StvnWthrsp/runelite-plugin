@@ -3,6 +3,7 @@ package com.runepal;
 import lombok.extern.slf4j.Slf4j;
 import com.runepal.banking.BankingService;
 import com.runepal.banking.BankPlan;
+import com.runepal.runtime.SubscriptionBag;
 import net.runelite.api.Actor;
 import net.runelite.api.Client;
 import net.runelite.api.NPC;
@@ -25,7 +26,6 @@ import java.util.Objects;
 import java.util.ArrayDeque;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
-import java.util.function.Consumer;
 
 import com.runepal.entity.Interactable;
 import com.runepal.entity.NpcEntity;
@@ -46,11 +46,7 @@ public class SandCrabTask implements BotTask {
     private final BankingService bankingService = new BankingService();
     private ScheduledExecutorService scheduler;
 
-    // Event handler references to maintain identity
-    private Consumer<AnimationChanged> animationHandler;
-    private Consumer<StatChanged> statHandler;
-    private Consumer<InteractingChanged> interactingHandler;
-    private Consumer<GameTick> gameTickHandler;
+    private SubscriptionBag subscriptionBag;
 
     // Internal state for sand crab FSM
     private enum SandCrabState {
@@ -271,17 +267,11 @@ public class SandCrabTask implements BotTask {
         this.lastMagicXp = client.getSkillExperience(Skill.MAGIC);
         this.lastRangedXp = client.getSkillExperience(Skill.RANGED);
         
-        // Store event handler references to maintain identity
-        this.animationHandler = this::onAnimationChanged;
-        this.statHandler = this::onStatChanged;
-        this.interactingHandler = this::onInteractingChanged;
-        this.gameTickHandler = this::onGameTick;
-        
-        // Subscribe to events
-        this.eventService.subscribe(AnimationChanged.class, animationHandler);
-        this.eventService.subscribe(StatChanged.class, statHandler);
-        this.eventService.subscribe(InteractingChanged.class, interactingHandler);
-        this.eventService.subscribe(GameTick.class, gameTickHandler);
+        this.subscriptionBag = new SubscriptionBag(eventService);
+        subscriptionBag.subscribe(AnimationChanged.class, this::onAnimationChanged);
+        subscriptionBag.subscribe(StatChanged.class, this::onStatChanged);
+        subscriptionBag.subscribe(InteractingChanged.class, this::onInteractingChanged);
+        subscriptionBag.subscribe(GameTick.class, this::onGameTick);
         
         // Initialize scheduler
         if (this.scheduler == null || this.scheduler.isShutdown()) {
@@ -320,17 +310,10 @@ public class SandCrabTask implements BotTask {
         this.targetPosition = null;
         plugin.setTargetNpc(null); // Clear overlay
         
-        // Unsubscribe from events
-        this.eventService.unsubscribe(AnimationChanged.class, animationHandler);
-        this.eventService.unsubscribe(StatChanged.class, statHandler);
-        this.eventService.unsubscribe(InteractingChanged.class, interactingHandler);
-        this.eventService.unsubscribe(GameTick.class, gameTickHandler);
-        
-        // Clear handler references
-        this.animationHandler = null;
-        this.statHandler = null;
-        this.interactingHandler = null;
-        this.gameTickHandler = null;
+        if (subscriptionBag != null) {
+            subscriptionBag.clear();
+            subscriptionBag = null;
+        }
         
         // Shutdown scheduler
         if (this.scheduler != null && !this.scheduler.isShutdown()) {
@@ -883,7 +866,7 @@ public class SandCrabTask implements BotTask {
 
     private void pushWorldHopTask() {
         // Create world hop task
-        WorldHopTask worldHopTask = new WorldHopTask(plugin, config, taskManager, 
+        WorldHopTask worldHopTask = new WorldHopTask(plugin,
                                                     gameService, actionService, eventService, 
                                                     humanizerService);
         

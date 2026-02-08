@@ -1,32 +1,27 @@
 package com.runepal;
 
+import com.runepal.runtime.SubscriptionBag;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
-import net.runelite.client.util.WorldUtil;
 
 import java.util.Objects;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
-import java.util.function.Consumer;
 
 @Slf4j
 public class WorldHopTask implements BotTask {
 
     private final RunepalPlugin plugin;
-    private final BotConfig config;
-    private final TaskManager taskManager;
     private final GameService gameService;
     private final ActionService actionService;
     private final EventService eventService;
     private final HumanizerService humanizerService;
     private ScheduledExecutorService scheduler;
 
-    // Event handler references to maintain identity
-    private Consumer<GameStateChanged> gameStateHandler;
-    private Consumer<GameTick> gameTickHandler;
+    private SubscriptionBag subscriptionBag;
 
     // Internal state for world hopping FSM
     private enum WorldHopState {
@@ -48,12 +43,10 @@ public class WorldHopTask implements BotTask {
     private static final int WORLD_HOP_BUTTON_X = 100; // Approximate coordinates
     private static final int WORLD_HOP_BUTTON_Y = 100;
 
-    public WorldHopTask(RunepalPlugin plugin, BotConfig config, TaskManager taskManager, 
+    public WorldHopTask(RunepalPlugin plugin,
                        GameService gameService, ActionService actionService, 
                        EventService eventService, HumanizerService humanizerService) {
         this.plugin = plugin;
-        this.config = config;
-        this.taskManager = taskManager;
         this.gameService = Objects.requireNonNull(gameService, "gameService cannot be null");
         this.actionService = Objects.requireNonNull(actionService, "actionService cannot be null");
         this.eventService = Objects.requireNonNull(eventService, "eventService cannot be null");
@@ -67,13 +60,9 @@ public class WorldHopTask implements BotTask {
         this.isStarted = true;
         this.currentState = WorldHopState.IDLE;
         
-        // Store event handler references to maintain identity
-        this.gameStateHandler = this::onGameStateChanged;
-        this.gameTickHandler = this::onGameTick;
-        
-        // Subscribe to events
-        this.eventService.subscribe(GameStateChanged.class, gameStateHandler);
-        this.eventService.subscribe(GameTick.class, gameTickHandler);
+        this.subscriptionBag = new SubscriptionBag(eventService);
+        subscriptionBag.subscribe(GameStateChanged.class, this::onGameStateChanged);
+        subscriptionBag.subscribe(GameTick.class, this::onGameTick);
         
         // Initialize scheduler
         if (this.scheduler == null || this.scheduler.isShutdown()) {
@@ -93,13 +82,10 @@ public class WorldHopTask implements BotTask {
         log.info("Stopping World Hop Task.");
         this.isStarted = false;
         
-        // Unsubscribe from events
-        this.eventService.unsubscribe(GameStateChanged.class, gameStateHandler);
-        this.eventService.unsubscribe(GameTick.class, gameTickHandler);
-        
-        // Clear handler references
-        this.gameStateHandler = null;
-        this.gameTickHandler = null;
+        if (subscriptionBag != null) {
+            subscriptionBag.clear();
+            subscriptionBag = null;
+        }
         
         // Shutdown scheduler
         if (this.scheduler != null && !this.scheduler.isShutdown()) {
