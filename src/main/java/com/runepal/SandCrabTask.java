@@ -401,8 +401,12 @@ public class SandCrabTask implements BotTask {
             log.info("Need to reset aggression, switching to reset state");
             currentState = SandCrabState.RESETTING_AGGRESSION;
         } else if (detectPlayersNearby()) {
-            log.info("Players detected nearby, switching to world hopping");
-            currentState = SandCrabState.WORLD_HOPPING;
+            if (config.sandCrabEnableExperimentalWorldHop()) {
+                log.info("Players detected nearby, switching to world hopping");
+                currentState = SandCrabState.WORLD_HOPPING;
+            } else {
+                log.debug("Players detected nearby, but experimental world hopping is disabled");
+            }
         } else if (System.currentTimeMillis() - lastRotateTime > cameraRotateTimerMs) {
             taskManager.pushTask(new CameraRotationTask(plugin, actionService, eventService));
             lastRotateTime = System.currentTimeMillis();

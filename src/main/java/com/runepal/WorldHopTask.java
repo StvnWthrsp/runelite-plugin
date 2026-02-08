@@ -63,6 +63,7 @@ public class WorldHopTask implements BotTask {
     @Override
     public void onStart() {
         log.info("Starting World Hop Task.");
+        log.warn("WorldHopTask is experimental and may not handle all edge cases.");
         this.isStarted = true;
         this.currentState = WorldHopState.IDLE;
         
