@@ -22,7 +22,6 @@ public class CombatTask implements BotTask {
 
     private final RunepalPlugin plugin;
     private final BotConfig config;
-    private final TaskManager taskManager;
     private ScheduledExecutorService scheduler;
     private final GameService gameService;
     private final ActionService actionService;
@@ -64,10 +63,9 @@ public class CombatTask implements BotTask {
         329   // Salmon
     };
 
-    public CombatTask(RunepalPlugin plugin, BotConfig config, TaskManager taskManager, ActionService actionService, GameService gameService, EventService eventService, HumanizerService humanizerService, PotionService potionService, PrayerService prayerService) {
+    public CombatTask(RunepalPlugin plugin, BotConfig config, ActionService actionService, GameService gameService, EventService eventService, HumanizerService humanizerService, PotionService potionService, PrayerService prayerService) {
         this.plugin = plugin;
         this.config = config;
-        this.taskManager = taskManager;
         this.actionService = Objects.requireNonNull(actionService, "actionService cannot be null");
         this.gameService = Objects.requireNonNull(gameService, "gameService cannot be null");
         this.eventService = Objects.requireNonNull(eventService, "eventService cannot be null");

@@ -25,6 +25,7 @@ public class TaskManager {
 
         // If the current task is finished, pop it and start the next one.
         if (currentTask.isFinished()) {
+            log.debug("Task finished: {}", currentTask.getTaskName());
             currentTask.onStop();
             tasks.pop();
 
@@ -54,12 +55,16 @@ public class TaskManager {
      */
     public void pushTask(BotTask task) {
         tasks.push(task);
+        log.debug("Pushed task: {} (stack size: {})", task.getTaskName(), tasks.size());
     }
 
     /**
      * Clears the entire task stack, stopping any current task.
      */
     public void clearTasks() {
+        if (!tasks.isEmpty()) {
+            log.debug("Clearing {} task(s)", tasks.size());
+        }
         while (!tasks.isEmpty()) {
             BotTask task = tasks.pop();
             try {
