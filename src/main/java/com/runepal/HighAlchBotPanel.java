@@ -5,7 +5,7 @@ import net.runelite.client.ui.PluginPanel;
 import javax.swing.*;
 import java.awt.*;
 
-public class HighAlchBotPanel extends PluginPanel {
+public class HighAlchBotPanel extends PluginPanel implements BotStatusPanel {
     private final JLabel statusLabel = new JLabel("IDLE");
     private final JButton toggleButton = new JButton("Start");
     private final JSpinner highAlchSpinner;

@@ -5,7 +5,7 @@ import net.runelite.client.ui.PluginPanel;
 import javax.swing.*;
 import java.awt.*;
 
-public class GemstoneCrabBotPanel extends PluginPanel {
+public class GemstoneCrabBotPanel extends PluginPanel implements BotStatusPanel {
     private final JLabel statusLabel = new JLabel("IDLE");
     private final JButton toggleButton = new JButton("Start");
 

@@ -51,7 +51,7 @@ public class BotPanel extends PluginPanel {
         botTypeComboBox.addActionListener(e -> {
             BotType selectedType = (BotType) botTypeComboBox.getSelectedItem();
             if (selectedType != null) {
-                configManager.setConfiguration("runepal", "botType", selectedType);
+                configManager.setConfiguration("runepal", "botType", selectedType.name());
                 updateContentPanel(selectedType);
             }
         });
@@ -167,38 +167,14 @@ public class BotPanel extends PluginPanel {
 
     // Delegate methods to current bot panel (for backwards compatibility)
     public void setStatus(String status) {
-        if (currentBotPanel instanceof MiningBotPanel) {
-            ((MiningBotPanel) currentBotPanel).setStatus(status);
-        } else if (currentBotPanel instanceof CombatBotPanel) {
-            ((CombatBotPanel) currentBotPanel).setStatus(status);
-        } else if (currentBotPanel instanceof FishingBotPanel) {
-            ((FishingBotPanel) currentBotPanel).setStatus(status);
-        } else if (currentBotPanel instanceof WoodcuttingBotPanel) {
-            ((WoodcuttingBotPanel) currentBotPanel).setStatus(status);
-        } else if (currentBotPanel instanceof SandCrabBotPanel) {
-            ((SandCrabBotPanel) currentBotPanel).setStatus(status);
-        } else if (currentBotPanel instanceof GemstoneCrabBotPanel) {
-            ((GemstoneCrabBotPanel) currentBotPanel).setStatus(status);
-        } else if (currentBotPanel instanceof HighAlchBotPanel) {
-            ((HighAlchBotPanel) currentBotPanel).setStatus(status);
+        if (currentBotPanel instanceof BotStatusPanel) {
+            ((BotStatusPanel) currentBotPanel).setStatus(status);
         }
     }
 
     public void setButtonText(String text) {
-        if (currentBotPanel instanceof MiningBotPanel) {
-            ((MiningBotPanel) currentBotPanel).setButtonText(text);
-        } else if (currentBotPanel instanceof CombatBotPanel) {
-            ((CombatBotPanel) currentBotPanel).setButtonText(text);
-        } else if (currentBotPanel instanceof FishingBotPanel) {
-            ((FishingBotPanel) currentBotPanel).setButtonText(text);
-        } else if (currentBotPanel instanceof WoodcuttingBotPanel) {
-            ((WoodcuttingBotPanel) currentBotPanel).setButtonText(text);
-        } else if (currentBotPanel instanceof SandCrabBotPanel) {
-            ((SandCrabBotPanel) currentBotPanel).setButtonText(text);
-        } else if (currentBotPanel instanceof GemstoneCrabBotPanel) {
-            ((GemstoneCrabBotPanel) currentBotPanel).setButtonText(text);
-        } else if (currentBotPanel instanceof HighAlchBotPanel) {
-            ((HighAlchBotPanel) currentBotPanel).setButtonText(text);
+        if (currentBotPanel instanceof BotStatusPanel) {
+            ((BotStatusPanel) currentBotPanel).setButtonText(text);
         }
     }
 

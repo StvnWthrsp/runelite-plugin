@@ -13,7 +13,7 @@ import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
 
-public class FishingBotPanel extends PluginPanel {
+public class FishingBotPanel extends PluginPanel implements BotStatusPanel {
     private final JLabel statusLabel = new JLabel("Status: IDLE");
     private final JButton toggleButton = new JButton("Start");
     private final RunepalPlugin plugin;
