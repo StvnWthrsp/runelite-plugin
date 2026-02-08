@@ -36,10 +36,12 @@ public class BankTask implements BotTask {
     private final GameService gameService;
     private final EventService eventService;
     private final Map<Integer, Integer> itemsToWithdraw;
+    private static final Map<Integer, int[]> EQUIVALENT_ITEM_IDS = buildEquivalentItemIds();
     private SubscriptionBag subscriptionBag;
 
     private BankState currentState;
     private int idleTicks = 0;
+    private int lastWithdrawProgress = 0;
 
     @Inject
     public BankTask(RunepalPlugin plugin, ActionService actionService, GameService gameService) {
@@ -84,6 +86,7 @@ public class BankTask implements BotTask {
         log.info("Starting bank task.");
         this.currentState = BankState.FIND_BANK;
         this.idleTicks = 0;
+        this.lastWithdrawProgress = 0;
         if (eventService != null) {
             subscriptionBag = new SubscriptionBag(eventService);
             subscriptionBag.subscribe(InteractionCompletedEvent.class, this::onInteractionCompleted);
@@ -191,6 +194,8 @@ public class BankTask implements BotTask {
         } else {
             log.info("Inventory deposited, starting withdrawals: {}", itemsToWithdraw);
             currentState = BankState.WITHDRAWING;
+            idleTicks = 0;
+            lastWithdrawProgress = getWithdrawalProgress();
         }
     }
 
@@ -198,6 +203,19 @@ public class BankTask implements BotTask {
         if (itemsToWithdraw.isEmpty()) {
             currentState = BankState.FINISHED;
             return;
+        }
+
+        int currentProgress = getWithdrawalProgress();
+        if (currentProgress > lastWithdrawProgress) {
+            idleTicks = 0;
+            lastWithdrawProgress = currentProgress;
+        } else {
+            idleTicks++;
+            if (idleTicks > 30) {
+                log.warn("Withdrawal timed out with no inventory progress.");
+                currentState = BankState.FAILED;
+                return;
+            }
         }
 
         ItemContainer bankContainer = client.getItemContainer(InventoryID.BANK);
@@ -214,12 +232,12 @@ public class BankTask implements BotTask {
                 continue;
             }
 
-            int inventoryQuantity = getInventoryQuantity(itemId);
+            int inventoryQuantity = getInventoryQuantityForRequirement(itemId);
             if (inventoryQuantity >= requiredQuantity) {
                 continue;
             }
 
-            int itemIndex = bankContainer.find(itemId);
+            int itemIndex = findBankItemIndexForRequirement(bankContainer, itemId);
             if (itemIndex == -1) {
                 log.warn("Unable to withdraw item {}. Item not found in bank.", itemId);
                 currentState = BankState.FAILED;
@@ -227,11 +245,6 @@ public class BankTask implements BotTask {
             }
 
             actionService.sendClickRequest(gameService.getBankItemPoint(itemIndex), true);
-            idleTicks++;
-            if (idleTicks > 30) {
-                log.warn("Withdrawal timed out for item {}.", itemId);
-                currentState = BankState.FAILED;
-            }
             return;
         }
 
@@ -242,6 +255,55 @@ public class BankTask implements BotTask {
             log.warn("Failed to withdraw all required items.");
             currentState = BankState.FAILED;
         }
+    }
+
+    private int getWithdrawalProgress() {
+        int progress = 0;
+        for (Map.Entry<Integer, Integer> entry : itemsToWithdraw.entrySet()) {
+            int requiredQuantity = Math.max(entry.getValue(), 0);
+            if (requiredQuantity <= 0) {
+                continue;
+            }
+
+            int inventoryQuantity = getInventoryQuantityForRequirement(entry.getKey());
+            progress += Math.min(inventoryQuantity, requiredQuantity);
+        }
+        return progress;
+    }
+
+    private int findBankItemIndexForRequirement(ItemContainer bankContainer, int itemId) {
+        int[] candidateIds = getEquivalentItemIds(itemId);
+        for (int candidateId : candidateIds) {
+            int index = bankContainer.find(candidateId);
+            if (index != -1) {
+                return index;
+            }
+        }
+        return -1;
+    }
+
+    private int getInventoryQuantityForRequirement(int itemId) {
+        int quantity = 0;
+        int[] candidateIds = getEquivalentItemIds(itemId);
+        for (int candidateId : candidateIds) {
+            quantity += getInventoryQuantity(candidateId);
+        }
+        return quantity;
+    }
+
+    private int[] getEquivalentItemIds(int itemId) {
+        return EQUIVALENT_ITEM_IDS.getOrDefault(itemId, new int[]{itemId});
+    }
+
+    private static Map<Integer, int[]> buildEquivalentItemIds() {
+        Map<Integer, int[]> equivalents = new HashMap<>();
+        for (PotionService.PotionType potionType : PotionService.PotionType.values()) {
+            int[] itemIds = potionType.getItemIds();
+            for (int itemId : itemIds) {
+                equivalents.put(itemId, itemIds);
+            }
+        }
+        return equivalents;
     }
 
     private int getInventoryQuantity(int itemId) {
@@ -265,7 +327,7 @@ public class BankTask implements BotTask {
             if (requiredQuantity == 0) {
                 continue;
             }
-            if (getInventoryQuantity(entry.getKey()) < requiredQuantity) {
+            if (getInventoryQuantityForRequirement(entry.getKey()) < requiredQuantity) {
                 return false;
             }
         }
