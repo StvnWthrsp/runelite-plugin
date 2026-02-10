@@ -5,7 +5,7 @@ import net.runelite.client.ui.PluginPanel;
 import javax.swing.*;
 import java.awt.*;
 
-public class CombatBotPanel extends PluginPanel {
+public class CombatBotPanel extends PluginPanel implements BotStatusPanel {
     private final RunepalPlugin plugin;
     private final BotConfig config;
     private final ConfigManager configManager;

@@ -1,70 +1,95 @@
 package com.runepal;
 
+import com.runepal.banking.BankPlan;
+import com.runepal.runtime.SubscriptionBag;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.api.GameObject;
+import net.runelite.api.Item;
 import net.runelite.api.ItemContainer;
 import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.gameval.InventoryID;
 import net.runelite.api.widgets.Widget;
 
-import java.util.Map;
-
 import javax.inject.Inject;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Objects;
 
 @Slf4j
 public class BankTask implements BotTask {
 
     private enum BankState {
         FIND_BANK,
+        INTERACTING_WITH_BANK,
         OPENING_BANK,
         DEPOSITING,
         WAITING_FOR_DEPOSIT,
-        FINISHED,
-        INTERACTING_WITH_BANK,
-        FAILED,
         WITHDRAWING,
-        DEPOSITING_ALL_ITEMS
+        FINISHED,
+        FAILED
     }
 
     private final Client client;
     private final ActionService actionService;
     private final GameService gameService;
+    private final EventService eventService;
+    private final Map<Integer, Integer> itemsToWithdraw;
+    private static final Map<Integer, int[]> EQUIVALENT_ITEM_IDS = buildEquivalentItemIds();
+    private SubscriptionBag subscriptionBag;
 
     private BankState currentState;
     private int idleTicks = 0;
+    private int lastWithdrawProgress = 0;
 
     @Inject
     public BankTask(RunepalPlugin plugin, ActionService actionService, GameService gameService) {
-        this.client = plugin.getClient();
-        this.actionService = actionService;
-        this.gameService = gameService;
+        this(plugin, actionService, gameService, null, Collections.emptyMap());
     }
-    
-    private EventService eventService;
 
     public BankTask(RunepalPlugin plugin, ActionService actionService, GameService gameService, EventService eventService) {
-        this.client = plugin.getClient();
-        this.actionService = actionService;
-        this.gameService = gameService;
-        this.eventService = eventService;
+        this(plugin, actionService, gameService, eventService, BankPlan.depositOnly());
     }
 
-    private Map<Integer, Integer> itemsToWithdraw;
+    public BankTask(RunepalPlugin plugin,
+                    ActionService actionService,
+                    GameService gameService,
+                    EventService eventService,
+                    Map<Integer, Integer> itemsToWithdraw) {
+        this(plugin, actionService, gameService, eventService, BankPlan.depositAndWithdraw(itemsToWithdraw));
+    }
 
-    public BankTask(RunepalPlugin plugin, Map<Integer, Integer> itemsToWithdraw, ActionService actionService, GameService gameService) {
-        this.client = plugin.getClient();
-        this.actionService = actionService;
-        this.gameService = gameService;
-        this.itemsToWithdraw = itemsToWithdraw;
+    public BankTask(RunepalPlugin plugin,
+                    ActionService actionService,
+                    GameService gameService,
+                    EventService eventService,
+                    BankPlan bankPlan) {
+        this.client = Objects.requireNonNull(plugin, "plugin cannot be null").getClient();
+        this.actionService = Objects.requireNonNull(actionService, "actionService cannot be null");
+        this.gameService = Objects.requireNonNull(gameService, "gameService cannot be null");
+        this.eventService = eventService;
+        this.itemsToWithdraw = bankPlan == null
+                ? Collections.emptyMap()
+                : new HashMap<>(bankPlan.getItemsToWithdraw());
+    }
+
+    public BankTask(RunepalPlugin plugin,
+                    Map<Integer, Integer> itemsToWithdraw,
+                    ActionService actionService,
+                    GameService gameService) {
+        this(plugin, actionService, gameService, null, itemsToWithdraw);
     }
 
     @Override
     public void onStart() {
         log.info("Starting bank task.");
         this.currentState = BankState.FIND_BANK;
+        this.idleTicks = 0;
+        this.lastWithdrawProgress = 0;
         if (eventService != null) {
-            eventService.subscribe(InteractionCompletedEvent.class, this::onInteractionCompleted);
+            subscriptionBag = new SubscriptionBag(eventService);
+            subscriptionBag.subscribe(InteractionCompletedEvent.class, this::onInteractionCompleted);
         }
     }
 
@@ -75,7 +100,6 @@ public class BankTask implements BotTask {
                 findAndOpenBank();
                 break;
             case INTERACTING_WITH_BANK:
-                // State transition handled by InteractionCompletedEvent
                 break;
             case OPENING_BANK:
                 waitForBankWidget();
@@ -83,34 +107,14 @@ public class BankTask implements BotTask {
             case DEPOSITING:
                 depositAllItems();
                 break;
-            case WITHDRAWING:
-                doWithdrawing();
-                break;
-            case DEPOSITING_ALL_ITEMS:
-                depositAllItems();
-                break;
             case WAITING_FOR_DEPOSIT:
                 waitForDeposit();
                 break;
+            case WITHDRAWING:
+                doWithdrawing();
+                break;
             default:
                 break;
-        }
-    }
-
-    private void doWithdrawing() {
-        ItemContainer bankContainer = client.getItemContainer(InventoryID.BANK);
-        if (bankContainer == null) {
-            log.warn("Bank container not found. Trying again.");
-            currentState = BankState.OPENING_BANK;
-            return;
-        }
-        for (Map.Entry<Integer, Integer> entry : itemsToWithdraw.entrySet()) { 
-            int itemId = entry.getKey();
-            int quantity = entry.getValue();
-            int itemIndex = bankContainer.find(itemId);
-            if (itemIndex != -1) {
-                actionService.sendClickRequest(gameService.getBankItemPoint(itemIndex), true);
-            }
         }
     }
 
@@ -122,10 +126,11 @@ public class BankTask implements BotTask {
                 actionService.interactWithGameObject(bankBooth, "Bank");
                 currentState = BankState.INTERACTING_WITH_BANK;
             }
-        } else {
-            log.warn("No bank booth found. Cannot proceed with banking.");
-            currentState = BankState.FAILED;
+            return;
         }
+
+        log.warn("No bank booth found. Cannot proceed with banking.");
+        currentState = BankState.FAILED;
     }
 
     private void waitForBankWidget() {
@@ -134,9 +139,10 @@ public class BankTask implements BotTask {
             log.info("Bank is open.");
             currentState = BankState.DEPOSITING;
             idleTicks = 0;
-        } else {
-            idleTicks++;
+            return;
         }
+
+        idleTicks++;
         if (idleTicks > 5) {
             log.info("Bank did not open, retrying.");
             idleTicks = 0;
@@ -146,26 +152,34 @@ public class BankTask implements BotTask {
 
     private void depositAllItems() {
         if (gameService.isInventoryEmpty()) {
-            log.info("Inventory is empty, skipping deposit.");
-            currentState = BankState.FINISHED;
+            transitionAfterDeposit();
             return;
         }
+
         Widget depositInventoryButton = client.getWidget(InterfaceID.Bankmain.DEPOSITINV);
         if (depositInventoryButton != null && !depositInventoryButton.isHidden()) {
             log.info("Depositing inventory.");
             actionService.sendClickRequest(gameService.getRandomClickablePoint(depositInventoryButton), true);
             currentState = BankState.WAITING_FOR_DEPOSIT;
+            idleTicks = 0;
+            return;
+        }
+
+        idleTicks++;
+        if (idleTicks > 5) {
+            log.warn("Deposit button not available.");
+            currentState = BankState.FAILED;
         }
     }
 
     private void waitForDeposit() {
         if (gameService.isInventoryEmpty()) {
-            log.info("Inventory is empty. Banking complete.");
-            currentState = BankState.FINISHED;
+            transitionAfterDeposit();
             idleTicks = 0;
-        } else {
-            idleTicks++;
+            return;
         }
+
+        idleTicks++;
         if (idleTicks > 5) {
             log.info("Failed to empty inventory. Check for unbankable items.");
             idleTicks = 0;
@@ -173,12 +187,159 @@ public class BankTask implements BotTask {
         }
     }
 
+    private void transitionAfterDeposit() {
+        if (itemsToWithdraw.isEmpty()) {
+            log.info("Inventory is empty. Banking complete.");
+            currentState = BankState.FINISHED;
+        } else {
+            log.info("Inventory deposited, starting withdrawals: {}", itemsToWithdraw);
+            currentState = BankState.WITHDRAWING;
+            idleTicks = 0;
+            lastWithdrawProgress = getWithdrawalProgress();
+        }
+    }
+
+    private void doWithdrawing() {
+        if (itemsToWithdraw.isEmpty()) {
+            currentState = BankState.FINISHED;
+            return;
+        }
+
+        int currentProgress = getWithdrawalProgress();
+        if (currentProgress > lastWithdrawProgress) {
+            idleTicks = 0;
+            lastWithdrawProgress = currentProgress;
+        } else {
+            idleTicks++;
+            if (idleTicks > 30) {
+                log.warn("Withdrawal timed out with no inventory progress.");
+                currentState = BankState.FAILED;
+                return;
+            }
+        }
+
+        ItemContainer bankContainer = client.getItemContainer(InventoryID.BANK);
+        if (bankContainer == null) {
+            log.warn("Bank container not found. Trying again.");
+            currentState = BankState.OPENING_BANK;
+            return;
+        }
+
+        for (Map.Entry<Integer, Integer> entry : itemsToWithdraw.entrySet()) {
+            int itemId = entry.getKey();
+            int requiredQuantity = Math.max(entry.getValue(), 0);
+            if (requiredQuantity <= 0) {
+                continue;
+            }
+
+            int inventoryQuantity = getInventoryQuantityForRequirement(itemId);
+            if (inventoryQuantity >= requiredQuantity) {
+                continue;
+            }
+
+            int itemIndex = findBankItemIndexForRequirement(bankContainer, itemId);
+            if (itemIndex == -1) {
+                log.warn("Unable to withdraw item {}. Item not found in bank.", itemId);
+                currentState = BankState.FAILED;
+                return;
+            }
+
+            actionService.sendClickRequest(gameService.getBankItemPoint(itemIndex), true);
+            return;
+        }
+
+        if (hasAllRequiredItems()) {
+            log.info("All required items withdrawn.");
+            currentState = BankState.FINISHED;
+        } else {
+            log.warn("Failed to withdraw all required items.");
+            currentState = BankState.FAILED;
+        }
+    }
+
+    private int getWithdrawalProgress() {
+        int progress = 0;
+        for (Map.Entry<Integer, Integer> entry : itemsToWithdraw.entrySet()) {
+            int requiredQuantity = Math.max(entry.getValue(), 0);
+            if (requiredQuantity <= 0) {
+                continue;
+            }
+
+            int inventoryQuantity = getInventoryQuantityForRequirement(entry.getKey());
+            progress += Math.min(inventoryQuantity, requiredQuantity);
+        }
+        return progress;
+    }
+
+    private int findBankItemIndexForRequirement(ItemContainer bankContainer, int itemId) {
+        int[] candidateIds = getEquivalentItemIds(itemId);
+        for (int candidateId : candidateIds) {
+            int index = bankContainer.find(candidateId);
+            if (index != -1) {
+                return index;
+            }
+        }
+        return -1;
+    }
+
+    private int getInventoryQuantityForRequirement(int itemId) {
+        int quantity = 0;
+        int[] candidateIds = getEquivalentItemIds(itemId);
+        for (int candidateId : candidateIds) {
+            quantity += getInventoryQuantity(candidateId);
+        }
+        return quantity;
+    }
+
+    private int[] getEquivalentItemIds(int itemId) {
+        return EQUIVALENT_ITEM_IDS.getOrDefault(itemId, new int[]{itemId});
+    }
+
+    private static Map<Integer, int[]> buildEquivalentItemIds() {
+        Map<Integer, int[]> equivalents = new HashMap<>();
+        for (PotionService.PotionType potionType : PotionService.PotionType.values()) {
+            int[] itemIds = potionType.getItemIds();
+            for (int itemId : itemIds) {
+                equivalents.put(itemId, itemIds);
+            }
+        }
+        return equivalents;
+    }
+
+    private int getInventoryQuantity(int itemId) {
+        ItemContainer inventory = client.getItemContainer(InventoryID.INV);
+        if (inventory == null) {
+            return 0;
+        }
+
+        int quantity = 0;
+        for (Item item : inventory.getItems()) {
+            if (item != null && item.getId() == itemId) {
+                quantity += item.getQuantity();
+            }
+        }
+        return quantity;
+    }
+
+    private boolean hasAllRequiredItems() {
+        for (Map.Entry<Integer, Integer> entry : itemsToWithdraw.entrySet()) {
+            int requiredQuantity = Math.max(entry.getValue(), 0);
+            if (requiredQuantity == 0) {
+                continue;
+            }
+            if (getInventoryQuantityForRequirement(entry.getKey()) < requiredQuantity) {
+                return false;
+            }
+        }
+        return true;
+    }
 
     @Override
     public void onStop() {
         log.info("Stopping bank task.");
-        if (eventService != null) {
-            eventService.unsubscribe(InteractionCompletedEvent.class, this::onInteractionCompleted);
+        if (subscriptionBag != null) {
+            subscriptionBag.clear();
+            subscriptionBag = null;
         }
     }
 
@@ -189,21 +350,21 @@ public class BankTask implements BotTask {
 
     @Override
     public boolean isStarted() {
-        if (currentState == null) {
-            return false;
-        }
-        return true;
+        return currentState != null;
     }
 
     private void onInteractionCompleted(InteractionCompletedEvent event) {
-        if (currentState == BankState.INTERACTING_WITH_BANK) {
-            if (event.isSuccess()) {
-                log.info("Bank interaction completed successfully");
-                currentState = BankState.OPENING_BANK;
-            } else {
-                log.warn("Bank interaction failed: {}", event.getFailureReason());
-                currentState = BankState.FIND_BANK;
-            }
+        if (currentState != BankState.INTERACTING_WITH_BANK) {
+            return;
+        }
+
+        if (event.isSuccess()) {
+            log.info("Bank interaction completed successfully");
+            currentState = BankState.OPENING_BANK;
+            idleTicks = 0;
+        } else {
+            log.warn("Bank interaction failed: {}", event.getFailureReason());
+            currentState = BankState.FIND_BANK;
         }
     }
 
@@ -211,4 +372,4 @@ public class BankTask implements BotTask {
     public String getTaskName() {
         return "Banking";
     }
-} 
+}

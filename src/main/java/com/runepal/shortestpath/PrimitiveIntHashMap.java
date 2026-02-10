@@ -207,7 +207,6 @@ public class PrimitiveIntHashMap<V> {
 
                     if (bInd >= newBucket.length) {
                         growBucket(bucketIndex)[newBucket.length] = oldBucket[ind];
-                        return;
                     }
                 }
             }

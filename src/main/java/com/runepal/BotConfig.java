@@ -476,12 +476,24 @@ public interface BotConfig extends Config
 		return 1;
 	}
 
+	@ConfigItem(
+			keyName = "sandCrabEnableExperimentalWorldHop",
+			name = "Sand Crab Enable Experimental World Hop",
+			description = "Enable experimental world hopping when other players are nearby",
+			position = 46,
+			hidden = true
+	)
+	default boolean sandCrabEnableExperimentalWorldHop()
+	{
+		return false;
+	}
+
 	// High Alch bot specific settings
 	@ConfigItem(
 			keyName = "highAlchItemId",
 			name = "Item",
 			description = "ID of Item to cast High Level Alchemy on",
-			position = 46,
+			position = 47,
 			hidden = true
 	)
 	default int highAlchItemId()

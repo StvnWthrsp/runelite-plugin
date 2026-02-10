@@ -1,72 +1,221 @@
-### **Project: Hybrid OSRS Bot - Refactoring Plan**
+# Refactor Plan
 
-**Project Goal:** To refactor the existing codebase to improve architectural soundness, reduce code duplication, and increase scalability before adding new features. This plan replaces the original development plan.
+Date: 2026-02-08  
+Repository: `runelite-plugin`  
+Objective: Refactor runtime/task architecture for correctness, maintainability, and extensibility without a risky full rewrite.
 
----
+## 1) Goals
 
-### **Phase 1: Core Architectural Refactoring**
+- Eliminate critical runtime correctness issues (task teardown, click semantics, banking flow, map rehash safety).
+- Reduce duplication in bot tasks and panel code.
+- Improve lifecycle ownership of threads, schedulers, and event subscriptions.
+- Make behavior testable with focused unit/integration tests.
+- Preserve working shortest-path architecture and evolve it safely.
 
-**Rationale:** The current architecture suffers from tight coupling, duplicated logic across tasks, and a flawed concurrency model. This phase introduces core services and a new base class to create a robust, message-driven foundation.
+## 2) Non-Goals
 
-*   **Task 1.1: Create the `ServiceLocator` and Core Services**
-    *   **Goal:** Establish a centralized dependency provider to decouple components.
-    *   **Action:**
-        1.  Create a new package `com.runepal.services`.
-        2.  Create a `ServiceLocator` class to hold and provide singleton instances of all services.
-        3.  Create an `ActionService` class. Move reusable logic like `findNearestGameObject`, `findItemInInventory`, and `getRandomClickablePoint` into this service.
-        4.  Create a `HumanizerService` class. This service will provide methods to generate human-like delays (e.g., `getShortDelay()`, `getMediumDelay()`), replacing all manual `delayTicks` and `Math.random` implementations. The delays should use a Gaussian distribution instead of basic random numbers.
-        5.  Create a simple `EventService` (or `EventBus`). This service will have `subscribe` and `publish` methods to manage game events.
-*   **Task 1.2: Refactor `BotTask` to an Abstract Class**
-    *   **Goal:** Eliminate redundant code in task implementations by providing base functionality.
-    *   **Action:**
-        1.  Change `BotTask.java` from an `interface` to an `abstract class`.
-        2.  Add a protected `tickDelay` counter.
-        3.  Implement a public `delay(int ticks)` method that sets this counter.
-        4.  Implement a final `onLoop()` method. This method will check the `tickDelay`. If it's greater than zero, it decrements the counter. If it's zero, it calls a new abstract method `protected abstract void onTick()`.
-        5.  All existing tasks will need to be updated to `extend BotTask` and implement `onTick()` instead of `onLoop()`.
-*   **Task 1.3: Refactor the Main Plugin (`AndromedaPlugin`)**
-    *   **Goal:** Adapt the main plugin to use the new service-oriented architecture.
-    *   **Action:**
-        1.  In the `startUp()` method, instantiate the `ServiceLocator` and all core services.
-        2.  Inject services into the `TaskManager` and other components as needed.
-        3.  Change all RuneLite `@Subscribe` methods (e.g., `onGameTick`, `onAnimationChanged`) to simply publish the event to the `EventService`. For example: `eventService.publish(gameTickEvent)`.
+- No full rewrite of shortest-path/pathfinder stack.
+- No redesign of RuneLite UI style patterns.
+- No migration to a different runtime language/framework.
 
----
+## 3) Target Architecture (Incremental)
 
-### **Phase 2: Task Implementation Refactoring**
+Proposed package-oriented target (gradual migration, not big-bang):
 
-**Rationale:** With the new architecture in place, all existing tasks must be updated to conform to the new patterns, ensuring they are decoupled, lean, and use the centralized services.
+- `com.runepal.runtime`
+  - `TaskRuntime`, `TaskStack`, `TaskLifecycle`
+  - `SubscriptionBag` (central event subscription ownership/disposal)
+- `com.runepal.interaction`
+  - `InteractionService` (menu resolution, hover verification, click policies)
+  - `InputService` (explicit `clickCurrent`, `clickAt`, `rightClickAt`)
+- `com.runepal.banking`
+  - `BankingService`, `BankPlan`, `WithdrawalPlan`
+- `com.runepal.bots.gathering`
+  - `GatheringTaskBase` + strategies (`MiningStrategy`, `WoodcuttingStrategy`, optional `FishingStrategy`)
+- `com.runepal.bots.combat`
+  - Hardened `CombatTask`, `SandCrabTask`, shared combat utilities
+- `com.runepal.ui`
+  - Common bot panel components and reusable form bindings
 
-*   **Task 2.1: Refactor `CombatTask`**
-    *   **Goal:** Update the most complex task to serve as a template for the others.
-    *   **Action:**
-        1.  Change `CombatTask` to `extends BotTask`.
-        2.  Replace the `onLoop` implementation with `onTick`.
-        3.  Remove all local `ScheduledExecutorService`, `delayTicks`, and random delay generation.
-        4.  Use `delay(humanizerService.getShortDelay())` for all waits.
-        5.  Replace direct `plugin.getClient()` calls with calls to the `ActionService` (e.g., `actionService.findNearestNpc(...)`).
-        6.  Remove the `onAnimationChanged` and `onInteractingChanged` methods. Instead, subscribe to these events from the `EventService` within the task's `onStart()` method.
-*   **Task 2.2: Refactor `MiningTask`**
-    *   **Goal:** Apply the new architecture to the mining logic.
-    *   **Action:**
-        1.  Apply the same refactoring steps as in Task 2.1.
-        2.  Ensure that all object finding, inventory checks, and delays are handled by the appropriate services.
-*   **Task 2.3: Refactor `WalkTask` and `BankTask`**
-    *   **Goal:** Update the utility tasks to the new standard.
-    *   **Action:**
-        1.  Apply the same refactoring steps as in Task 2.1.
-        2.  These tasks should become much simpler, primarily relying on the `ActionService` and the base `BotTask`'s delay mechanism.
+## 4) Execution Strategy
+
+Use strangler/branch-by-abstraction:
+
+- Introduce new interfaces and adapters first.
+- Migrate one bot/task path at a time.
+- Keep old paths working until replaced.
+- Add tests before or alongside each migration slice.
 
 ---
 
-### **Phase 3: Validation and Future Planning**
+## Phase 0 - Critical Stabilization (Immediate, 2-4 days)
 
-*   **Task 3.1: Full End-to-End Testing**
-    *   **Goal:** Ensure the refactored system is fully functional for all bot types (Combat, Mining).
-    *   **Action:**
-        1.  Run the bot in Combat mode and verify the entire loop (finding, attacking, eating, looting) works correctly.
-        2.  Run the bot in Mining (and Banking) mode and verify its loop is correct.
-        3.  Monitor logs for any errors or unexpected behavior.
-*   **Task 3.2: Plan for Phase 8 (Humanization and Error Recovery)**
-    *   **Goal:** Re-evaluate the original Phase 8 tasks in the context of the new architecture.
-    *   **Action:** Review the original plan for "Advanced Action Timing", "AFK Actions", and "Error Recovery". The new `HumanizerService` and `TaskManager` provide a much better foundation for implementing these features. Create a new, more detailed plan for these features.
+### Deliverables
+
+- Fix `TaskManager.clearTasks()` to stop all stacked tasks.
+- Split click APIs (`clickCurrent` vs `clickAt`) and update all critical call sites.
+- Null-guard menu bounds in interaction pipeline.
+- Fix `PrimitiveIntHashMap.rehash()` early return bug.
+- Fix mining bank config serialization consistency.
+- Ensure overlay add/remove symmetry.
+
+### Exit Criteria
+
+- No known critical correctness defect remains from review CR-01..CR-06.
+- `compileJava` and `test` pass.
+- Manual smoke tests: mining, woodcutting, combat eating/potioning, panel start/stop.
+
+---
+
+## Phase 1 - Lifecycle Ownership and Event Safety (3-5 days)
+
+### Deliverables
+
+- Introduce `SubscriptionBag` utility for deterministic subscribe/unsubscribe.
+- Refactor tasks still using ephemeral method refs (e.g., fishing, bank task).
+- Add `shutdown()` in `ActionService` to stop scheduler and unsubscribe handlers.
+- Standardize lifecycle: every service/task owns and releases exactly what it creates.
+
+### Exit Criteria
+
+- No task/service subscribes without deterministic unsubscribe path.
+- No scheduler thread remains after plugin shutdown.
+- Add lifecycle unit tests for start/stop idempotency.
+
+---
+
+## Phase 2 - Banking and Supply Orchestration (4-6 days)
+
+### Deliverables
+
+- Add `BankPlan` (`depositAll`, `withdraw(itemId, qty)`) and `BankingService`.
+- Refactor `BankTask` to execute withdrawal plans (not just deposit).
+- Wire `SandCrabTask` and `FishingTask` to pass explicit plans.
+- Remove unreachable/unused banking states and branches.
+
+### Exit Criteria
+
+- Sand crab and fishing can bank + re-supply deterministically.
+- `BankState.WITHDRAWING` path is either fully used or removed.
+- Add integration tests around inventory low -> bank -> return to activity.
+
+---
+
+## Phase 3 - Deduplicate Gathering Bots (5-8 days)
+
+### Deliverables
+
+- Introduce `GatheringTaskBase` with common FSM mechanics:
+  - find target
+  - interact
+  - wait for animation/xp signal
+  - inventory policy (drop/bank)
+  - subtask pause/resume
+- Implement mining and woodcutting as strategy specializations.
+- Extract common utility for next-target hover + target validity checks.
+
+### Exit Criteria
+
+- Mining and woodcutting task duplication reduced by at least 50%.
+- Behavior parity confirmed via manual flows.
+- Defect fixes land once in shared code, not twice.
+
+---
+
+## Phase 4 - UI Consolidation and Config Normalization (3-5 days)
+
+### Deliverables
+
+- Build reusable panel sections (mode selector, bank selector, status/control footer).
+- Standardize enum/string config serialization for all bank/location settings.
+- Remove orphan config keys and dead fields.
+- Keep existing UX and config semantics stable.
+
+### Exit Criteria
+
+- Mining and woodcutting panel duplication significantly reduced.
+- No config key uses mixed serialization conventions.
+- Config migration backward-compatible.
+
+---
+
+## Phase 5 - Dead Code Cleanup and Placeholder Hardening (2-4 days)
+
+### Deliverables
+
+- Remove confirmed dead artifacts (`FishingSpots`, `PendingTask`, unreachable states).
+- Decide explicit policy for placeholder tasks (e.g., `WorldHopTask`):
+  - fully implement, or
+  - gate behind experimental flag and mark non-production.
+- Revisit unused services (`PrayerService`, `SupplyManager`) and either integrate or remove.
+
+### Exit Criteria
+
+- No dead code from review remains without owner/decision.
+- Placeholder behavior is explicit and intentional.
+
+---
+
+## Phase 6 - Testing, Telemetry, and Reliability Gate (4-6 days)
+
+### Deliverables
+
+- Add focused tests for:
+  - task stack teardown semantics
+  - interaction click semantics
+  - banking plan execution
+  - rehash integrity for custom map
+- Add lightweight operational telemetry:
+  - per-task state transitions
+  - interaction failures by reason
+  - task stop cause metrics
+- Pin dependency versions for reproducible builds.
+
+### Exit Criteria
+
+- CI includes meaningful behavior tests (not harness-only).
+- Refactor release candidate has stable runtime behavior in smoke scenarios.
+
+---
+
+## 6) Prioritized Backlog (Top 12)
+
+1. Fix `TaskManager.clearTasks` full stack stop.
+2. Refactor click API semantics and update consumers.
+3. Null-guard menu bounds before click point generation.
+4. Repair `PrimitiveIntHashMap.rehash`.
+5. Fix mining bank config serialization.
+6. Add `ActionService.shutdown` and call it in plugin shutdown.
+7. Fix event unsubscribe identity in fishing/bank tasks.
+8. Implement `BankPlan` and wire withdrawals.
+9. Clear/rebuild `WalkTask` transport caches safely.
+10. Add null guards in `GameStateService` around player/hulls.
+11. Remove dead classes/enums/states.
+12. Add targeted unit/integration tests.
+
+## 7) Risk Management
+
+- Risk: Behavior regressions in active bots  
+  Mitigation: Migrate one bot at a time with smoke checklist and feature flags.
+
+- Risk: Refactor stalls due to broad scope  
+  Mitigation: Phase gates with hard exit criteria and no cross-phase creep.
+
+- Risk: Event/thread lifecycle regressions  
+  Mitigation: Lifecycle tests + centralized ownership abstractions.
+
+## 8) High-Level Effort Estimate
+
+- Total: about 4-7 weeks (single engineer), depending on test depth and gameplay verification cycles.
+- Critical stabilization can ship in week 1.
+
+## 9) Definition of Done
+
+Refactor is complete when:
+
+- Critical correctness issues are closed and verified.
+- Lifecycle ownership is deterministic for all tasks/services.
+- Banking/supply behavior is declarative and reliable.
+- Major duplication (gathering tasks/panels) is materially reduced.
+- Dead code/placeholders are removed or explicitly gated.
+- CI has behavior tests covering core bot runtime paths.

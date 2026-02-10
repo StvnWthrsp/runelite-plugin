@@ -184,7 +184,7 @@ public class PrayerService {
                 prayerWidget.getCanvasLocation().getX() + prayerWidget.getWidth() / 2,
                 prayerWidget.getCanvasLocation().getY() + prayerWidget.getHeight() / 2
             );
-            actionService.sendClickRequest(prayerPoint, false);
+            actionService.clickAt(prayerPoint);
             log.info("Activated prayer: {}", prayer.getName());
         }, delay, TimeUnit.MILLISECONDS);
         
@@ -219,7 +219,7 @@ public class PrayerService {
                 prayerWidget.getCanvasLocation().getX() + prayerWidget.getWidth() / 2,
                 prayerWidget.getCanvasLocation().getY() + prayerWidget.getHeight() / 2
             );
-            actionService.sendClickRequest(prayerPoint, false);
+            actionService.clickAt(prayerPoint);
             log.info("Deactivated prayer: {}", prayer.getName());
         }, delay, TimeUnit.MILLISECONDS);
         

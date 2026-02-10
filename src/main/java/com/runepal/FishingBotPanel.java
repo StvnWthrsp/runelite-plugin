@@ -13,7 +13,7 @@ import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
 
-public class FishingBotPanel extends PluginPanel {
+public class FishingBotPanel extends PluginPanel implements BotStatusPanel {
     private final JLabel statusLabel = new JLabel("Status: IDLE");
     private final JButton toggleButton = new JButton("Start");
     private final RunepalPlugin plugin;
@@ -100,14 +100,14 @@ public class FishingBotPanel extends PluginPanel {
         fishingSpotComboBox.addActionListener(e -> {
             FishingSpot selectedSpot = (FishingSpot) fishingSpotComboBox.getSelectedItem();
             if (selectedSpot != null) {
-                configManager.setConfiguration("runepal", "fishingSpot", selectedSpot);
+                configManager.setConfiguration("runepal", "fishingSpot", selectedSpot.name());
             }
         });
 
         fishingAreaComboBox.addActionListener(e -> {
             FishingArea selectedArea = (FishingArea) fishingAreaComboBox.getSelectedItem();
             if (selectedArea != null) {
-                configManager.setConfiguration("runepal", "fishingArea", selectedArea);
+                configManager.setConfiguration("runepal", "fishingArea", selectedArea.name());
             }
         });
 
@@ -118,7 +118,7 @@ public class FishingBotPanel extends PluginPanel {
         fishingModeComboBox.addActionListener(e -> {
             FishingMode selectedMode = (FishingMode) fishingModeComboBox.getSelectedItem();
             if (selectedMode != null) {
-                configManager.setConfiguration("runepal", "fishingMode", selectedMode);
+                configManager.setConfiguration("runepal", "fishingMode", selectedMode.name());
             }
         });
         

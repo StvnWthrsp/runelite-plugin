@@ -57,7 +57,8 @@ public class GameStateService {
      * @return true if player is idle, false otherwise
      */
     public boolean isPlayerIdle() {
-        return client.getLocalPlayer().getAnimation() == -1;
+        Player localPlayer = client.getLocalPlayer();
+        return localPlayer == null || localPlayer.getAnimation() == -1;
     }
 
     /**
@@ -128,7 +129,11 @@ public class GameStateService {
      * @return the current animation ID, or -1 if no animation is playing
      */
     public int getCurrentAnimation() {
-        return client.getLocalPlayer().getAnimation();
+        Player localPlayer = client.getLocalPlayer();
+        if (localPlayer == null) {
+            return -1;
+        }
+        return localPlayer.getAnimation();
     }
 
     /**
@@ -249,10 +254,16 @@ public class GameStateService {
     }
 
     public boolean isMouseOverObject(GameObject object) {
+        if (object == null || object.getConvexHull() == null) {
+            return false;
+        }
         return object.getConvexHull().contains(client.getMouseCanvasPosition().getX(), client.getMouseCanvasPosition().getY());
     }
 
     public boolean isMouseOverNpc(NPC npc) {
+        if (npc == null || npc.getConvexHull() == null) {
+            return false;
+        }
         return npc.getConvexHull().contains(client.getMouseCanvasPosition().getX(), client.getMouseCanvasPosition().getY());
     }
 

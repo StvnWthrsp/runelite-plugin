@@ -28,6 +28,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 
 @Singleton
 @Slf4j
@@ -49,6 +50,7 @@ public class ActionService {
 
     // Map to track pending interactions for Windmouse movements
     private final ConcurrentHashMap<String, PendingInteraction> pendingInteractions = new ConcurrentHashMap<>();
+    private final Consumer<MouseMovementCompletedEvent> mouseMovementCompletedHandler;
 
     @Inject
     public ActionService(RunepalPlugin plugin, GameService gameService, EventService eventService, BotConfig config,
@@ -61,9 +63,10 @@ public class ActionService {
         this.config = Objects.requireNonNull(config, "config cannot be null");
         this.windmouseService = Objects.requireNonNull(windmouseService, "windmouseService cannot be null");
         this.clickObstructionChecker = new ClickObstructionChecker(plugin.getClient());
+        this.mouseMovementCompletedHandler = this::handleMouseMovementCompleted;
 
         // Subscribe to mouse movement completion events
-        eventService.subscribe(MouseMovementCompletedEvent.class, this::handleMouseMovementCompleted);
+        eventService.subscribe(MouseMovementCompletedEvent.class, mouseMovementCompletedHandler);
     }
 
     /**
@@ -613,6 +616,7 @@ public class ActionService {
                     } else {
                         log.warn("WARN: getMenuEntryBounds returned null for entry '{}' at visual index {}", action,
                                 visualIndex);
+                        continue;
                     }
 
                     java.awt.Point menuEntryClickPoint = gameService.getRandomPointInBounds(menuBounds);
@@ -701,6 +705,7 @@ public class ActionService {
                     } else {
                         log.warn("WARN: getMenuEntryBounds returned null for entry '{}' at visual index {}", action,
                                 visualIndex);
+                        continue;
                     }
 
                     java.awt.Point menuEntryClickPoint = gameService.getRandomPointInBounds(menuBounds);
@@ -749,8 +754,11 @@ public class ActionService {
     public void sendClickRequest(Point clickPoint, boolean move) {
         log.debug("Sending click request to point: {}, move: {}", clickPoint, move);
         if (!move) {
-            // Click at current position without moving
-            remoteInputService.leftClick();
+            if (clickPoint != null && clickPoint.x != -1) {
+                clickAt(clickPoint);
+                return;
+            }
+            clickCurrent();
             return;
         }
         if (clickPoint == null || clickPoint.x == -1) {
@@ -770,9 +778,24 @@ public class ActionService {
         // Click will be executed after movement completes
     }
 
+    public void clickCurrent() {
+        remoteInputService.leftClick();
+    }
+
+    public void clickAt(Point clickPoint) {
+        if (clickPoint == null || clickPoint.x == -1 || clickPoint.y == -1) {
+            log.warn("Invalid point provided to clickAt.");
+            return;
+        }
+        remoteInputService.moveMouse(clickPoint.x, clickPoint.y);
+        remoteInputService.leftClick();
+    }
+
     public void sendRightClickRequest(Point clickPoint) {
-        log.info("Sending right click request");
-        // Right click at current position
+        log.info("Sending right click request at point: {}", clickPoint);
+        if (clickPoint != null && clickPoint.x != -1 && clickPoint.y != -1) {
+            remoteInputService.moveMouse(clickPoint.x, clickPoint.y);
+        }
         remoteInputService.rightClick();
     }
 
@@ -861,14 +884,24 @@ public class ActionService {
      * Execute a left click at the specified point
      */
     private void executeLeftClick(Point clickPoint) {
-        remoteInputService.leftClick();
+        if (clickPoint != null && clickPoint.x != -1 && clickPoint.y != -1) {
+            remoteInputService.moveMouse(clickPoint.x, clickPoint.y);
+        }
+        clickCurrent();
     }
 
     /**
      * Execute a right click at the specified point
      */
     private void executeRightClick(Point clickPoint) {
-        remoteInputService.rightClick();
+        sendRightClickRequest(clickPoint);
+    }
+
+    public void shutdown() {
+        eventService.unsubscribe(MouseMovementCompletedEvent.class, mouseMovementCompletedHandler);
+        pendingClickActions.clear();
+        pendingInteractions.clear();
+        scheduler.shutdownNow();
     }
 
 }

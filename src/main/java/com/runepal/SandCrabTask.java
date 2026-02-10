@@ -1,6 +1,9 @@
 package com.runepal;
 
 import lombok.extern.slf4j.Slf4j;
+import com.runepal.banking.BankingService;
+import com.runepal.banking.BankPlan;
+import com.runepal.runtime.SubscriptionBag;
 import net.runelite.api.Actor;
 import net.runelite.api.Client;
 import net.runelite.api.NPC;
@@ -23,7 +26,6 @@ import java.util.Objects;
 import java.util.ArrayDeque;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
-import java.util.function.Consumer;
 
 import com.runepal.entity.Interactable;
 import com.runepal.entity.NpcEntity;
@@ -41,14 +43,10 @@ public class SandCrabTask implements BotTask {
     private final EventService eventService;
     private final HumanizerService humanizerService;
     private final PotionService potionService;
-    private final SupplyManager supplyManager;
+    private final BankingService bankingService = new BankingService();
     private ScheduledExecutorService scheduler;
 
-    // Event handler references to maintain identity
-    private Consumer<AnimationChanged> animationHandler;
-    private Consumer<StatChanged> statHandler;
-    private Consumer<InteractingChanged> interactingHandler;
-    private Consumer<GameTick> gameTickHandler;
+    private SubscriptionBag subscriptionBag;
 
     // Internal state for sand crab FSM
     private enum SandCrabState {
@@ -244,7 +242,7 @@ public class SandCrabTask implements BotTask {
                        PathfinderConfig pathfinderConfig,
                        ActionService actionService, GameService gameService, 
                        EventService eventService, HumanizerService humanizerService, 
-                       PotionService potionService, SupplyManager supplyManager) {
+                       PotionService potionService) {
         this.plugin = plugin;
         this.config = config;
         this.taskManager = taskManager;
@@ -254,7 +252,6 @@ public class SandCrabTask implements BotTask {
         this.eventService = Objects.requireNonNull(eventService, "eventService cannot be null");
         this.humanizerService = Objects.requireNonNull(humanizerService, "humanizerService cannot be null");
         this.potionService = Objects.requireNonNull(potionService, "potionService cannot be null");
-        this.supplyManager = Objects.requireNonNull(supplyManager, "supplyManager cannot be null");
     }
 
     @Override
@@ -270,17 +267,11 @@ public class SandCrabTask implements BotTask {
         this.lastMagicXp = client.getSkillExperience(Skill.MAGIC);
         this.lastRangedXp = client.getSkillExperience(Skill.RANGED);
         
-        // Store event handler references to maintain identity
-        this.animationHandler = this::onAnimationChanged;
-        this.statHandler = this::onStatChanged;
-        this.interactingHandler = this::onInteractingChanged;
-        this.gameTickHandler = this::onGameTick;
-        
-        // Subscribe to events
-        this.eventService.subscribe(AnimationChanged.class, animationHandler);
-        this.eventService.subscribe(StatChanged.class, statHandler);
-        this.eventService.subscribe(InteractingChanged.class, interactingHandler);
-        this.eventService.subscribe(GameTick.class, gameTickHandler);
+        this.subscriptionBag = new SubscriptionBag(eventService);
+        subscriptionBag.subscribe(AnimationChanged.class, this::onAnimationChanged);
+        subscriptionBag.subscribe(StatChanged.class, this::onStatChanged);
+        subscriptionBag.subscribe(InteractingChanged.class, this::onInteractingChanged);
+        subscriptionBag.subscribe(GameTick.class, this::onGameTick);
         
         // Initialize scheduler
         if (this.scheduler == null || this.scheduler.isShutdown()) {
@@ -319,17 +310,10 @@ public class SandCrabTask implements BotTask {
         this.targetPosition = null;
         plugin.setTargetNpc(null); // Clear overlay
         
-        // Unsubscribe from events
-        this.eventService.unsubscribe(AnimationChanged.class, animationHandler);
-        this.eventService.unsubscribe(StatChanged.class, statHandler);
-        this.eventService.unsubscribe(InteractingChanged.class, interactingHandler);
-        this.eventService.unsubscribe(GameTick.class, gameTickHandler);
-        
-        // Clear handler references
-        this.animationHandler = null;
-        this.statHandler = null;
-        this.interactingHandler = null;
-        this.gameTickHandler = null;
+        if (subscriptionBag != null) {
+            subscriptionBag.clear();
+            subscriptionBag = null;
+        }
         
         // Shutdown scheduler
         if (this.scheduler != null && !this.scheduler.isShutdown()) {
@@ -402,8 +386,12 @@ public class SandCrabTask implements BotTask {
             log.info("Need to reset aggression, switching to reset state");
             currentState = SandCrabState.RESETTING_AGGRESSION;
         } else if (detectPlayersNearby()) {
-            log.info("Players detected nearby, switching to world hopping");
-            currentState = SandCrabState.WORLD_HOPPING;
+            if (config.sandCrabEnableExperimentalWorldHop()) {
+                log.info("Players detected nearby, switching to world hopping");
+                currentState = SandCrabState.WORLD_HOPPING;
+            } else {
+                log.debug("Players detected nearby, but experimental world hopping is disabled");
+            }
         } else if (System.currentTimeMillis() - lastRotateTime > cameraRotateTimerMs) {
             taskManager.pushTask(new CameraRotationTask(plugin, actionService, eventService));
             lastRotateTime = System.currentTimeMillis();
@@ -631,7 +619,7 @@ public class SandCrabTask implements BotTask {
         }
 
         log.info("Eating food at point: {}", foodPoint);
-        actionService.sendClickRequest(foodPoint, false);
+        actionService.clickAt(foodPoint);
 
         // Wait for eating animation
         delayTicks = humanizerService.getRandomDelay(3, 5);
@@ -867,8 +855,8 @@ public class SandCrabTask implements BotTask {
         }
         
         // Create and push banking task
-        // TODO: Add itemsToWithdraw Map<Integer, Integer> to BankTask
-        BankTask bankTask = new BankTask(plugin, actionService, gameService, eventService);
+        BankTask bankTask = new BankTask(plugin, actionService, gameService, eventService,
+                buildBankPlan(itemsToWithdraw));
         WalkTask walkTask = new WalkTask(plugin, pathfinderConfig, Banks.HUNTER_GUILD.getBankCoordinates(), actionService, gameService, humanizerService);
 
         taskManager.pushTask(bankTask);
@@ -878,9 +866,7 @@ public class SandCrabTask implements BotTask {
 
     private void pushWorldHopTask() {
         // Create world hop task
-        WorldHopTask worldHopTask = new WorldHopTask(plugin, config, taskManager, 
-                                                    gameService, actionService, eventService, 
-                                                    humanizerService);
+        WorldHopTask worldHopTask = new WorldHopTask(plugin, eventService, humanizerService);
         
         taskManager.pushTask(worldHopTask);
         currentState = SandCrabState.WAITING_FOR_SUBTASK;
@@ -984,5 +970,9 @@ public class SandCrabTask implements BotTask {
             currentState = SandCrabState.IDLE;
             delayTicks = humanizerService.getRandomDelay(3, 7);
         }
+    }
+
+    private BankPlan buildBankPlan(Map<Integer, Integer> itemsToWithdraw) {
+        return bankingService.createPlan(itemsToWithdraw);
     }
 }

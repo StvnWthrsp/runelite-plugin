@@ -63,8 +63,6 @@ public class RunepalPlugin extends Plugin {
 	@Getter
 	private PrayerService prayerService = null;
 	@Getter
-	private SupplyManager supplyManager = null;
-	@Getter
 	private RemoteInputService remoteInputService = null;
 
 	// Debugging and tracking variables
@@ -157,7 +155,6 @@ public class RunepalPlugin extends Plugin {
 		// Initialize combat-specific services
 		potionService = new PotionService(client, gameService, actionService, humanizerService);
 		prayerService = new PrayerService(client, actionService, humanizerService);
-		supplyManager = new SupplyManager(client, gameService, potionService, config);
 
 		pathfinderConfig = new PathfinderConfig(client, config);
 
@@ -173,9 +170,13 @@ public class RunepalPlugin extends Plugin {
 		overlayManager.remove(statusOverlay);
 		overlayManager.remove(inventoryOverlay);
 		overlayManager.remove(combatNpcOverlay);
+		overlayManager.remove(menuDebugOverlay);
 		taskManager.clearTasks();
 
 		// Clean up services
+		if (actionService != null) {
+			actionService.shutdown();
+		}
 		if (eventService != null) {
 			eventService.clearAllSubscribers();
 		}
@@ -261,6 +262,8 @@ public class RunepalPlugin extends Plugin {
 				// return;
 			}
 			log.info("Bot starting...");
+			sessionStartXp = client.getSkillExperience(Skill.MINING);
+			sessionStartTime = Instant.now();
 
 			// Start the appropriate task based on bot type
 			BotType botType = config.botType();
@@ -270,8 +273,8 @@ public class RunepalPlugin extends Plugin {
 							gameService, eventService, humanizerService));
 					break;
 				case COMBAT_BOT:
-					taskManager.pushTask(new CombatTask(this, config, taskManager, actionService, gameService,
-							eventService, humanizerService, potionService));
+					taskManager.pushTask(new CombatTask(this, config, actionService, gameService,
+							eventService, humanizerService, potionService, prayerService));
 					break;
 				case FISHING_BOT:
 					taskManager.pushTask(new FishingTask(this, config, taskManager, pathfinderConfig, actionService,
@@ -283,7 +286,7 @@ public class RunepalPlugin extends Plugin {
 					break;
 				case SAND_CRAB_BOT:
 					taskManager.pushTask(new SandCrabTask(this, config, taskManager, pathfinderConfig, actionService,
-							gameService, eventService, humanizerService, potionService, supplyManager));
+							gameService, eventService, humanizerService, potionService));
 					break;
 				case GEMSTONE_CRAB_BOT:
 					taskManager.pushTask(new GemstoneCrabTask(this, config, taskManager, actionService, gameService,
@@ -306,6 +309,8 @@ public class RunepalPlugin extends Plugin {
 			log.info("Bot stopping...");
 			taskManager.clearTasks();
 			currentState = "IDLE";
+			sessionStartXp = 0;
+			sessionStartTime = null;
 			wasRunning = false;
 		}
 
@@ -316,7 +321,9 @@ public class RunepalPlugin extends Plugin {
 
 	@Subscribe
 	public void onClientTick(ClientTick clientTick) {
-		eventService.publish(clientTick);
+		if (eventService != null) {
+			eventService.publish(clientTick);
+		}
 	}
 
 	public void stopBot() {
@@ -411,7 +418,10 @@ public class RunepalPlugin extends Plugin {
 	}
 
 	public WorldPoint getBankCoordinates() {
-		String bankName = config.miningBank();
+		return getBankCoordinates(config.miningBank());
+	}
+
+	public WorldPoint getBankCoordinates(String bankName) {
 		log.info("Bank name: {}", bankName);
 		switch (bankName) {
 			case "VARROCK_EAST":
