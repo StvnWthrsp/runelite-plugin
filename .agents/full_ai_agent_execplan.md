@@ -19,6 +19,7 @@ The user-visible behavior is: set an LLM provider and API key in plugin config, 
 - [x] (2026-02-26 17:18Z) Extended agent runtime with goal store, orchestrator, script executor, expanded WebSocket commands, and decision broadcasting.
 - [x] (2026-02-26 17:18Z) Integrated script start lifecycle into `src/main/java/com/runepal/RunepalPlugin.java` via `startScriptSpec(ScriptSpec)`.
 - [x] (2026-02-26 17:18Z) Added parser/validator tests under `src/test/java/com/runepal/agent/script/**` and retained template normalization test.
+- [x] (2026-02-26 17:26Z) Fixed logging-classpath regression by aligning WebSocket dependency with SLF4J 1.7 (`Java-WebSocket` 1.5.3) in `build.gradle`.
 - [ ] (2026-02-26 17:18Z) Validation partially complete (completed: attempted `./gradlew compileJava` and focused test command; remaining: rerun in JDK 11 environment with `JAVA_HOME` configured).
 
 ## Surprises & Discoveries
@@ -31,6 +32,13 @@ The user-visible behavior is: set an LLM provider and API key in plugin config, 
 
       $ ./gradlew test --tests "com.runepal.agent.script.ScriptValidatorTest"
       ERROR: JAVA_HOME is not set and no 'java' command could be found in your PATH.
+
+- Observation: Logging stopped in runtime due SLF4J major-version mismatch after introducing `Java-WebSocket` 1.5.6 (pulls `slf4j-api` 2.0.x while runtime binder is 1.7.x).
+  Evidence:
+
+      SLF4J: No SLF4J providers were found.
+      SLF4J: Class path contains SLF4J bindings targeting slf4j-api versions 1.7.x or earlier.
+      SLF4J: Ignoring binding found at [...]/logback-classic/1.2.9/.../StaticLoggerBinder.class
 
 ## Decision Log
 
@@ -52,6 +60,10 @@ The user-visible behavior is: set an LLM provider and API key in plugin config, 
 
 - Decision: Gate automatic execution of LLM-generated scripts behind `llmRequireScriptApproval`.
   Rationale: This adds a safety control for generated behavior without blocking template-skill planning.
+  Date/Author: 2026-02-26 / OpenCode.
+
+- Decision: Downgrade `org.java-websocket:Java-WebSocket` from `1.5.6` to `1.5.3`.
+  Rationale: Version 1.5.6 pulls `slf4j-api` 2.x and breaks RuneLite runtime logging that currently binds to SLF4J 1.7.x; 1.5.3 uses 1.7.x-compatible SLF4J.
   Date/Author: 2026-02-26 / OpenCode.
 
 ## Outcomes & Retrospective
