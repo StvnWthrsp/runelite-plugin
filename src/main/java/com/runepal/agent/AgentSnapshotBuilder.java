@@ -19,6 +19,7 @@ import net.runelite.api.Player;
 import net.runelite.api.Scene;
 import net.runelite.api.Skill;
 import net.runelite.api.Tile;
+import net.runelite.api.WorldView;
 import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.gameval.InventoryID;
 
@@ -177,7 +178,12 @@ public class AgentSnapshotBuilder {
 
     private JsonArray buildNearbyNpcsSnapshot(WorldPoint playerLocation) {
         JsonArray npcs = new JsonArray();
-        IndexedObjectSet<? extends NPC> indexedNpcs = client.getWorldView(-1).npcs();
+        WorldView worldView = client.getTopLevelWorldView();
+        if (worldView == null) {
+            return npcs;
+        }
+
+        IndexedObjectSet<? extends NPC> indexedNpcs = worldView.npcs();
         List<NPC> sortedNpcs = new ArrayList<>();
 
         for (NPC npc : indexedNpcs) {
@@ -216,13 +222,21 @@ public class AgentSnapshotBuilder {
 
     private JsonArray buildNearbyObjectsSnapshot(WorldPoint playerLocation) {
         JsonArray objects = new JsonArray();
-        Scene scene = client.getWorldView(-1).getScene();
+        WorldView worldView = client.getTopLevelWorldView();
+        if (worldView == null) {
+            return objects;
+        }
+
+        Scene scene = worldView.getScene();
         if (scene == null) {
             return objects;
         }
 
         Tile[][][] tiles = scene.getTiles();
-        int plane = client.getWorldView(-1).getPlane();
+        int plane = worldView.getPlane();
+        if (tiles == null || plane < 0 || plane >= tiles.length) {
+            return objects;
+        }
         List<GameObject> nearbyObjects = new ArrayList<>();
 
         for (int x = 0; x < Constants.SCENE_SIZE; x++) {

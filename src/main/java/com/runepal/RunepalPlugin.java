@@ -1,6 +1,8 @@
 package com.runepal;
 
 import com.runepal.agent.AgentService;
+import com.runepal.agent.script.ScriptSpec;
+import com.runepal.agent.script.ScriptTask;
 import com.runepal.services.*;
 import com.google.inject.Provides;
 import java.time.Duration;
@@ -366,6 +368,37 @@ public class RunepalPlugin extends Plugin {
 				log.warn("Unknown bot type: {}", botType);
 				return false;
 		}
+	}
+
+	public synchronized boolean startScriptSpec(ScriptSpec scriptSpec) {
+		if (scriptSpec == null) {
+			log.warn("Cannot start null script spec");
+			return false;
+		}
+
+		if (pathfinderConfig == null || actionService == null || gameService == null || eventService == null || humanizerService == null) {
+			log.warn("Cannot start script '{}' because required services are not initialized", scriptSpec.getName());
+			return false;
+		}
+
+		configManager.setConfiguration("runepal", "startBot", true);
+		taskManager.clearTasks();
+		currentState = "SCRIPT:" + scriptSpec.getName();
+		sessionStartXp = client.getSkillExperience(Skill.MINING);
+		sessionStartTime = Instant.now();
+
+		ScriptTask scriptTask = new ScriptTask(
+				scriptSpec,
+				this,
+				taskManager,
+				pathfinderConfig,
+				actionService,
+				gameService,
+				eventService,
+				humanizerService);
+		taskManager.pushTask(scriptTask);
+		wasRunning = true;
+		return true;
 	}
 
 	public void stopBot() {

@@ -99,6 +99,14 @@ public class AgentSkillExecutor {
         }
     }
 
+    public synchronized void clearActiveSkill(String message) {
+        activeSkill = null;
+        if (message != null && !message.trim().isEmpty()) {
+            lastMessage = message;
+            lastUpdatedAt = Instant.now();
+        }
+    }
+
     public synchronized JsonObject getStatusSnapshot() {
         JsonObject status = new JsonObject();
         status.addProperty("running", config.startBot());

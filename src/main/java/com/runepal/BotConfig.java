@@ -1,5 +1,6 @@
 package com.runepal;
 
+import com.runepal.llm.LlmProviderType;
 import com.runepal.shortestpath.TeleportationItem;
 import net.runelite.client.config.Config;
 import net.runelite.client.config.ConfigGroup;
@@ -751,6 +752,136 @@ public interface BotConfig extends Config
 	)
 	default boolean agentIncludeScreenshots() {
 		return false;
+	}
+
+	@ConfigItem(
+			keyName = "agentAutoPlanOnGoal",
+			name = "Auto-plan on Goal",
+			description = "Automatically request a new plan after set_goal",
+			position = 4,
+			section = agentSection
+	)
+	default boolean agentAutoPlanOnGoal() {
+		return true;
+	}
+
+	@ConfigItem(
+			keyName = "agentPlanEveryTicks",
+			name = "Replan Every N Ticks",
+			description = "When idle with a goal, request planning every N ticks (0 to disable)",
+			position = 5,
+			section = agentSection
+	)
+	default int agentPlanEveryTicks() {
+		return 30;
+	}
+
+	// LLM section
+	@ConfigSection(
+			name = "LLM Provider",
+			description = "OpenAI-compatible model provider settings for agent planning",
+			position = 46
+	)
+	String llmSection = "llmProvider";
+
+	@ConfigItem(
+			keyName = "llmEnable",
+			name = "Enable LLM Planning",
+			description = "Allow the in-plugin agent to call an external LLM provider",
+			position = 0,
+			section = llmSection
+	)
+	default boolean llmEnable() {
+		return false;
+	}
+
+	@ConfigItem(
+			keyName = "llmProvider",
+			name = "Provider",
+			description = "OpenAI-compatible provider",
+			position = 1,
+			section = llmSection
+	)
+	default LlmProviderType llmProvider() {
+		return LlmProviderType.OPENAI;
+	}
+
+	@ConfigItem(
+			keyName = "llmApiKey",
+			name = "API Key",
+			description = "Bearer API key used for provider authentication",
+			position = 2,
+			section = llmSection,
+			secret = true
+	)
+	default String llmApiKey() {
+		return "";
+	}
+
+	@ConfigItem(
+			keyName = "llmBaseUrl",
+			name = "Base URL",
+			description = "Optional override; defaults by provider if empty",
+			position = 3,
+			section = llmSection
+	)
+	default String llmBaseUrl() {
+		return "";
+	}
+
+	@ConfigItem(
+			keyName = "llmModel",
+			name = "Model",
+			description = "Chat completion model identifier",
+			position = 4,
+			section = llmSection
+	)
+	default String llmModel() {
+		return "gpt-4o-mini";
+	}
+
+	@ConfigItem(
+			keyName = "llmRequestTimeoutMs",
+			name = "Timeout (ms)",
+			description = "HTTP timeout for LLM requests",
+			position = 5,
+			section = llmSection
+	)
+	default int llmRequestTimeoutMs() {
+		return 15000;
+	}
+
+	@ConfigItem(
+			keyName = "llmMaxTokens",
+			name = "Max Tokens",
+			description = "Maximum completion tokens per planner call",
+			position = 6,
+			section = llmSection
+	)
+	default int llmMaxTokens() {
+		return 512;
+	}
+
+	@ConfigItem(
+			keyName = "llmTemperature",
+			name = "Temperature",
+			description = "Sampling temperature (0.0 to 2.0)",
+			position = 7,
+			section = llmSection
+	)
+	default double llmTemperature() {
+		return 0.2;
+	}
+
+	@ConfigItem(
+			keyName = "llmRequireScriptApproval",
+			name = "Require Script Approval",
+			description = "Do not auto-run generated scripts until manually executed",
+			position = 8,
+			section = llmSection
+	)
+	default boolean llmRequireScriptApproval() {
+		return true;
 	}
 
 	// Shortest Path section
