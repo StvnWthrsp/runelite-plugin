@@ -701,6 +701,58 @@ public interface BotConfig extends Config
 		return 5;
 	}
 
+	// Local Agent section
+	@ConfigSection(
+			name = "Local Agent - API",
+			description = "Local WebSocket stream and template skill control",
+			position = 45
+	)
+	String agentSection = "localAgent";
+
+	@ConfigItem(
+			keyName = "agentEnable",
+			name = "Enable Local Agent Server",
+			description = "Start a local-only WebSocket server for state streaming and skill commands",
+			position = 0,
+			section = agentSection
+	)
+	default boolean agentEnable() {
+		return false;
+	}
+
+	@ConfigItem(
+			keyName = "agentPort",
+			name = "WebSocket Port",
+			description = "Loopback port for the local agent WebSocket server",
+			position = 1,
+			section = agentSection
+	)
+	default int agentPort() {
+		return 8765;
+	}
+
+	@ConfigItem(
+			keyName = "agentStreamEveryTicks",
+			name = "Stream Every N Ticks",
+			description = "Broadcast one snapshot every N game ticks",
+			position = 2,
+			section = agentSection
+	)
+	default int agentStreamEveryTicks() {
+		return 2;
+	}
+
+	@ConfigItem(
+			keyName = "agentIncludeScreenshots",
+			name = "Include Screenshots",
+			description = "Attach a Base64 JPEG screenshot to each streamed snapshot",
+			position = 3,
+			section = agentSection
+	)
+	default boolean agentIncludeScreenshots() {
+		return false;
+	}
+
 	// Shortest Path section
 	@ConfigSection(
 			name = "Shortest Path - Navigation",

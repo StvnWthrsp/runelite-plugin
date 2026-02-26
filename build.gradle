@@ -23,6 +23,8 @@ dependencies {
 
 	// JNA for RemoteInput native library access
 	implementation 'net.java.dev.jna:jna:5.13.0'
+	implementation 'org.java-websocket:Java-WebSocket:1.5.6'
+	implementation 'com.google.code.gson:gson:2.10.1'
 
 	testImplementation 'junit:junit:4.12'
 	testImplementation group: 'net.runelite', name:'client', version: runeLiteVersion

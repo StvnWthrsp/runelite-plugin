@@ -3,6 +3,10 @@
 Guidance for autonomous coding agents working in this repository.
 Use this with `CLAUDE.md` as the primary project instructions.
 
+# ExecPlans
+
+When writing complex features or significant refactors, use an ExecPlan (as described in .agent/PLANS.md) from design to implementation.
+
 ## Project At A Glance
 - Project name: `runepal`
 - Primary language/runtime: Java 11 RuneLite plugin

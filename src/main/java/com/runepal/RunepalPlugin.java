@@ -1,5 +1,6 @@
 package com.runepal;
 
+import com.runepal.agent.AgentService;
 import com.runepal.services.*;
 import com.google.inject.Provides;
 import java.time.Duration;
@@ -64,6 +65,8 @@ public class RunepalPlugin extends Plugin {
 	private PrayerService prayerService = null;
 	@Getter
 	private RemoteInputService remoteInputService = null;
+	@Getter
+	private AgentService agentService = null;
 
 	// Debugging and tracking variables
 	@Getter
@@ -157,6 +160,7 @@ public class RunepalPlugin extends Plugin {
 		prayerService = new PrayerService(client, actionService, humanizerService);
 
 		pathfinderConfig = new PathfinderConfig(client, config);
+		agentService = new AgentService(this, config, configManager);
 
 		log.info("Runepal initialized with RemoteInput.");
 	}
@@ -185,6 +189,10 @@ public class RunepalPlugin extends Plugin {
 		}
 		if (prayerService != null) {
 			prayerService.shutdown();
+		}
+		if (agentService != null) {
+			agentService.shutdown();
+			agentService = null;
 		}
 
 		// Disconnect RemoteInput
@@ -246,6 +254,10 @@ public class RunepalPlugin extends Plugin {
 			eventService.publish(gameTick);
 		}
 
+		if (agentService != null) {
+			agentService.onGameTick();
+		}
+
 		if (panel != null) {
 			panel.setStatus(currentState);
 			panel.setButtonText(config.startBot() ? "Stop" : "Start");
@@ -267,39 +279,9 @@ public class RunepalPlugin extends Plugin {
 
 			// Start the appropriate task based on bot type
 			BotType botType = config.botType();
-			switch (botType) {
-				case MINING_BOT:
-					taskManager.pushTask(new MiningTask(this, config, taskManager, pathfinderConfig, actionService,
-							gameService, eventService, humanizerService));
-					break;
-				case COMBAT_BOT:
-					taskManager.pushTask(new CombatTask(this, config, actionService, gameService,
-							eventService, humanizerService, potionService, prayerService));
-					break;
-				case FISHING_BOT:
-					taskManager.pushTask(new FishingTask(this, config, taskManager, pathfinderConfig, actionService,
-							gameService, eventService, humanizerService));
-					break;
-				case WOODCUTTING_BOT:
-					taskManager.pushTask(new WoodcuttingTask(this, config, taskManager, pathfinderConfig, actionService,
-							gameService, eventService, humanizerService));
-					break;
-				case SAND_CRAB_BOT:
-					taskManager.pushTask(new SandCrabTask(this, config, taskManager, pathfinderConfig, actionService,
-							gameService, eventService, humanizerService, potionService));
-					break;
-				case GEMSTONE_CRAB_BOT:
-					taskManager.pushTask(new GemstoneCrabTask(this, config, taskManager, actionService, gameService,
-							eventService, humanizerService));
-					break;
-				case HIGH_ALCH_BOT:
-					taskManager.pushTask(new HighAlchTask(this, config, taskManager, actionService, gameService,
-							eventService, humanizerService));
-					break;
-				default:
-					log.warn("Unknown bot type: {}", botType);
-					stopBot();
-					return;
+			if (!startTaskForBotType(botType)) {
+				stopBot();
+				return;
 			}
 
 			wasRunning = true;
@@ -323,6 +305,66 @@ public class RunepalPlugin extends Plugin {
 	public void onClientTick(ClientTick clientTick) {
 		if (eventService != null) {
 			eventService.publish(clientTick);
+		}
+	}
+
+	public synchronized boolean startBotForType(BotType botType) {
+		if (botType == null) {
+			log.warn("Cannot start bot for null bot type");
+			return false;
+		}
+
+		configManager.setConfiguration("runepal", "botType", botType.name());
+		configManager.setConfiguration("runepal", "startBot", true);
+
+		taskManager.clearTasks();
+		currentState = "IDLE";
+		sessionStartXp = client.getSkillExperience(Skill.MINING);
+		sessionStartTime = Instant.now();
+
+		if (!startTaskForBotType(botType)) {
+			configManager.setConfiguration("runepal", "startBot", false);
+			wasRunning = false;
+			return false;
+		}
+
+		wasRunning = true;
+		return true;
+	}
+
+	private boolean startTaskForBotType(BotType botType) {
+		switch (botType) {
+			case MINING_BOT:
+				taskManager.pushTask(new MiningTask(this, config, taskManager, pathfinderConfig, actionService,
+						gameService, eventService, humanizerService));
+				return true;
+			case COMBAT_BOT:
+				taskManager.pushTask(new CombatTask(this, config, actionService, gameService,
+						eventService, humanizerService, potionService, prayerService));
+				return true;
+			case FISHING_BOT:
+				taskManager.pushTask(new FishingTask(this, config, taskManager, pathfinderConfig, actionService,
+						gameService, eventService, humanizerService));
+				return true;
+			case WOODCUTTING_BOT:
+				taskManager.pushTask(new WoodcuttingTask(this, config, taskManager, pathfinderConfig, actionService,
+						gameService, eventService, humanizerService));
+				return true;
+			case SAND_CRAB_BOT:
+				taskManager.pushTask(new SandCrabTask(this, config, taskManager, pathfinderConfig, actionService,
+						gameService, eventService, humanizerService, potionService));
+				return true;
+			case GEMSTONE_CRAB_BOT:
+				taskManager.pushTask(new GemstoneCrabTask(this, config, taskManager, actionService, gameService,
+						eventService, humanizerService));
+				return true;
+			case HIGH_ALCH_BOT:
+				taskManager.pushTask(new HighAlchTask(this, config, taskManager, actionService, gameService,
+						eventService, humanizerService));
+				return true;
+			default:
+				log.warn("Unknown bot type: {}", botType);
+				return false;
 		}
 	}
 
