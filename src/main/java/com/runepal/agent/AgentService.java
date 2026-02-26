@@ -728,6 +728,8 @@ public class AgentService {
                 || "debug".equalsIgnoreCase(decision.getDecisionType())
                 || "debug_answer".equalsIgnoreCase(decision.getDecisionType())) {
             latestAnswer = decision.getReason();
+        } else {
+            latestAnswer = "";
         }
 
         if (decision.getSource() != null && decision.getSource().toLowerCase().contains("debug")) {

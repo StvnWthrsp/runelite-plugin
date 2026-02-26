@@ -220,7 +220,7 @@ public class AgentOrchestrator {
                 decision = buildDecisionFromAction(goal, "heuristic", action,
                         llmEnabled ? "LLM API key missing, used heuristic fallback" : "LLM disabled, used heuristic fallback");
             } else {
-                    AgentLoopOutcome loopOutcome = toolLoopRunner.run(goal, snapshot, Math.max(2, config.agentMaxPlanTurns()));
+                AgentLoopOutcome loopOutcome = toolLoopRunner.run(goal, snapshot, Math.max(2, config.agentMaxPlanTurns()));
                 if (!loopOutcome.isSuccess()) {
                     action = heuristicPlan(goal);
                     AgentDecisionRecord fallbackDecision = buildDecisionFromAction(goal, "heuristic", action,
@@ -239,22 +239,8 @@ public class AgentOrchestrator {
                 } else {
                     JsonObject finalPayload = loopOutcome.getFinalPayload();
                     action = parseToolLoopFinalDecision(goal, finalPayload, true);
-                    if ("answer".equalsIgnoreCase(readString(finalPayload, "mode", ""))) {
-                        String answer = readString(finalPayload, "answer", "");
-                        if (finalPayload.has("citations") && finalPayload.get("citations").isJsonArray()) {
-                            answer = answer + "\nSources: " + finalPayload.getAsJsonArray("citations").toString();
-                        }
-                        decision = AgentDecisionRecord.builder()
-                                .timestamp(Instant.now())
-                                .goal(goal)
-                                .source("llm")
-                                .decisionType("answer")
-                                .reason(answer)
-                                .queuedExecution(false)
-                                .build();
-                    } else {
-                        decision = buildDecisionFromAction(goal, "llm", action, "Planned via tool loop response");
-                    }
+                    String planReason = buildPlanReasonFromPayload(finalPayload, action);
+                    decision = buildDecisionFromAction(goal, "llm", action, planReason);
                 }
             }
 
@@ -440,15 +426,18 @@ public class AgentOrchestrator {
 
         String mode = readString(decision, "mode", "");
         if ("answer".equalsIgnoreCase(mode)) {
-            return PlannedAction.none();
+            return fallbackPlanAction(goal, allowHeuristicFallback);
         }
 
         String decisionType = normalize(readString(decision, "decisionType", ""));
+        if (decisionType.isEmpty()) {
+            decisionType = decisionTypeFromAction(readString(decision, "action", ""));
+        }
         if ("TEMPLATE".equals(decisionType)) {
             String templateName = readString(decision, "templateName", null);
             Optional<AgentSkillTemplate> template = AgentSkillTemplate.fromWireName(templateName);
             if (!template.isPresent()) {
-                return allowHeuristicFallback ? heuristicPlan(goal) : PlannedAction.none();
+                return fallbackPlanAction(goal, allowHeuristicFallback);
             }
 
             JsonObject params = decision.has("templateParams") && decision.get("templateParams").isJsonObject()
@@ -458,8 +447,17 @@ public class AgentOrchestrator {
         }
 
         if ("SCRIPT".equals(decisionType)) {
+            String scriptName = readString(decision, "scriptName", "").trim();
+            if (!scriptName.isEmpty()) {
+                Optional<ScriptSpec> loaded = scriptRepository.loadScript(scriptName);
+                if (loaded.isPresent()) {
+                    return PlannedAction.runScript(loaded.get());
+                }
+                return fallbackPlanAction(goal, allowHeuristicFallback);
+            }
+
             if (!decision.has("script") || !decision.get("script").isJsonObject()) {
-                return allowHeuristicFallback ? heuristicPlan(goal) : PlannedAction.none();
+                return fallbackPlanAction(goal, allowHeuristicFallback);
             }
 
             JsonObject scriptJson = decision.getAsJsonObject("script");
@@ -467,12 +465,12 @@ public class AgentOrchestrator {
             try {
                 spec = scriptParser.parse(scriptJson);
             } catch (Exception parseError) {
-                return allowHeuristicFallback ? heuristicPlan(goal) : PlannedAction.none();
+                return fallbackPlanAction(goal, allowHeuristicFallback);
             }
 
             ScriptValidationResult validationResult = scriptValidator.validate(spec);
             if (!validationResult.isValid()) {
-                return allowHeuristicFallback ? heuristicPlan(goal) : PlannedAction.none();
+                return fallbackPlanAction(goal, allowHeuristicFallback);
             }
 
             try {
@@ -483,7 +481,87 @@ public class AgentOrchestrator {
             return PlannedAction.runScript(spec);
         }
 
-        return PlannedAction.none();
+        return fallbackPlanAction(goal, allowHeuristicFallback);
+    }
+
+    private PlannedAction fallbackPlanAction(String goal, boolean allowHeuristicFallback) {
+        if (!allowHeuristicFallback) {
+            return PlannedAction.none();
+        }
+
+        if (config.startBot()) {
+            return PlannedAction.none();
+        }
+
+        return heuristicPlan(goal);
+    }
+
+    private String buildPlanReasonFromPayload(JsonObject payload, PlannedAction action) {
+        String reason = clampReason(readString(payload, "reason", ""));
+        if (!reason.isEmpty()) {
+            return reason;
+        }
+
+        String actionValue = readString(payload, "action", "");
+        if (!actionValue.trim().isEmpty()) {
+            return clampReason("Action: " + actionValue.trim());
+        }
+
+        switch (action.getType()) {
+            case RUN_TEMPLATE:
+                if (action.getTemplate() != null) {
+                    return "Start template " + action.getTemplate().getWireName();
+                }
+                return "Start template";
+            case RUN_SCRIPT:
+                if (action.getScriptSpec() != null) {
+                    return "Run script " + action.getScriptSpec().getName();
+                }
+                return "Run script";
+            case NONE:
+            default:
+                return "Continue current automation";
+        }
+    }
+
+    private String clampReason(String reason) {
+        if (reason == null) {
+            return "";
+        }
+        String trimmed = reason.trim();
+        if (trimmed.isEmpty()) {
+            return "";
+        }
+        int maxLength = 140;
+        if (trimmed.length() <= maxLength) {
+            return trimmed;
+        }
+        return trimmed.substring(0, maxLength - 3) + "...";
+    }
+
+    private String decisionTypeFromAction(String action) {
+        String normalizedAction = normalize(action);
+        if ("CONTINUE_CURRENT".equals(normalizedAction)
+                || "CONTINUE".equals(normalizedAction)
+                || "DO_NOTHING".equals(normalizedAction)
+                || "IDLE".equals(normalizedAction)) {
+            return "IDLE";
+        }
+        if ("RUN_TEMPLATE".equals(normalizedAction)
+                || "START_TEMPLATE".equals(normalizedAction)
+                || "SWITCH_TEMPLATE".equals(normalizedAction)
+                || "TEMPLATE".equals(normalizedAction)) {
+            return "TEMPLATE";
+        }
+        if ("RUN_SCRIPT".equals(normalizedAction)
+                || "START_SCRIPT".equals(normalizedAction)
+                || "SWITCH_SCRIPT".equals(normalizedAction)
+                || "WRITE_SCRIPT".equals(normalizedAction)
+                || "GENERATE_SCRIPT".equals(normalizedAction)
+                || "SCRIPT".equals(normalizedAction)) {
+            return "SCRIPT";
+        }
+        return "";
     }
 
     private PlannedAction heuristicPlan(String goal) {
