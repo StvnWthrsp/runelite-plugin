@@ -776,6 +776,61 @@ public interface BotConfig extends Config
 		return 30;
 	}
 
+	@ConfigItem(
+			keyName = "agentMaxPlanTurns",
+			name = "Max Tool Turns",
+			description = "Maximum tool loop turns for one planning request",
+			position = 6,
+			section = agentSection
+	)
+	default int agentMaxPlanTurns() {
+		return 6;
+	}
+
+	@ConfigItem(
+			keyName = "agentEnableSelfDebug",
+			name = "Enable Self-Debug",
+			description = "Automatically trigger a debug-planning cycle when automation appears stalled",
+			position = 7,
+			section = agentSection
+	)
+	default boolean agentEnableSelfDebug() {
+		return true;
+	}
+
+	@ConfigItem(
+			keyName = "agentStallTicks",
+			name = "Stall Threshold (ticks)",
+			description = "How many ticks without progress before triggering self-debug",
+			position = 8,
+			section = agentSection
+	)
+	default int agentStallTicks() {
+		return 80;
+	}
+
+	@ConfigItem(
+			keyName = "agentDebugCooldownTicks",
+			name = "Debug Cooldown (ticks)",
+			description = "Minimum ticks between automatic self-debug attempts",
+			position = 9,
+			section = agentSection
+	)
+	default int agentDebugCooldownTicks() {
+		return 160;
+	}
+
+	@ConfigItem(
+			keyName = "agentDebugIncludeScreenshot",
+			name = "Debug Includes Screenshot",
+			description = "Capture and attach a screenshot when triggering self-debug",
+			position = 10,
+			section = agentSection
+	)
+	default boolean agentDebugIncludeScreenshot() {
+		return true;
+	}
+
 	// LLM section
 	@ConfigSection(
 			name = "LLM Provider",

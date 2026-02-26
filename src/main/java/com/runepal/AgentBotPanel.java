@@ -1,6 +1,8 @@
 package com.runepal;
 
 import com.google.gson.JsonObject;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.runepal.agent.AgentService;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.ui.PluginPanel;
@@ -34,18 +36,29 @@ public class AgentBotPanel extends PluginPanel implements BotStatusPanel {
     private final JLabel statusLabel = new JLabel("Agent idle", SwingConstants.CENTER);
     private final JLabel decisionLabel = new JLabel("Decision: (none)");
     private final JLabel planningLabel = new JLabel("Planning: false");
+    private final JLabel debugLabel = new JLabel("Debug: (none)");
     private final JLabel skillLabel = new JLabel("Template: (none)");
     private final JLabel scriptLabel = new JLabel("Script: (none)");
     private final JLabel pendingScriptLabel = new JLabel("Pending script: (none)");
+    private final JLabel memoryLabel = new JLabel("Memory: (none)");
 
     private final JButton planNowButton = new JButton("Plan Now");
     private final JButton stopButton = new JButton("Stop Automation");
     private final JButton setGoalButton = new JButton("Set Goal");
     private final JButton approveScriptButton = new JButton("Approve & Run Script");
+    private final JButton debugNowButton = new JButton("Debug Now");
+    private final JButton wikiTestButton = new JButton("Wiki Test");
+    private final JButton snapshotToolButton = new JButton("Tool: Snapshot");
+    private final JButton captureToolButton = new JButton("Tool: Capture");
 
     private final JCheckBox enableAgentCheckBox = new JCheckBox("Enable Local Agent", false);
     private final JCheckBox enableLlmCheckBox = new JCheckBox("Enable LLM Planning", false);
     private final JCheckBox requireApprovalCheckBox = new JCheckBox("Require Script Approval", true);
+
+    private final JTextArea answerArea = new JTextArea(4, 24);
+    private final JTextArea traceArea = new JTextArea(8, 24);
+    private final JTextArea pendingScriptArea = new JTextArea(8, 24);
+    private final JTextArea toolResultArea = new JTextArea(8, 24);
 
     private Timer refreshTimer;
 
@@ -56,7 +69,7 @@ public class AgentBotPanel extends PluginPanel implements BotStatusPanel {
         this.configManager = configManager;
 
         setLayout(new BorderLayout());
-        add(buildContent(), BorderLayout.NORTH);
+        add(new JScrollPane(buildContent()), BorderLayout.CENTER);
 
         bindActions();
         refreshFromRuntime();
@@ -110,6 +123,8 @@ public class AgentBotPanel extends PluginPanel implements BotStatusPanel {
         gbc.gridy++;
         statusPanel.add(planningLabel, gbc);
         gbc.gridy++;
+        statusPanel.add(debugLabel, gbc);
+        gbc.gridy++;
         statusPanel.add(decisionLabel, gbc);
         gbc.gridy++;
         statusPanel.add(skillLabel, gbc);
@@ -117,13 +132,17 @@ public class AgentBotPanel extends PluginPanel implements BotStatusPanel {
         statusPanel.add(scriptLabel, gbc);
         gbc.gridy++;
         statusPanel.add(pendingScriptLabel, gbc);
+        gbc.gridy++;
+        statusPanel.add(memoryLabel, gbc);
 
         JPanel controls = new JPanel(new FlowLayout(FlowLayout.CENTER));
         controls.setBorder(BorderFactory.createTitledBorder("Control"));
         stopButton.setPreferredSize(new Dimension(240, 36));
+        debugNowButton.setPreferredSize(new Dimension(240, 36));
         approveScriptButton.setPreferredSize(new Dimension(240, 36));
         approveScriptButton.setEnabled(false);
         controls.add(approveScriptButton);
+        controls.add(debugNowButton);
         controls.add(stopButton);
 
         JPanel stacked = new JPanel();
@@ -132,8 +151,53 @@ public class AgentBotPanel extends PluginPanel implements BotStatusPanel {
         stacked.add(goalPanel, BorderLayout.CENTER);
         stacked.add(controls, BorderLayout.SOUTH);
 
+        JPanel observabilityPanel = new JPanel(new GridBagLayout());
+        observabilityPanel.setBorder(BorderFactory.createTitledBorder("Agent Observability"));
+        GridBagConstraints obs = new GridBagConstraints();
+        obs.gridx = 0;
+        obs.gridy = 0;
+        obs.weightx = 1.0;
+        obs.fill = GridBagConstraints.HORIZONTAL;
+        obs.insets = new Insets(4, 6, 4, 6);
+
+        answerArea.setEditable(false);
+        answerArea.setLineWrap(true);
+        answerArea.setWrapStyleWord(true);
+        observabilityPanel.add(new JLabel("Answer"), obs);
+        obs.gridy++;
+        observabilityPanel.add(new JScrollPane(answerArea), obs);
+
+        traceArea.setEditable(false);
+        traceArea.setLineWrap(true);
+        traceArea.setWrapStyleWord(true);
+        observabilityPanel.add(new JLabel("Tool / Trace Log"), obs);
+        obs.gridy++;
+        observabilityPanel.add(new JScrollPane(traceArea), obs);
+
+        pendingScriptArea.setEditable(false);
+        pendingScriptArea.setLineWrap(true);
+        pendingScriptArea.setWrapStyleWord(true);
+        observabilityPanel.add(new JLabel("Pending Script JSON"), obs);
+        obs.gridy++;
+        observabilityPanel.add(new JScrollPane(pendingScriptArea), obs);
+
+        toolResultArea.setEditable(false);
+        toolResultArea.setLineWrap(true);
+        toolResultArea.setWrapStyleWord(true);
+        observabilityPanel.add(new JLabel("Tool Result"), obs);
+        obs.gridy++;
+        observabilityPanel.add(new JScrollPane(toolResultArea), obs);
+
+        JPanel toolButtons = new JPanel(new FlowLayout(FlowLayout.CENTER));
+        toolButtons.add(wikiTestButton);
+        toolButtons.add(snapshotToolButton);
+        toolButtons.add(captureToolButton);
+        obs.gridy++;
+        observabilityPanel.add(toolButtons, obs);
+
         root.add(stacked, BorderLayout.NORTH);
         root.add(statusPanel, BorderLayout.CENTER);
+        root.add(observabilityPanel, BorderLayout.SOUTH);
         return root;
     }
 
@@ -223,6 +287,54 @@ public class AgentBotPanel extends PluginPanel implements BotStatusPanel {
             }
             refreshFromRuntime();
         });
+
+        debugNowButton.addActionListener(e -> {
+            AgentService agentService = plugin.getAgentService();
+            if (agentService == null) {
+                return;
+            }
+
+            boolean started = agentService.triggerDebugFromUi();
+            if (!started) {
+                JOptionPane.showMessageDialog(this,
+                        "Debug could not start (bot may be idle or planner busy)",
+                        "Agent",
+                        JOptionPane.INFORMATION_MESSAGE);
+            }
+            refreshFromRuntime();
+        });
+
+        wikiTestButton.addActionListener(e -> {
+            AgentService agentService = plugin.getAgentService();
+            if (agentService == null) {
+                return;
+            }
+            JsonObject result = agentService.runWikiSmokeTest();
+            toolResultArea.setText(result.toString());
+            refreshFromRuntime();
+        });
+
+        snapshotToolButton.addActionListener(e -> {
+            AgentService agentService = plugin.getAgentService();
+            if (agentService == null) {
+                return;
+            }
+            JsonObject result = agentService.runToolFromUi("game.snapshot", new JsonObject());
+            toolResultArea.setText(result.toString());
+            refreshFromRuntime();
+        });
+
+        captureToolButton.addActionListener(e -> {
+            AgentService agentService = plugin.getAgentService();
+            if (agentService == null) {
+                return;
+            }
+            JsonObject args = new JsonObject();
+            args.addProperty("maxWidth", 640);
+            JsonObject result = agentService.runToolFromUi("vision.capture", args);
+            toolResultArea.setText(result.toString());
+            refreshFromRuntime();
+        });
     }
 
     private void startRefreshTimer() {
@@ -253,6 +365,8 @@ public class AgentBotPanel extends PluginPanel implements BotStatusPanel {
             }
 
             planningLabel.setText("Planning: " + agentService.isPlanning());
+            String debugReason = agentService.getLastDebugReason();
+            debugLabel.setText("Debug: " + (debugReason == null || debugReason.isEmpty() ? "(none)" : debugReason));
 
             JsonObject decision = agentService.getDecisionSnapshot();
             if (decision != null) {
@@ -278,10 +392,22 @@ public class AgentBotPanel extends PluginPanel implements BotStatusPanel {
             if (hasPending) {
                 String name = pending.has("name") ? pending.get("name").getAsString() : "";
                 pendingScriptLabel.setText("Pending script: " + (name.isEmpty() ? "(unnamed)" : name));
+                pendingScriptArea.setText(pending.has("script") ? pending.get("script").toString() : "");
             } else {
                 pendingScriptLabel.setText("Pending script: (none)");
+                pendingScriptArea.setText("");
             }
             approveScriptButton.setEnabled(hasPending);
+            debugNowButton.setEnabled(config.startBot());
+
+            String answer = agentService.getLatestAnswer();
+            answerArea.setText(answer == null ? "" : answer);
+
+            JsonObject trace = agentService.getTraceSnapshot(20);
+            traceArea.setText(formatTrace(trace));
+
+            String memoryTitle = agentService.getLatestMemoryTitle();
+            memoryLabel.setText("Memory: " + (memoryTitle == null || memoryTitle.isEmpty() ? "(none)" : memoryTitle));
 
             if (config.startBot()) {
                 statusLabel.setText("Automation running");
@@ -291,6 +417,32 @@ public class AgentBotPanel extends PluginPanel implements BotStatusPanel {
                 statusLabel.setForeground(java.awt.Color.LIGHT_GRAY);
             }
         });
+    }
+
+    private String formatTrace(JsonObject trace) {
+        if (trace == null || !trace.has("events") || !trace.get("events").isJsonArray()) {
+            return "";
+        }
+
+        JsonArray events = trace.getAsJsonArray("events");
+        StringBuilder builder = new StringBuilder();
+        for (JsonElement eventElement : events) {
+            if (!eventElement.isJsonObject()) {
+                continue;
+            }
+            JsonObject event = eventElement.getAsJsonObject();
+            String timestamp = event.has("timestamp") ? event.get("timestamp").getAsString() : "";
+            String category = event.has("category") ? event.get("category").getAsString() : "event";
+            String message = event.has("message") ? event.get("message").getAsString() : "";
+            builder.append('[')
+                    .append(timestamp)
+                    .append("] ")
+                    .append(category)
+                    .append(": ")
+                    .append(message)
+                    .append('\n');
+        }
+        return builder.toString();
     }
 
     @Override

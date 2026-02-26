@@ -1,24 +1,21 @@
 package com.runepal.agent;
 
 import com.google.gson.JsonArray;
-import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
 import com.runepal.BotConfig;
+import com.runepal.agent.llm.AgentLoopOutcome;
+import com.runepal.agent.llm.AgentToolLoopRunner;
 import com.runepal.agent.script.ScriptParser;
 import com.runepal.agent.script.ScriptRepository;
 import com.runepal.agent.script.ScriptSpec;
 import com.runepal.agent.script.ScriptValidationResult;
 import com.runepal.agent.script.ScriptValidator;
+import com.runepal.agent.trace.AgentTraceService;
 import com.runepal.llm.LlmClient;
-import com.runepal.llm.LlmMessage;
-import com.runepal.llm.LlmRequestOptions;
 import com.runepal.llm.LlmResult;
 import lombok.extern.slf4j.Slf4j;
 
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
@@ -44,6 +41,8 @@ public class AgentOrchestrator {
     private final AgentGoalStore goalStore;
     private final Consumer<PlannedAction> actionSink;
     private final Consumer<AgentDecisionRecord> decisionSink;
+    private final AgentToolLoopRunner toolLoopRunner;
+    private final AgentTraceService traceService;
     private final ExecutorService plannerExecutor;
     private final AtomicBoolean planning = new AtomicBoolean(false);
 
@@ -59,7 +58,9 @@ public class AgentOrchestrator {
                              ScriptRepository scriptRepository,
                              AgentGoalStore goalStore,
                              Consumer<PlannedAction> actionSink,
-                             Consumer<AgentDecisionRecord> decisionSink) {
+                             Consumer<AgentDecisionRecord> decisionSink,
+                             AgentToolLoopRunner toolLoopRunner,
+                             AgentTraceService traceService) {
         this.config = Objects.requireNonNull(config, "config cannot be null");
         this.llmClient = Objects.requireNonNull(llmClient, "llmClient cannot be null");
         this.scriptParser = Objects.requireNonNull(scriptParser, "scriptParser cannot be null");
@@ -68,6 +69,8 @@ public class AgentOrchestrator {
         this.goalStore = Objects.requireNonNull(goalStore, "goalStore cannot be null");
         this.actionSink = Objects.requireNonNull(actionSink, "actionSink cannot be null");
         this.decisionSink = Objects.requireNonNull(decisionSink, "decisionSink cannot be null");
+        this.toolLoopRunner = Objects.requireNonNull(toolLoopRunner, "toolLoopRunner cannot be null");
+        this.traceService = Objects.requireNonNull(traceService, "traceService cannot be null");
 
         ThreadFactory factory = runnable -> {
             Thread thread = new Thread(runnable, "agent-orchestrator");
@@ -151,7 +154,39 @@ public class AgentOrchestrator {
 
         JsonObject snapshotCopy = snapshot == null ? new JsonObject() : snapshot.deepCopy();
         JsonArray templatesCopy = templateDefinitions == null ? new JsonArray() : templateDefinitions.deepCopy();
-        plannerExecutor.submit(() -> planInternal(goal, snapshotCopy, templatesCopy));
+        JsonObject tracePayload = new JsonObject();
+        tracePayload.addProperty("goal", goal);
+        tracePayload.addProperty("templateCount", templatesCopy.size());
+        traceService.record("plan_requested", "planning requested", tracePayload);
+        plannerExecutor.submit(() -> planInternal(goal, snapshotCopy, templatesCopy, false, "", new JsonObject()));
+        return true;
+    }
+
+    public boolean requestDebugPlan(String reason,
+                                    JsonObject snapshot,
+                                    JsonArray templateDefinitions,
+                                    JsonObject debugEvidence) {
+        String goal = goalStore.getGoal();
+        if (goal == null || goal.trim().isEmpty()) {
+            goal = "(no goal set)";
+        }
+
+        if (!planning.compareAndSet(false, true)) {
+            return false;
+        }
+
+        JsonObject snapshotCopy = snapshot == null ? new JsonObject() : snapshot.deepCopy();
+        JsonArray templatesCopy = templateDefinitions == null ? new JsonArray() : templateDefinitions.deepCopy();
+        JsonObject evidenceCopy = debugEvidence == null ? new JsonObject() : debugEvidence.deepCopy();
+        String debugReason = reason == null ? "" : reason;
+
+        JsonObject tracePayload = new JsonObject();
+        tracePayload.addProperty("goal", goal);
+        tracePayload.addProperty("reason", debugReason);
+        traceService.record("debug_requested", "debug planning requested", tracePayload);
+
+        String finalGoal = goal;
+        plannerExecutor.submit(() -> planInternal(finalGoal, snapshotCopy, templatesCopy, true, debugReason, evidenceCopy));
         return true;
     }
 
@@ -162,8 +197,18 @@ public class AgentOrchestrator {
         });
     }
 
-    private void planInternal(String goal, JsonObject snapshot, JsonArray templateDefinitions) {
+    private void planInternal(String goal,
+                              JsonObject snapshot,
+                              JsonArray templateDefinitions,
+                              boolean debugMode,
+                              String debugReason,
+                              JsonObject debugEvidence) {
         try {
+            if (debugMode) {
+                planDebugInternal(goal, snapshot, templateDefinitions, debugReason, debugEvidence);
+                return;
+            }
+
             PlannedAction action;
             AgentDecisionRecord decision;
 
@@ -175,11 +220,11 @@ public class AgentOrchestrator {
                 decision = buildDecisionFromAction(goal, "heuristic", action,
                         llmEnabled ? "LLM API key missing, used heuristic fallback" : "LLM disabled, used heuristic fallback");
             } else {
-                LlmResult llmResult = callPlannerModel(goal, snapshot, templateDefinitions);
-                if (!llmResult.isSuccess()) {
+                    AgentLoopOutcome loopOutcome = toolLoopRunner.run(goal, snapshot, Math.max(2, config.agentMaxPlanTurns()));
+                if (!loopOutcome.isSuccess()) {
                     action = heuristicPlan(goal);
                     AgentDecisionRecord fallbackDecision = buildDecisionFromAction(goal, "heuristic", action,
-                            "LLM request failed, fallback: " + llmResult.getErrorMessage());
+                            "LLM tool loop failed, fallback: " + loopOutcome.getError());
                     decision = AgentDecisionRecord.builder()
                             .timestamp(Instant.now())
                             .goal(goal)
@@ -189,11 +234,27 @@ public class AgentOrchestrator {
                             .templateName(fallbackDecision.getTemplateName())
                             .scriptName(fallbackDecision.getScriptName())
                             .queuedExecution(fallbackDecision.isQueuedExecution())
-                            .error(llmResult.getErrorMessage())
+                            .error(loopOutcome.getError())
                             .build();
                 } else {
-                    action = parseModelDecision(goal, llmResult.getContent());
-                    decision = buildDecisionFromAction(goal, "llm", action, "Planned via model response");
+                    JsonObject finalPayload = loopOutcome.getFinalPayload();
+                    action = parseToolLoopFinalDecision(goal, finalPayload, true);
+                    if ("answer".equalsIgnoreCase(readString(finalPayload, "mode", ""))) {
+                        String answer = readString(finalPayload, "answer", "");
+                        if (finalPayload.has("citations") && finalPayload.get("citations").isJsonArray()) {
+                            answer = answer + "\nSources: " + finalPayload.getAsJsonArray("citations").toString();
+                        }
+                        decision = AgentDecisionRecord.builder()
+                                .timestamp(Instant.now())
+                                .goal(goal)
+                                .source("llm")
+                                .decisionType("answer")
+                                .reason(answer)
+                                .queuedExecution(false)
+                                .build();
+                    } else {
+                        decision = buildDecisionFromAction(goal, "llm", action, "Planned via tool loop response");
+                    }
                 }
             }
 
@@ -253,36 +314,133 @@ public class AgentOrchestrator {
         }
     }
 
-    private LlmResult callPlannerModel(String goal, JsonObject snapshot, JsonArray templateDefinitions) {
-        List<LlmMessage> messages = new ArrayList<>();
-        messages.add(LlmMessage.system(
-                "You are an OSRS automation planner. Return strict JSON only. "
-                        + "Prefer decisionType='template' whenever a suitable template exists in the provided templates list. "
-                        + "Only choose decisionType='script' when templates cannot accomplish the goal. "
-                        + "Output object fields: decisionType ('template'|'script'|'idle'), reason, "
-                        + "templateName, templateParams, script. "
-                        + "If script is chosen, script must include name, entryState, states. "
-                        + "Use templateParams keys exactly as suggested by the template parameter hints."));
+    private void planDebugInternal(String goal,
+                                   JsonObject snapshot,
+                                   JsonArray templateDefinitions,
+                                   String debugReason,
+                                   JsonObject debugEvidence) {
+        boolean llmEnabled = config.llmEnable();
+        boolean hasApiKey = config.llmApiKey() != null && !config.llmApiKey().trim().isEmpty();
 
-        JsonObject context = new JsonObject();
-        context.addProperty("goal", goal);
-        context.add("snapshot", snapshot);
-        context.add("templates", templateDefinitions);
+        if (!llmEnabled || !hasApiKey) {
+            AgentDecisionRecord decision = AgentDecisionRecord.builder()
+                    .timestamp(Instant.now())
+                    .goal(goal)
+                    .source("debug")
+                    .decisionType("debug")
+                    .reason(llmEnabled
+                            ? "Self-debug skipped: LLM API key missing"
+                            : "Self-debug skipped: LLM planning disabled")
+                    .queuedExecution(false)
+                    .build();
+            publishDecision(decision);
+            return;
+        }
 
-        messages.add(LlmMessage.user(context.toString()));
-        return llmClient.chatCompletion(
-                messages,
-                LlmRequestOptions.builder()
-                        .maxTokens(Math.max(128, config.llmMaxTokens()))
-                        .temperature(config.llmTemperature())
-                        .requireJsonResponse(true)
-                        .build());
+        JsonObject context = debugEvidence == null ? new JsonObject() : debugEvidence.deepCopy();
+        context.addProperty("debugReason", debugReason == null ? "" : debugReason);
+        context.add("templateDefinitions", templateDefinitions == null ? new JsonArray() : templateDefinitions.deepCopy());
+
+        String debugGoal = "Debug the currently stalled automation for goal: " + goal + ". "
+                + "Diagnose likely root cause using available tools and provide a minimal repair. "
+                + "Return mode=execute if you can repair now, else mode=answer with diagnosis and next checks.";
+
+        AgentLoopOutcome loopOutcome = toolLoopRunner.runDebug(
+                debugGoal,
+                snapshot == null ? new JsonObject() : snapshot.deepCopy(),
+                context,
+                Math.max(2, config.agentMaxPlanTurns()));
+
+        if (!loopOutcome.isSuccess()) {
+            AgentDecisionRecord decision = AgentDecisionRecord.builder()
+                    .timestamp(Instant.now())
+                    .goal(goal)
+                    .source("debug")
+                    .decisionType("debug")
+                    .reason("Self-debug failed: " + loopOutcome.getError())
+                    .queuedExecution(false)
+                    .error(loopOutcome.getError())
+                    .build();
+            publishDecision(decision);
+            return;
+        }
+
+        JsonObject finalPayload = loopOutcome.getFinalPayload();
+        String mode = readString(finalPayload, "mode", "");
+        if ("answer".equalsIgnoreCase(mode)) {
+            AgentDecisionRecord decision = AgentDecisionRecord.builder()
+                    .timestamp(Instant.now())
+                    .goal(goal)
+                    .source("llm_debug")
+                    .decisionType("debug")
+                    .reason(readString(finalPayload, "answer", "Self-debug returned no answer"))
+                    .queuedExecution(false)
+                    .build();
+            publishDecision(decision);
+            return;
+        }
+
+        PlannedAction action = parseToolLoopFinalDecision(goal, finalPayload, false);
+
+        if (action.getType() == PlannedActionType.NONE) {
+            String diagnosis = readString(finalPayload, "answer",
+                    readString(finalPayload, "reason", "Self-debug found no executable repair"));
+            AgentDecisionRecord decision = AgentDecisionRecord.builder()
+                    .timestamp(Instant.now())
+                    .goal(goal)
+                    .source("llm_debug")
+                    .decisionType("debug")
+                    .reason(diagnosis)
+                    .queuedExecution(false)
+                    .build();
+            publishDecision(decision);
+            return;
+        }
+
+        AgentDecisionRecord decision = buildDecisionFromAction(goal, "llm_debug", action,
+                "Self-debug produced a repair plan");
+
+        if (action.getType() == PlannedActionType.RUN_SCRIPT && config.llmRequireScriptApproval()) {
+            ScriptSpec pendingSpec = action.getScriptSpec();
+            if (pendingSpec != null) {
+                synchronized (this) {
+                    pendingScriptSpec = pendingSpec;
+                    pendingScriptCreatedAt = Instant.now();
+                }
+                try {
+                    scriptRepository.saveScript(pendingSpec);
+                } catch (Exception e) {
+                    log.warn("Failed to persist pending script '{}'", pendingSpec.getName(), e);
+                }
+            }
+
+            decision = AgentDecisionRecord.builder()
+                    .timestamp(Instant.now())
+                    .goal(goal)
+                    .source("llm_debug")
+                    .decisionType("script")
+                    .reason("Self-debug generated a script repair but execution is paused for approval")
+                    .scriptName(action.getScriptSpec() == null ? null : action.getScriptSpec().getName())
+                    .queuedExecution(false)
+                    .build();
+            publishDecision(decision);
+            return;
+        }
+
+        if (action.getType() != PlannedActionType.NONE) {
+            actionSink.accept(action);
+        }
+        publishDecision(decision);
     }
 
-    private PlannedAction parseModelDecision(String goal, String content) {
-        JsonObject decision = extractJsonObject(content);
+    private PlannedAction parseToolLoopFinalDecision(String goal, JsonObject decision, boolean allowHeuristicFallback) {
         if (decision == null) {
-            return heuristicPlan(goal);
+            return PlannedAction.none();
+        }
+
+        String mode = readString(decision, "mode", "");
+        if ("answer".equalsIgnoreCase(mode)) {
+            return PlannedAction.none();
         }
 
         String decisionType = normalize(readString(decision, "decisionType", ""));
@@ -290,7 +448,7 @@ public class AgentOrchestrator {
             String templateName = readString(decision, "templateName", null);
             Optional<AgentSkillTemplate> template = AgentSkillTemplate.fromWireName(templateName);
             if (!template.isPresent()) {
-                return heuristicPlan(goal);
+                return allowHeuristicFallback ? heuristicPlan(goal) : PlannedAction.none();
             }
 
             JsonObject params = decision.has("templateParams") && decision.get("templateParams").isJsonObject()
@@ -301,7 +459,7 @@ public class AgentOrchestrator {
 
         if ("SCRIPT".equals(decisionType)) {
             if (!decision.has("script") || !decision.get("script").isJsonObject()) {
-                return heuristicPlan(goal);
+                return allowHeuristicFallback ? heuristicPlan(goal) : PlannedAction.none();
             }
 
             JsonObject scriptJson = decision.getAsJsonObject("script");
@@ -309,12 +467,12 @@ public class AgentOrchestrator {
             try {
                 spec = scriptParser.parse(scriptJson);
             } catch (Exception parseError) {
-                return heuristicPlan(goal);
+                return allowHeuristicFallback ? heuristicPlan(goal) : PlannedAction.none();
             }
 
             ScriptValidationResult validationResult = scriptValidator.validate(spec);
             if (!validationResult.isValid()) {
-                return heuristicPlan(goal);
+                return allowHeuristicFallback ? heuristicPlan(goal) : PlannedAction.none();
             }
 
             try {
@@ -393,40 +551,12 @@ public class AgentOrchestrator {
 
     private void publishDecision(AgentDecisionRecord decision) {
         this.lastDecision = decision;
+        traceService.record("decision", "decision published", decision.toJson());
         log.info("Agent decision: type={}, source={}, reason={}",
                 decision.getDecisionType(),
                 decision.getSource(),
                 decision.getReason());
         decisionSink.accept(decision);
-    }
-
-    private JsonObject extractJsonObject(String content) {
-        if (content == null || content.trim().isEmpty()) {
-            return null;
-        }
-
-        try {
-            JsonElement direct = JsonParser.parseString(content);
-            if (direct.isJsonObject()) {
-                return direct.getAsJsonObject();
-            }
-        } catch (Exception ignored) {
-            // fall through to bracket extraction
-        }
-
-        int firstBrace = content.indexOf('{');
-        int lastBrace = content.lastIndexOf('}');
-        if (firstBrace < 0 || lastBrace <= firstBrace) {
-            return null;
-        }
-
-        String candidate = content.substring(firstBrace, lastBrace + 1);
-        try {
-            JsonElement parsed = JsonParser.parseString(candidate);
-            return parsed.isJsonObject() ? parsed.getAsJsonObject() : null;
-        } catch (Exception ignored) {
-            return null;
-        }
     }
 
     private String readString(JsonObject object, String key, String fallback) {

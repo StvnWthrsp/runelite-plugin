@@ -7,17 +7,45 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.runepal.BotConfig;
 import com.runepal.RunepalPlugin;
+import com.runepal.agent.llm.AgentToolLoopRunner;
+import com.runepal.agent.memory.AgentMemoryEntry;
+import com.runepal.agent.memory.AgentMemoryStore;
 import com.runepal.agent.script.ScriptParser;
 import com.runepal.agent.script.ScriptRepository;
 import com.runepal.agent.script.ScriptValidator;
+import com.runepal.agent.tools.AgentToolContext;
+import com.runepal.agent.tools.AgentToolDispatcher;
+import com.runepal.agent.tools.AgentToolRegistry;
+import com.runepal.agent.tools.AgentToolResult;
+import com.runepal.agent.tools.BotRunScriptTool;
+import com.runepal.agent.tools.BotRunTemplateTool;
+import com.runepal.agent.tools.BotStopTool;
+import com.runepal.agent.tools.GameSnapshotTool;
+import com.runepal.agent.tools.MemoryAddTool;
+import com.runepal.agent.tools.MemorySearchTool;
+import com.runepal.agent.tools.TraceGetRecentTool;
+import com.runepal.agent.tools.VisionCaptureTool;
+import com.runepal.agent.tools.WikiFetchTool;
+import com.runepal.agent.tools.WikiSearchTool;
+import com.runepal.agent.trace.AgentTraceService;
+import com.runepal.agent.wiki.OsrsWikiClient;
 import com.runepal.llm.LlmClient;
 import com.runepal.llm.LlmResult;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.GameState;
+import net.runelite.api.Item;
+import net.runelite.api.ItemContainer;
+import net.runelite.api.Player;
+import net.runelite.api.Skill;
+import net.runelite.api.coords.WorldPoint;
+import net.runelite.api.gameval.InventoryID;
 import net.runelite.client.config.ConfigManager;
 import org.java_websocket.WebSocket;
 
 import java.net.InetSocketAddress;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -33,6 +61,10 @@ public class AgentService {
     private final AgentSnapshotBuilder snapshotBuilder;
     private final AgentGoalStore goalStore;
     private final AgentOrchestrator orchestrator;
+    private final AgentTraceService traceService;
+    private final AgentMemoryStore memoryStore;
+    private final AgentToolRegistry toolRegistry;
+    private final AgentToolDispatcher toolDispatcher;
 
     private final Queue<QueuedCommand> commandQueue = new ConcurrentLinkedQueue<>();
     private final Gson gson = new Gson();
@@ -42,6 +74,15 @@ public class AgentService {
     private long tickCounter = 0;
     private volatile String latestSnapshotMessage;
     private volatile JsonObject latestSnapshotPayload;
+    private volatile String latestAnswer = "";
+    private volatile JsonObject latestToolResult = new JsonObject();
+
+    private long lastProgressTick = 0;
+    private long lastDebugAttemptTick = Long.MIN_VALUE / 4;
+    private int lastProgressFingerprint = 0;
+    private boolean hasProgressFingerprint = false;
+    private boolean debugInFlight = false;
+    private String lastDebugReason = "";
 
     public AgentService(RunepalPlugin plugin, BotConfig config, ConfigManager configManager) {
         this.plugin = Objects.requireNonNull(plugin, "plugin cannot be null");
@@ -56,8 +97,26 @@ public class AgentService {
 
         this.scriptExecutor = new AgentScriptExecutor(plugin, config, scriptParser, scriptValidator, scriptRepository);
         this.goalStore = new AgentGoalStore();
+        this.traceService = new AgentTraceService(300);
+        this.memoryStore = new AgentMemoryStore();
+
+        OsrsWikiClient wikiClient = new OsrsWikiClient();
 
         LlmClient llmClient = new LlmClient(config);
+        this.snapshotBuilder = new AgentSnapshotBuilder(plugin, config, skillExecutor);
+
+        this.toolRegistry = new AgentToolRegistry();
+        AgentToolContext toolContext = new AgentToolContext(
+                wikiClient,
+                memoryStore,
+                traceService,
+                snapshotBuilder,
+                () -> latestSnapshotPayload == null ? snapshotBuilder.buildSnapshot(tickCounter) : latestSnapshotPayload.deepCopy(),
+                this);
+        this.toolDispatcher = new AgentToolDispatcher(toolRegistry, toolContext, traceService);
+        registerTools();
+
+        AgentToolLoopRunner toolLoopRunner = new AgentToolLoopRunner(llmClient, toolDispatcher, toolRegistry, traceService);
         this.orchestrator = new AgentOrchestrator(
                 config,
                 llmClient,
@@ -66,9 +125,9 @@ public class AgentService {
                 scriptRepository,
                 goalStore,
                 this::queuePlannedAction,
-                this::publishDecision);
-
-        this.snapshotBuilder = new AgentSnapshotBuilder(plugin, config, skillExecutor);
+                this::publishDecision,
+                toolLoopRunner,
+                traceService);
     }
 
     public void onGameTick() {
@@ -84,6 +143,8 @@ public class AgentService {
 
         tickCounter++;
 
+        monitorStallAndTriggerDebug();
+
         if (shouldAutoPlan()) {
             requestPlanInternal();
         }
@@ -98,6 +159,11 @@ public class AgentService {
         snapshotPayload.add("decision", orchestrator.getLastDecisionSnapshot());
         snapshotPayload.add("script", scriptExecutor.getStatusSnapshot());
         snapshotPayload.add("pendingScript", orchestrator.getPendingScriptSnapshot());
+        snapshotPayload.add("trace", traceService.toSnapshot(20));
+        snapshotPayload.addProperty("answer", latestAnswer == null ? "" : latestAnswer);
+        snapshotPayload.addProperty("latestMemoryTitle", getLatestMemoryTitle());
+        snapshotPayload.addProperty("debugInFlight", debugInFlight);
+        snapshotPayload.addProperty("lastDebugReason", lastDebugReason == null ? "" : lastDebugReason);
         snapshotPayload.addProperty("planning", orchestrator.isPlanning());
 
         latestSnapshotPayload = snapshotPayload.deepCopy();
@@ -112,6 +178,9 @@ public class AgentService {
         commandQueue.clear();
         latestSnapshotMessage = null;
         latestSnapshotPayload = null;
+        debugInFlight = false;
+        hasProgressFingerprint = false;
+        lastDebugReason = "";
     }
 
     // UI-friendly API (no WebSocket client required)
@@ -124,6 +193,33 @@ public class AgentService {
 
     public boolean planNowFromUi() {
         return requestPlanInternal();
+    }
+
+    public boolean triggerDebugFromUi() {
+        if (!config.startBot()) {
+            return false;
+        }
+
+        JsonObject snapshot = latestSnapshotPayload == null
+                ? snapshotBuilder.buildSnapshot(tickCounter)
+                : latestSnapshotPayload.deepCopy();
+        String reason = "Manual self-debug request from Agent UI";
+        JsonObject debugEvidence = buildDebugEvidence(reason, Math.max(0, tickCounter - lastProgressTick), snapshot);
+
+        boolean started = orchestrator.requestDebugPlan(
+                reason,
+                snapshot,
+                skillExecutor.listSkillDefinitions(),
+                debugEvidence);
+        if (!started) {
+            return false;
+        }
+
+        lastDebugAttemptTick = tickCounter;
+        debugInFlight = true;
+        lastDebugReason = reason;
+        traceService.record("debug_requested", "manual self-debug triggered", debugEvidence);
+        return true;
     }
 
     public void stopAllFromUi() {
@@ -157,6 +253,54 @@ public class AgentService {
 
     public JsonObject getScriptStatusSnapshot() {
         return scriptExecutor.getStatusSnapshot();
+    }
+
+    public JsonObject getTraceSnapshot(int limit) {
+        return traceService.toSnapshot(limit);
+    }
+
+    public AgentTraceService getTraceService() {
+        return traceService;
+    }
+
+    public String getLatestAnswer() {
+        return latestAnswer == null ? "" : latestAnswer;
+    }
+
+    public JsonObject getLatestToolResult() {
+        return latestToolResult == null ? new JsonObject() : latestToolResult.deepCopy();
+    }
+
+    public JsonObject runToolFromUi(String toolName, JsonObject arguments) {
+        AgentToolResult result = toolDispatcher.dispatch(toolName, arguments == null ? new JsonObject() : arguments, "ui");
+        latestToolResult = result.toJson();
+        JsonObject response = new JsonObject();
+        response.addProperty("tool", toolName);
+        response.add("result", result.toJson());
+        return response;
+    }
+
+    public void queueRunScriptByName(String scriptName) {
+        if (scriptName == null || scriptName.trim().isEmpty()) {
+            return;
+        }
+        commandQueue.offer(QueuedCommand.runScriptName(null, null, "run_script_tool", scriptName.trim()));
+    }
+
+    public void queueRunScriptJson(JsonObject scriptJson, boolean saveBeforeRun) {
+        if (scriptJson == null || scriptJson.size() == 0) {
+            return;
+        }
+        commandQueue.offer(QueuedCommand.runScriptJson(null, null, "run_script_tool", scriptJson, saveBeforeRun));
+    }
+
+    public String getLatestMemoryTitle() {
+        AgentMemoryEntry entry = memoryStore.getMostRecent();
+        return entry == null ? "" : entry.getTitle();
+    }
+
+    public String getLastDebugReason() {
+        return lastDebugReason == null ? "" : lastDebugReason;
     }
 
     public boolean isPlanning() {
@@ -421,6 +565,10 @@ public class AgentService {
                 ? snapshotBuilder.buildSnapshot(tickCounter)
                 : latestSnapshotPayload.deepCopy();
         JsonArray templates = skillExecutor.listSkillDefinitions();
+        JsonObject tracePayload = new JsonObject();
+        tracePayload.addProperty("goal", goalStore.getGoal());
+        tracePayload.addProperty("source", "request_plan");
+        traceService.record("plan_requested", "plan requested", tracePayload);
         boolean started = orchestrator.requestPlan(snapshot, templates);
         if (started) {
             log.info("Agent planning started");
@@ -572,7 +720,84 @@ public class AgentService {
     }
 
     private void publishDecision(AgentDecisionRecord decision) {
+        if (decision == null) {
+            return;
+        }
+
+        if ("answer".equalsIgnoreCase(decision.getDecisionType())
+                || "debug".equalsIgnoreCase(decision.getDecisionType())
+                || "debug_answer".equalsIgnoreCase(decision.getDecisionType())) {
+            latestAnswer = decision.getReason();
+        }
+
+        if (decision.getSource() != null && decision.getSource().toLowerCase().contains("debug")) {
+            lastDebugReason = decision.getReason();
+        }
+
+        if (debugInFlight) {
+            debugInFlight = false;
+            JsonObject evidence = new JsonObject();
+            evidence.addProperty("source", decision.getSource());
+            evidence.addProperty("decisionType", decision.getDecisionType());
+            evidence.addProperty("queuedExecution", decision.isQueuedExecution());
+            if (decision.getTemplateName() != null) {
+                evidence.addProperty("template", decision.getTemplateName());
+            }
+            if (decision.getScriptName() != null) {
+                evidence.addProperty("script", decision.getScriptName());
+            }
+            appendMemoryEntry(
+                    "Self-debug result",
+                    buildTags("debug", "result"),
+                    decision.getReason(),
+                    evidence);
+        }
+
         safeBroadcast(envelopeToJson("decision", decision.toJson()));
+    }
+
+    private void registerTools() {
+        toolRegistry.register(new WikiSearchTool());
+        toolRegistry.register(new WikiFetchTool());
+        toolRegistry.register(new GameSnapshotTool());
+        toolRegistry.register(new VisionCaptureTool());
+        toolRegistry.register(new TraceGetRecentTool());
+        toolRegistry.register(new MemorySearchTool());
+        toolRegistry.register(new MemoryAddTool());
+        toolRegistry.register(new BotRunTemplateTool());
+        toolRegistry.register(new BotRunScriptTool());
+        toolRegistry.register(new BotStopTool());
+    }
+
+    public JsonObject runWikiSmokeTest() {
+        JsonObject searchArgs = new JsonObject();
+        searchArgs.addProperty("query", "Legends' Quest");
+        searchArgs.addProperty("limit", 1);
+        AgentToolResult searchResult = toolDispatcher.dispatch("wiki.search", searchArgs, "ui-wiki-search");
+
+        JsonObject result = new JsonObject();
+        result.add("search", searchResult.toJson());
+        if (!searchResult.isOk()) {
+            return result;
+        }
+
+        String title = "Legends' Quest";
+        try {
+            JsonArray items = searchResult.getPayload().getAsJsonArray("items");
+            if (items.size() > 0 && items.get(0).isJsonObject() && items.get(0).getAsJsonObject().has("title")) {
+                title = items.get(0).getAsJsonObject().get("title").getAsString();
+            }
+        } catch (Exception ignored) {
+            // fallback title remains
+        }
+
+        JsonObject fetchArgs = new JsonObject();
+        fetchArgs.addProperty("title", title);
+        fetchArgs.addProperty("format", "wikitext");
+        AgentToolResult fetchResult = toolDispatcher.dispatch("wiki.fetch", fetchArgs, "ui-wiki-fetch");
+        result.add("fetch", fetchResult.toJson());
+        latestToolResult = result.deepCopy();
+        return result;
     }
 
     private boolean shouldAutoPlan() {
@@ -590,6 +815,10 @@ public class AgentService {
             return false;
         }
 
+        if (debugInFlight) {
+            return false;
+        }
+
         if (orchestrator.hasPendingScript()) {
             return false;
         }
@@ -599,6 +828,191 @@ public class AgentService {
         }
         String goal = goalStore.getGoal();
         return goal != null && !goal.trim().isEmpty();
+    }
+
+    private void monitorStallAndTriggerDebug() {
+        if (!config.agentEnableSelfDebug()) {
+            return;
+        }
+
+        if (!config.startBot()) {
+            hasProgressFingerprint = false;
+            return;
+        }
+
+        if (plugin.getClient().getGameState() != GameState.LOGGED_IN) {
+            return;
+        }
+
+        if (orchestrator.isPlanning() || debugInFlight || orchestrator.hasPendingScript()) {
+            return;
+        }
+
+        if (tickCounter % 2 != 0) {
+            return;
+        }
+
+        int fingerprint = computeProgressFingerprint();
+        if (!hasProgressFingerprint) {
+            hasProgressFingerprint = true;
+            lastProgressFingerprint = fingerprint;
+            lastProgressTick = tickCounter;
+            return;
+        }
+
+        if (fingerprint != lastProgressFingerprint) {
+            lastProgressFingerprint = fingerprint;
+            lastProgressTick = tickCounter;
+            return;
+        }
+
+        int stallThresholdTicks = Math.max(20, config.agentStallTicks());
+        long stallTicks = tickCounter - lastProgressTick;
+        if (stallTicks < stallThresholdTicks) {
+            return;
+        }
+
+        int cooldownTicks = Math.max(stallThresholdTicks, config.agentDebugCooldownTicks());
+        if ((tickCounter - lastDebugAttemptTick) < cooldownTicks) {
+            return;
+        }
+
+        JsonObject snapshot = latestSnapshotPayload == null
+                ? snapshotBuilder.buildSnapshot(tickCounter)
+                : latestSnapshotPayload.deepCopy();
+        String reason = "No measurable progress for " + stallTicks + " ticks while automation is running";
+        JsonObject debugEvidence = buildDebugEvidence(reason, stallTicks, snapshot);
+
+        boolean started = orchestrator.requestDebugPlan(
+                reason,
+                snapshot,
+                skillExecutor.listSkillDefinitions(),
+                debugEvidence);
+
+        if (!started) {
+            traceService.record("debug_skipped", "self-debug request skipped because planner is busy");
+            return;
+        }
+
+        lastDebugAttemptTick = tickCounter;
+        debugInFlight = true;
+        lastDebugReason = reason;
+        traceService.record("debug_requested", "self-debug triggered", debugEvidence);
+
+        JsonObject memoryEvidence = new JsonObject();
+        memoryEvidence.addProperty("reason", reason);
+        memoryEvidence.addProperty("stallTicks", stallTicks);
+        memoryEvidence.addProperty("goal", goalStore.getGoal());
+        appendMemoryEntry(
+                "Stall detected",
+                buildTags("debug", "stall", "auto"),
+                reason,
+                memoryEvidence);
+    }
+
+    private int computeProgressFingerprint() {
+        StringBuilder builder = new StringBuilder(256);
+        builder.append(config.startBot()).append('|');
+        builder.append(plugin.getCurrentState() == null ? "" : plugin.getCurrentState()).append('|');
+
+        Player localPlayer = plugin.getClient().getLocalPlayer();
+        if (localPlayer != null) {
+            WorldPoint worldPoint = localPlayer.getWorldLocation();
+            if (worldPoint != null) {
+                builder.append(worldPoint.getX()).append(',')
+                        .append(worldPoint.getY()).append(',')
+                        .append(worldPoint.getPlane());
+            }
+            builder.append('|').append(localPlayer.getAnimation());
+            if (localPlayer.getInteracting() != null) {
+                builder.append('|').append(localPlayer.getInteracting().getClass().getSimpleName())
+                        .append(':').append(localPlayer.getInteracting().hashCode());
+            }
+        }
+
+        builder.append('|').append(computeTotalXp());
+        builder.append('|').append(computeInventoryHash());
+        return builder.toString().hashCode();
+    }
+
+    private long computeTotalXp() {
+        long totalXp = 0L;
+        for (Skill skill : Skill.values()) {
+            if (skill == Skill.OVERALL) {
+                continue;
+            }
+            totalXp += plugin.getClient().getSkillExperience(skill);
+        }
+        return totalXp;
+    }
+
+    private int computeInventoryHash() {
+        ItemContainer inventory = plugin.getClient().getItemContainer(InventoryID.INV);
+        if (inventory == null) {
+            return 0;
+        }
+
+        int hash = 1;
+        Item[] items = inventory.getItems();
+        if (items == null) {
+            return hash;
+        }
+
+        for (Item item : items) {
+            int itemId = item == null ? -1 : item.getId();
+            int quantity = item == null ? 0 : item.getQuantity();
+            hash = 31 * hash + itemId;
+            hash = 31 * hash + quantity;
+        }
+        return hash;
+    }
+
+    private JsonObject buildDebugEvidence(String reason, long stallTicks, JsonObject snapshot) {
+        JsonObject evidence = new JsonObject();
+        evidence.addProperty("reason", reason);
+        evidence.addProperty("stallTicks", stallTicks);
+        evidence.addProperty("goal", goalStore.getGoal());
+        evidence.add("snapshot", snapshot == null ? new JsonObject() : snapshot.deepCopy());
+        evidence.add("recentTrace", traceService.getRecentJson(60));
+
+        if (config.agentDebugIncludeScreenshot()) {
+            JsonObject capture = snapshotBuilder.captureScreenshot(640);
+            if (capture != null) {
+                evidence.add("screenshot", capture);
+            }
+        }
+
+        return evidence;
+    }
+
+    private void appendMemoryEntry(String title, List<String> tags, String content, JsonObject evidence) {
+        try {
+            memoryStore.append(new AgentMemoryEntry(
+                    Instant.now(),
+                    title,
+                    tags == null ? new ArrayList<>() : tags,
+                    content,
+                    evidence));
+        } catch (Exception e) {
+            log.warn("Failed to append memory entry '{}'", title, e);
+        }
+    }
+
+    private List<String> buildTags(String... tags) {
+        List<String> values = new ArrayList<>();
+        if (tags == null) {
+            return values;
+        }
+        for (String tag : tags) {
+            if (tag == null) {
+                continue;
+            }
+            String normalized = tag.trim();
+            if (!normalized.isEmpty()) {
+                values.add(normalized);
+            }
+        }
+        return values;
     }
 
     private JsonObject buildRunningPayload(boolean running) {

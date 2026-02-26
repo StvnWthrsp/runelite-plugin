@@ -1,6 +1,7 @@
 package com.runepal;
 
 import com.runepal.agent.AgentService;
+import com.runepal.agent.trace.AgentTraceService;
 import com.runepal.agent.script.ScriptSpec;
 import com.runepal.agent.script.ScriptTask;
 import com.runepal.services.*;
@@ -398,7 +399,8 @@ public class RunepalPlugin extends Plugin {
 				actionService,
 				gameService,
 				eventService,
-				humanizerService);
+				humanizerService,
+				agentService == null ? null : agentService.getTraceService());
 		taskManager.pushTask(scriptTask);
 		wasRunning = true;
 		return true;

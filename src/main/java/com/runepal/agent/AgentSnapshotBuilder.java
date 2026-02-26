@@ -26,6 +26,7 @@ import net.runelite.api.gameval.InventoryID;
 import javax.imageio.ImageIO;
 import java.awt.Canvas;
 import java.awt.Graphics2D;
+import java.awt.Image;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.time.Instant;
@@ -72,15 +73,16 @@ public class AgentSnapshotBuilder {
         WorldPoint playerLocation = localPlayer != null ? localPlayer.getWorldLocation() : null;
 
         snapshot.add("player", buildPlayerSnapshot(localPlayer));
+        snapshot.add("skills", buildSkillsSnapshot());
         snapshot.add("inventory", buildInventorySnapshot());
         snapshot.add("menu", buildMenuSnapshot());
         snapshot.add("nearbyNpcs", buildNearbyNpcsSnapshot(playerLocation));
         snapshot.add("nearbyObjects", buildNearbyObjectsSnapshot(playerLocation));
 
         if (config.agentIncludeScreenshots()) {
-            String screenshot = captureScreenshotBase64Jpeg();
-            if (screenshot != null) {
-                snapshot.addProperty("screenshotJpegBase64", screenshot);
+            JsonObject capture = captureScreenshot(640);
+            if (capture != null && capture.has("jpegBase64")) {
+                snapshot.add("screenshot", capture);
             }
         }
 
@@ -124,6 +126,20 @@ public class AgentSnapshotBuilder {
         }
 
         return player;
+    }
+
+    private JsonObject buildSkillsSnapshot() {
+        JsonObject skills = new JsonObject();
+        for (Skill skill : Skill.values()) {
+            if (skill == Skill.OVERALL) {
+                continue;
+            }
+            JsonObject entry = new JsonObject();
+            entry.addProperty("real", client.getRealSkillLevel(skill));
+            entry.addProperty("boosted", client.getBoostedSkillLevel(skill));
+            skills.add(skill.getName().toLowerCase(), entry);
+        }
+        return skills;
     }
 
     private JsonArray buildInventorySnapshot() {
@@ -301,7 +317,30 @@ public class AgentSnapshotBuilder {
         return actor.getClass().getSimpleName();
     }
 
-    private String captureScreenshotBase64Jpeg() {
+    public JsonObject captureScreenshot(int maxWidth) {
+        String base64 = captureScreenshotBase64Jpeg(maxWidth);
+        if (base64 == null) {
+            return null;
+        }
+        Canvas canvas = client.getCanvas();
+        JsonObject json = new JsonObject();
+        json.addProperty("jpegBase64", base64);
+        if (canvas != null) {
+            int width = canvas.getWidth();
+            int height = canvas.getHeight();
+            int safeMaxWidth = Math.max(200, maxWidth);
+            if (width > safeMaxWidth && width > 0) {
+                double ratio = safeMaxWidth / (double) width;
+                width = safeMaxWidth;
+                height = Math.max(1, (int) Math.round(height * ratio));
+            }
+            json.addProperty("width", width);
+            json.addProperty("height", height);
+        }
+        return json;
+    }
+
+    private String captureScreenshotBase64Jpeg(int maxWidth) {
         Canvas canvas = client.getCanvas();
         if (canvas == null || canvas.getWidth() <= 0 || canvas.getHeight() <= 0) {
             return null;
@@ -319,8 +358,23 @@ public class AgentSnapshotBuilder {
             graphics.dispose();
         }
 
+        BufferedImage output = image;
+        int safeMaxWidth = Math.max(200, maxWidth);
+        if (image.getWidth() > safeMaxWidth) {
+            int newHeight = Math.max(1, (int) Math.round(image.getHeight() * (safeMaxWidth / (double) image.getWidth())));
+            Image scaled = image.getScaledInstance(safeMaxWidth, newHeight, Image.SCALE_SMOOTH);
+            BufferedImage scaledImage = new BufferedImage(safeMaxWidth, newHeight, BufferedImage.TYPE_INT_RGB);
+            Graphics2D scaledGraphics = scaledImage.createGraphics();
+            try {
+                scaledGraphics.drawImage(scaled, 0, 0, null);
+            } finally {
+                scaledGraphics.dispose();
+            }
+            output = scaledImage;
+        }
+
         try (ByteArrayOutputStream outputStream = new ByteArrayOutputStream()) {
-            ImageIO.write(image, "jpg", outputStream);
+            ImageIO.write(output, "jpg", outputStream);
             return Base64.getEncoder().encodeToString(outputStream.toByteArray());
         } catch (Exception e) {
             log.debug("Failed to encode screenshot", e);

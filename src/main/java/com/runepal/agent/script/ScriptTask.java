@@ -12,6 +12,7 @@ import com.runepal.HumanizerService;
 import com.runepal.RunepalPlugin;
 import com.runepal.TaskManager;
 import com.runepal.WalkTask;
+import com.runepal.agent.trace.AgentTraceService;
 import com.runepal.shortestpath.pathfinder.PathfinderConfig;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.GameObject;
@@ -35,6 +36,7 @@ public class ScriptTask implements BotTask {
     private final GameService gameService;
     private final EventService eventService;
     private final HumanizerService humanizerService;
+    private final AgentTraceService traceService;
     private final Random random;
 
     private boolean started;
@@ -55,6 +57,18 @@ public class ScriptTask implements BotTask {
                       GameService gameService,
                       EventService eventService,
                       HumanizerService humanizerService) {
+        this(scriptSpec, plugin, taskManager, pathfinderConfig, actionService, gameService, eventService, humanizerService, null);
+    }
+
+    public ScriptTask(ScriptSpec scriptSpec,
+                      RunepalPlugin plugin,
+                      TaskManager taskManager,
+                      PathfinderConfig pathfinderConfig,
+                      ActionService actionService,
+                      GameService gameService,
+                      EventService eventService,
+                      HumanizerService humanizerService,
+                      AgentTraceService traceService) {
         this.scriptSpec = Objects.requireNonNull(scriptSpec, "scriptSpec cannot be null");
         this.plugin = Objects.requireNonNull(plugin, "plugin cannot be null");
         this.taskManager = Objects.requireNonNull(taskManager, "taskManager cannot be null");
@@ -63,6 +77,7 @@ public class ScriptTask implements BotTask {
         this.gameService = Objects.requireNonNull(gameService, "gameService cannot be null");
         this.eventService = Objects.requireNonNull(eventService, "eventService cannot be null");
         this.humanizerService = Objects.requireNonNull(humanizerService, "humanizerService cannot be null");
+        this.traceService = traceService;
         this.random = plugin.getRandom();
     }
 
@@ -78,6 +93,7 @@ public class ScriptTask implements BotTask {
         this.delayTicks = 0;
         plugin.setCurrentState("SCRIPT:" + scriptSpec.getName() + ":" + currentState);
         log.info("Starting script task '{}' at state '{}'.", scriptSpec.getName(), currentState);
+        trace("script_start", "script started", "state", currentState);
     }
 
     @Override
@@ -104,6 +120,7 @@ public class ScriptTask implements BotTask {
 
         ScriptStep step = steps.get(currentStepIndex);
         plugin.setCurrentState("SCRIPT:" + scriptSpec.getName() + ":" + currentState + "#" + currentStepIndex);
+        trace("script_step", "executing step", "stepType", step.getType().name());
 
         switch (step.getType()) {
             case ACTION:
@@ -130,6 +147,7 @@ public class ScriptTask implements BotTask {
             case STOP:
                 this.finished = true;
                 log.info("Script '{}' reached STOP step.", scriptSpec.getName());
+                trace("script_stop", "script reached stop", "state", currentState);
                 break;
             default:
                 fail("Unsupported step type: " + step.getType());
@@ -363,6 +381,7 @@ public class ScriptTask implements BotTask {
         this.currentStepIndex = 0;
         this.waitingStepIndex = -1;
         this.waitingState = null;
+        trace("script_transition", "state transition", "state", nextState);
     }
 
     private void advanceStep() {
@@ -376,6 +395,21 @@ public class ScriptTask implements BotTask {
         this.failureReason = reason;
         plugin.setCurrentState("SCRIPT_FAILED:" + scriptSpec.getName());
         log.warn("Script '{}' failed: {}", scriptSpec.getName(), reason);
+        trace("script_failure", reason, "state", currentState);
+    }
+
+    private void trace(String category, String message, String key, String value) {
+        if (traceService == null) {
+            return;
+        }
+        JsonObject payload = new JsonObject();
+        payload.addProperty("script", scriptSpec.getName());
+        payload.addProperty("currentState", currentState == null ? "" : currentState);
+        payload.addProperty("stepIndex", currentStepIndex);
+        if (key != null) {
+            payload.addProperty(key, value == null ? "" : value);
+        }
+        traceService.record(category, message, payload);
     }
 
     private int[] readIntArray(JsonObject object, String key) {
