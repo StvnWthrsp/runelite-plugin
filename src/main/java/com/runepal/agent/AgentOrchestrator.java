@@ -33,6 +33,9 @@ import java.util.function.Consumer;
 @Slf4j
 public class AgentOrchestrator {
     private static final Pattern KILL_TARGET_PATTERN = Pattern.compile("\\bkill\\b\\s+([^\\n\\r]+)", Pattern.CASE_INSENSITIVE);
+
+    private ScriptSpec pendingScriptSpec;
+    private Instant pendingScriptCreatedAt = Instant.EPOCH;
     private final BotConfig config;
     private final LlmClient llmClient;
     private final ScriptParser scriptParser;
@@ -80,6 +83,11 @@ public class AgentOrchestrator {
 
     public void setGoal(String goal) {
         goalStore.setGoal(goal);
+
+        synchronized (this) {
+            pendingScriptSpec = null;
+            pendingScriptCreatedAt = Instant.EPOCH;
+        }
     }
 
     public JsonObject getGoalSnapshot() {
@@ -88,6 +96,34 @@ public class AgentOrchestrator {
 
     public JsonObject getLastDecisionSnapshot() {
         return lastDecision.toJson();
+    }
+
+    public synchronized boolean hasPendingScript() {
+        return pendingScriptSpec != null;
+    }
+
+    public synchronized JsonObject getPendingScriptSnapshot() {
+        JsonObject json = new JsonObject();
+        json.addProperty("present", pendingScriptSpec != null);
+        if (pendingScriptSpec != null) {
+            json.addProperty("name", pendingScriptSpec.getName());
+            if (!Instant.EPOCH.equals(pendingScriptCreatedAt)) {
+                json.addProperty("createdAt", pendingScriptCreatedAt.toString());
+            }
+            json.add("script", pendingScriptSpec.toJson());
+        }
+        return json;
+    }
+
+    public synchronized PlannedAction consumePendingScriptAsAction() {
+        if (pendingScriptSpec == null) {
+            return PlannedAction.none();
+        }
+
+        ScriptSpec spec = pendingScriptSpec;
+        pendingScriptSpec = null;
+        pendingScriptCreatedAt = Instant.EPOCH;
+        return PlannedAction.runScript(spec);
     }
 
     public boolean isPlanning() {
@@ -162,6 +198,19 @@ public class AgentOrchestrator {
             }
 
             if (action.getType() == PlannedActionType.RUN_SCRIPT && config.llmRequireScriptApproval()) {
+                ScriptSpec pendingSpec = action.getScriptSpec();
+                if (pendingSpec != null) {
+                    synchronized (this) {
+                        pendingScriptSpec = pendingSpec;
+                        pendingScriptCreatedAt = Instant.now();
+                    }
+                    try {
+                        scriptRepository.saveScript(pendingSpec);
+                    } catch (Exception e) {
+                        log.warn("Failed to persist pending script '{}'", pendingSpec.getName(), e);
+                    }
+                }
+
                 decision = AgentDecisionRecord.builder()
                         .timestamp(Instant.now())
                         .goal(goal)
@@ -173,6 +222,14 @@ public class AgentOrchestrator {
                         .build();
                 publishDecision(decision);
                 return;
+            }
+
+            // Any successful non-paused plan clears any pending script.
+            if (action.getType() != PlannedActionType.RUN_SCRIPT) {
+                synchronized (this) {
+                    pendingScriptSpec = null;
+                    pendingScriptCreatedAt = Instant.EPOCH;
+                }
             }
 
             if (action.getType() != PlannedActionType.NONE) {
@@ -301,30 +358,7 @@ public class AgentOrchestrator {
             return PlannedAction.runTemplate(AgentSkillTemplate.COMBAT_BASIC, params);
         }
 
-        JsonObject fallbackScript = new JsonObject();
-        fallbackScript.addProperty("name", "idle_guard_script");
-        fallbackScript.addProperty("entryState", "main");
-        JsonObject states = new JsonObject();
-        JsonArray main = new JsonArray();
-
-        JsonObject step = new JsonObject();
-        step.addProperty("type", "wait_until");
-        JsonObject condition = new JsonObject();
-        condition.addProperty("type", "always");
-        step.add("condition", condition);
-        step.addProperty("timeoutTicks", 10);
-        main.add(step);
-
-        JsonObject gotoStep = new JsonObject();
-        gotoStep.addProperty("type", "goto");
-        gotoStep.addProperty("targetState", "main");
-        main.add(gotoStep);
-
-        states.add("main", main);
-        fallbackScript.add("states", states);
-
-        ScriptSpec spec = scriptParser.parse(fallbackScript);
-        return PlannedAction.runScript(spec);
+        return PlannedAction.none();
     }
 
     private AgentDecisionRecord buildDecisionFromAction(String goal, String source, PlannedAction action, String reason) {

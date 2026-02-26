@@ -97,6 +97,7 @@ public class AgentService {
         snapshotPayload.add("goal", goalStore.toJson());
         snapshotPayload.add("decision", orchestrator.getLastDecisionSnapshot());
         snapshotPayload.add("script", scriptExecutor.getStatusSnapshot());
+        snapshotPayload.add("pendingScript", orchestrator.getPendingScriptSnapshot());
         snapshotPayload.addProperty("planning", orchestrator.isPlanning());
 
         latestSnapshotPayload = snapshotPayload.deepCopy();
@@ -135,6 +136,19 @@ public class AgentService {
 
     public JsonObject getDecisionSnapshot() {
         return orchestrator.getLastDecisionSnapshot();
+    }
+
+    public JsonObject getPendingScriptSnapshot() {
+        return orchestrator.getPendingScriptSnapshot();
+    }
+
+    public boolean approvePendingScriptFromUi() {
+        AgentOrchestrator.PlannedAction action = orchestrator.consumePendingScriptAsAction();
+        if (action.getType() != AgentOrchestrator.PlannedActionType.RUN_SCRIPT) {
+            return false;
+        }
+        queuePlannedAction(action);
+        return true;
     }
 
     public JsonObject getSkillStatusSnapshot() {
@@ -573,6 +587,10 @@ public class AgentService {
             return false;
         }
         if (orchestrator.isPlanning()) {
+            return false;
+        }
+
+        if (orchestrator.hasPendingScript()) {
             return false;
         }
 

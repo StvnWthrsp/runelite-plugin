@@ -10,6 +10,7 @@ import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
+import javax.swing.BoxLayout;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTextArea;
@@ -35,13 +36,16 @@ public class AgentBotPanel extends PluginPanel implements BotStatusPanel {
     private final JLabel planningLabel = new JLabel("Planning: false");
     private final JLabel skillLabel = new JLabel("Template: (none)");
     private final JLabel scriptLabel = new JLabel("Script: (none)");
+    private final JLabel pendingScriptLabel = new JLabel("Pending script: (none)");
 
     private final JButton planNowButton = new JButton("Plan Now");
     private final JButton stopButton = new JButton("Stop Automation");
     private final JButton setGoalButton = new JButton("Set Goal");
+    private final JButton approveScriptButton = new JButton("Approve & Run Script");
 
     private final JCheckBox enableAgentCheckBox = new JCheckBox("Enable Local Agent", false);
     private final JCheckBox enableLlmCheckBox = new JCheckBox("Enable LLM Planning", false);
+    private final JCheckBox requireApprovalCheckBox = new JCheckBox("Require Script Approval", true);
 
     private Timer refreshTimer;
 
@@ -85,10 +89,12 @@ public class AgentBotPanel extends PluginPanel implements BotStatusPanel {
         goalButtons.add(planNowButton);
         goalPanel.add(goalButtons, BorderLayout.SOUTH);
 
-        JPanel toggles = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        JPanel toggles = new JPanel();
+        toggles.setLayout(new BoxLayout(toggles, BoxLayout.Y_AXIS));
         toggles.setBorder(BorderFactory.createTitledBorder("Agent Settings"));
         toggles.add(enableAgentCheckBox);
         toggles.add(enableLlmCheckBox);
+        toggles.add(requireApprovalCheckBox);
 
         JPanel statusPanel = new JPanel(new GridBagLayout());
         statusPanel.setBorder(BorderFactory.createTitledBorder("Status"));
@@ -109,10 +115,15 @@ public class AgentBotPanel extends PluginPanel implements BotStatusPanel {
         statusPanel.add(skillLabel, gbc);
         gbc.gridy++;
         statusPanel.add(scriptLabel, gbc);
+        gbc.gridy++;
+        statusPanel.add(pendingScriptLabel, gbc);
 
         JPanel controls = new JPanel(new FlowLayout(FlowLayout.CENTER));
         controls.setBorder(BorderFactory.createTitledBorder("Control"));
         stopButton.setPreferredSize(new Dimension(240, 36));
+        approveScriptButton.setPreferredSize(new Dimension(240, 36));
+        approveScriptButton.setEnabled(false);
+        controls.add(approveScriptButton);
         controls.add(stopButton);
 
         JPanel stacked = new JPanel();
@@ -133,6 +144,10 @@ public class AgentBotPanel extends PluginPanel implements BotStatusPanel {
 
         enableLlmCheckBox.addActionListener(e -> {
             configManager.setConfiguration("runepal", "llmEnable", enableLlmCheckBox.isSelected());
+        });
+
+        requireApprovalCheckBox.addActionListener(e -> {
+            configManager.setConfiguration("runepal", "llmRequireScriptApproval", requireApprovalCheckBox.isSelected());
         });
 
         setGoalButton.addActionListener(e -> {
@@ -183,7 +198,29 @@ public class AgentBotPanel extends PluginPanel implements BotStatusPanel {
             if (agentService != null) {
                 agentService.stopAllFromUi();
             }
-            plugin.stopBot();
+
+            // Do not clear tasks on the Swing thread; let the next GameTick stop safely.
+            configManager.setConfiguration("runepal", "startBot", false);
+            refreshFromRuntime();
+        });
+
+        approveScriptButton.addActionListener(e -> {
+            AgentService agentService = plugin.getAgentService();
+            if (agentService == null) {
+                JOptionPane.showMessageDialog(this,
+                        "Agent service is not initialized yet",
+                        "Agent",
+                        JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+
+            boolean started = agentService.approvePendingScriptFromUi();
+            if (!started) {
+                JOptionPane.showMessageDialog(this,
+                        "No pending script to approve",
+                        "Agent",
+                        JOptionPane.INFORMATION_MESSAGE);
+            }
             refreshFromRuntime();
         });
     }
@@ -198,6 +235,7 @@ public class AgentBotPanel extends PluginPanel implements BotStatusPanel {
         SwingUtilities.invokeLater(() -> {
             enableAgentCheckBox.setSelected(config.agentEnable());
             enableLlmCheckBox.setSelected(config.llmEnable());
+            requireApprovalCheckBox.setSelected(config.llmRequireScriptApproval());
 
             AgentService agentService = plugin.getAgentService();
             if (agentService == null) {
@@ -234,6 +272,16 @@ public class AgentBotPanel extends PluginPanel implements BotStatusPanel {
                 String activeScript = script.has("activeScript") ? script.get("activeScript").getAsString() : "";
                 scriptLabel.setText("Script: " + (activeScript.isEmpty() ? "(none)" : activeScript));
             }
+
+            JsonObject pending = agentService.getPendingScriptSnapshot();
+            boolean hasPending = pending != null && pending.has("present") && pending.get("present").getAsBoolean();
+            if (hasPending) {
+                String name = pending.has("name") ? pending.get("name").getAsString() : "";
+                pendingScriptLabel.setText("Pending script: " + (name.isEmpty() ? "(unnamed)" : name));
+            } else {
+                pendingScriptLabel.setText("Pending script: (none)");
+            }
+            approveScriptButton.setEnabled(hasPending);
 
             if (config.startBot()) {
                 statusLabel.setText("Automation running");

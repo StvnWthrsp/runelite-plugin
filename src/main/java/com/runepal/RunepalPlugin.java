@@ -406,6 +406,12 @@ public class RunepalPlugin extends Plugin {
 
 	public void stopBot() {
 		configManager.setConfiguration("runepal", "startBot", false);
+		// Some callers (Swing UI) may invoke this off the client thread.
+		// Clearing tasks triggers task onStop hooks which may read client state (varbits, widgets).
+		// Let the next GameTick handle the stop if we're not on the client thread.
+		if (client != null && !Thread.currentThread().equals(client.getClientThread())) {
+			return;
+		}
 		taskManager.clearTasks();
 	}
 

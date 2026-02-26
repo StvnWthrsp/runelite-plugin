@@ -14,6 +14,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 
 @Slf4j
@@ -55,6 +56,32 @@ public class LlmClient {
         }
 
         JsonObject payload = buildPayload(messages, options == null ? LlmRequestOptions.defaults() : options);
+        LlmResult result = doChatCompletionRequest(endpoint, apiKey, payload);
+
+        if (result.isSuccess()) {
+            return result;
+        }
+
+        // Compatibility fallback: some models/providers require max_completion_tokens instead of max_tokens.
+        // If we detect this error, retry once with the alternate parameter name.
+        String error = result.getErrorMessage() == null ? "" : result.getErrorMessage().toLowerCase(Locale.US);
+        if (payload.has("max_tokens")
+                && result.getStatusCode() == 400
+                && error.contains("max_completion_tokens")
+                && error.contains("max_tokens")) {
+            JsonObject retryPayload = payload.deepCopy();
+            JsonElement maxTokensElement = retryPayload.get("max_tokens");
+            retryPayload.remove("max_tokens");
+            if (maxTokensElement != null && maxTokensElement.isJsonPrimitive() && maxTokensElement.getAsJsonPrimitive().isNumber()) {
+                retryPayload.add("max_completion_tokens", maxTokensElement);
+            }
+            return doChatCompletionRequest(endpoint, apiKey, retryPayload);
+        }
+
+        return result;
+    }
+
+    private LlmResult doChatCompletionRequest(String endpoint, String apiKey, JsonObject payload) {
         HttpRequest.Builder builder = HttpRequest.newBuilder()
                 .uri(URI.create(endpoint))
                 .timeout(Duration.ofMillis(Math.max(1000, config.llmRequestTimeoutMs())))

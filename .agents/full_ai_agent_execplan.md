@@ -23,6 +23,10 @@ The user-visible behavior is: set an LLM provider and API key in plugin config, 
 - [x] (2026-02-26 17:40Z) Improved heuristic combat planning so goals like "kill cows" set `combatNpcNames=Cow` on fallback, and accepted `npcNames` alias in template params.
 - [x] (2026-02-26 17:40Z) Added an in-plugin Agent UI panel via `BotType.AGENT_MODE` and `src/main/java/com/runepal/AgentBotPanel.java` so users can set goals and trigger planning without a separate WebSocket client.
 - [x] (2026-02-26 17:40Z) Improved combat target selection to require on-screen clickbox and added periodic info logs when no targets are found.
+- [x] (2026-02-26 18:02Z) Added pending-script approval flow: persist pending scripts, expose pending script snapshot, and add an Agent panel button to approve/run the pending script.
+- [x] (2026-02-26 18:02Z) Fixed `stopBot()` to be safe off the client thread (defer task cleanup to next GameTick) to prevent varbit/thread assertions when stopping from Swing.
+- [x] (2026-02-26 18:02Z) Added LLM compatibility retry for providers/models that require `max_completion_tokens` instead of `max_tokens`.
+- [x] (2026-02-26 18:02Z) Fixed Agent panel checkbox layout (stacked vertical) to avoid overlap/clipping.
 - [ ] (2026-02-26 17:18Z) Validation partially complete (completed: attempted `./gradlew compileJava` and focused test command; remaining: rerun in JDK 11 environment with `JAVA_HOME` configured).
 
 ## Surprises & Discoveries
@@ -48,6 +52,21 @@ The user-visible behavior is: set an LLM provider and API key in plugin config, 
 
       [agent-orchestrator] WARN  com.runepal.llm.LlmClient - LLM request failed: An existing connection was forcibly closed by the remote host
       [Client] INFO  com.runepal.CombatTask - Starting Combat Task.
+
+- Observation: Stopping automation from Swing UI could crash with `AssertionError: must be called on client thread` because task `onStop()` hooks can call client varbit APIs.
+  Evidence:
+
+      java.lang.AssertionError: must be called on client thread
+      at client.getVarbitValue(...)
+      at com.runepal.PrayerService.deactivateAllPrayers(...)
+      at com.runepal.CombatTask.onStop(...)
+      at com.runepal.TaskManager.clearTasks(...)
+      at com.runepal.RunepalPlugin.stopBot(...)
+
+- Observation: Some OpenAI-compatible providers/models reject `max_tokens` and require `max_completion_tokens`, causing LLM planning to fall back to heuristics.
+  Evidence:
+
+      Unsupported parameter: 'max_tokens' is not supported with this model. Use 'max_completion_tokens' instead.
 
 ## Decision Log
 
@@ -81,6 +100,18 @@ The user-visible behavior is: set an LLM provider and API key in plugin config, 
 
 - Decision: Improve heuristic planning for combat goals by extracting the target NPC from the goal text.
   Rationale: When LLM calls fail (network/provider), the fallback must still produce a locally actionable plan.
+  Date/Author: 2026-02-26 / OpenCode.
+
+- Decision: When `llmRequireScriptApproval` is enabled, store a pending script and require explicit user approval before execution.
+  Rationale: Generated scripts should not auto-run without user control, but users must have an obvious “approve/run” workflow.
+  Date/Author: 2026-02-26 / OpenCode.
+
+- Decision: Make `RunepalPlugin.stopBot()` safe off the client thread by deferring task cleanup to the next GameTick.
+  Rationale: Swing actions run on the EDT and must not invoke client-only APIs indirectly via task stop hooks.
+  Date/Author: 2026-02-26 / OpenCode.
+
+- Decision: Implement automatic retry for `max_completion_tokens` when the provider/model rejects `max_tokens`.
+  Rationale: This improves portability across OpenAI-compatible providers and newer model families.
   Date/Author: 2026-02-26 / OpenCode.
 
 ## Outcomes & Retrospective
