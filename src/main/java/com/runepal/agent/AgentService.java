@@ -19,6 +19,7 @@ import com.runepal.agent.tools.AgentToolRegistry;
 import com.runepal.agent.tools.AgentToolResult;
 import com.runepal.agent.tools.BotRunScriptTool;
 import com.runepal.agent.tools.BotRunTemplateTool;
+import com.runepal.agent.tools.BotStatusTool;
 import com.runepal.agent.tools.BotStopTool;
 import com.runepal.agent.tools.GameSnapshotTool;
 import com.runepal.agent.tools.MemoryAddTool;
@@ -83,6 +84,8 @@ public class AgentService {
     private boolean hasProgressFingerprint = false;
     private boolean debugInFlight = false;
     private String lastDebugReason = "";
+    private String lastRuntimeStateSignature = "";
+    private long lastRuntimeStateTraceTick = 0;
 
     public AgentService(RunepalPlugin plugin, BotConfig config, ConfigManager configManager) {
         this.plugin = Objects.requireNonNull(plugin, "plugin cannot be null");
@@ -144,6 +147,7 @@ public class AgentService {
         tickCounter++;
 
         monitorStallAndTriggerDebug();
+        recordRuntimeStateTrace();
 
         if (shouldAutoPlan()) {
             requestPlanInternal();
@@ -181,6 +185,8 @@ public class AgentService {
         debugInFlight = false;
         hasProgressFingerprint = false;
         lastDebugReason = "";
+        lastRuntimeStateSignature = "";
+        lastRuntimeStateTraceTick = 0;
     }
 
     // UI-friendly API (no WebSocket client required)
@@ -269,6 +275,37 @@ public class AgentService {
 
     public JsonObject getLatestToolResult() {
         return latestToolResult == null ? new JsonObject() : latestToolResult.deepCopy();
+    }
+
+    public JsonObject getBotStatusSnapshot() {
+        JsonObject status = new JsonObject();
+        status.addProperty("running", config.startBot());
+        status.addProperty("botType", config.botType().name());
+        status.addProperty("currentState", plugin.getCurrentState() == null ? "" : plugin.getCurrentState());
+        status.add("goal", goalStore.toJson());
+        status.add("decision", orchestrator.getLastDecisionSnapshot());
+        status.add("skill", skillExecutor.getStatusSnapshot());
+        status.add("script", scriptExecutor.getStatusSnapshot());
+        status.addProperty("planning", orchestrator.isPlanning());
+        status.addProperty("debugInFlight", debugInFlight);
+        status.addProperty("lastDebugReason", lastDebugReason == null ? "" : lastDebugReason);
+
+        long noProgressTicks = hasProgressFingerprint ? Math.max(0L, tickCounter - lastProgressTick) : 0L;
+        status.addProperty("noProgressTicks", noProgressTicks);
+
+        Player localPlayer = plugin.getClient().getLocalPlayer();
+        if (localPlayer == null) {
+            status.addProperty("playerAnimation", -1);
+            status.addProperty("playerInteractingWith", "");
+        } else {
+            status.addProperty("playerAnimation", localPlayer.getAnimation());
+            status.addProperty("playerInteractingWith",
+                    localPlayer.getInteracting() == null
+                            ? ""
+                            : localPlayer.getInteracting().getClass().getSimpleName());
+        }
+
+        return status;
     }
 
     public JsonObject runToolFromUi(String toolName, JsonObject arguments) {
@@ -768,6 +805,7 @@ public class AgentService {
         toolRegistry.register(new MemoryAddTool());
         toolRegistry.register(new BotRunTemplateTool());
         toolRegistry.register(new BotRunScriptTool());
+        toolRegistry.register(new BotStatusTool());
         toolRegistry.register(new BotStopTool());
     }
 
@@ -975,6 +1013,9 @@ public class AgentService {
         evidence.addProperty("stallTicks", stallTicks);
         evidence.addProperty("goal", goalStore.getGoal());
         evidence.add("snapshot", snapshot == null ? new JsonObject() : snapshot.deepCopy());
+        evidence.add("botStatus", getBotStatusSnapshot());
+        evidence.add("lastDecision", orchestrator.getLastDecisionSnapshot());
+        evidence.add("latestToolResult", latestToolResult == null ? new JsonObject() : latestToolResult.deepCopy());
         evidence.add("recentTrace", traceService.getRecentJson(60));
 
         if (config.agentDebugIncludeScreenshot()) {
@@ -985,6 +1026,60 @@ public class AgentService {
         }
 
         return evidence;
+    }
+
+    private void recordRuntimeStateTrace() {
+        if (!config.startBot()) {
+            lastRuntimeStateSignature = "";
+            lastRuntimeStateTraceTick = 0;
+            return;
+        }
+
+        if (plugin.getClient().getGameState() != GameState.LOGGED_IN) {
+            return;
+        }
+
+        JsonObject status = getBotStatusSnapshot();
+        String signature = buildRuntimeStateSignature(status);
+        boolean changed = !signature.equals(lastRuntimeStateSignature);
+        boolean heartbeatDue = (tickCounter - lastRuntimeStateTraceTick) >= 20;
+
+        if (!changed && !heartbeatDue) {
+            return;
+        }
+
+        traceService.record(
+                "runtime_state",
+                changed ? "runtime state changed" : "runtime state heartbeat",
+                status);
+        lastRuntimeStateSignature = signature;
+        lastRuntimeStateTraceTick = tickCounter;
+    }
+
+    private String buildRuntimeStateSignature(JsonObject status) {
+        StringBuilder builder = new StringBuilder(160);
+        builder.append(readString(status, "botType", "")).append('|');
+        builder.append(readString(status, "currentState", "")).append('|');
+        builder.append(readString(status, "playerInteractingWith", "")).append('|');
+        builder.append(readString(status, "lastDebugReason", "")).append('|');
+
+        if (status.has("skill") && status.get("skill").isJsonObject()) {
+            builder.append(readString(status.getAsJsonObject("skill"), "activeSkill", ""));
+        }
+        builder.append('|');
+
+        if (status.has("script") && status.get("script").isJsonObject()) {
+            builder.append(readString(status.getAsJsonObject("script"), "activeScript", ""));
+        }
+        builder.append('|');
+
+        try {
+            builder.append(status.has("playerAnimation") ? status.get("playerAnimation").getAsInt() : -1);
+        } catch (Exception ignored) {
+            builder.append(-1);
+        }
+
+        return builder.toString();
     }
 
     private void appendMemoryEntry(String title, List<String> tags, String content, JsonObject evidence) {

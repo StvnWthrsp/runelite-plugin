@@ -15,6 +15,7 @@ import net.runelite.api.ItemContainer;
 import net.runelite.api.Menu;
 import net.runelite.api.MenuEntry;
 import net.runelite.api.NPC;
+import net.runelite.api.NPCComposition;
 import net.runelite.api.Player;
 import net.runelite.api.Scene;
 import net.runelite.api.Skill;
@@ -219,6 +220,7 @@ public class AgentSnapshotBuilder {
             npcSnapshot.addProperty("name", npc.getName() == null ? "" : npc.getName());
             npcSnapshot.addProperty("distance", distanceToPlayer(playerLocation, npc.getWorldLocation()));
             npcSnapshot.addProperty("animation", npc.getAnimation());
+            npcSnapshot.addProperty("attackable", isAttackableNpc(npc));
 
             WorldPoint location = npc.getWorldLocation();
             npcSnapshot.addProperty("worldX", location.getX());
@@ -301,6 +303,29 @@ public class AgentSnapshotBuilder {
             return Integer.MAX_VALUE;
         }
         return playerLocation.distanceTo(otherLocation);
+    }
+
+    private boolean isAttackableNpc(NPC npc) {
+        if (npc == null) {
+            return false;
+        }
+
+        NPCComposition composition = npc.getComposition();
+        if (composition == null) {
+            return false;
+        }
+
+        String[] actions = composition.getActions();
+        if (actions == null) {
+            return false;
+        }
+
+        for (String action : actions) {
+            if (action != null && "attack".equalsIgnoreCase(action.trim())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private String getActorLabel(Actor actor) {

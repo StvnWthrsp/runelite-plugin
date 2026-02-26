@@ -124,15 +124,15 @@ public final class AgentToolLoopRunner {
             }
 
             if ("final".equalsIgnoreCase(type)) {
-                if (!debugMode) {
-                    String validationError = validatePlanFinalPayload(assistantJson);
-                    if (validationError != null) {
-                        JsonObject payload = new JsonObject();
-                        payload.addProperty("error", validationError);
-                        payload.add("assistant", assistantJson.deepCopy());
-                        traceService.record("llm_error", "Invalid plan final payload", payload);
-                        return AgentLoopOutcome.error(validationError, payload);
-                    }
+                String validationError = debugMode
+                        ? validateDebugFinalPayload(assistantJson)
+                        : validatePlanFinalPayload(assistantJson);
+                if (validationError != null) {
+                    JsonObject payload = new JsonObject();
+                    payload.addProperty("error", validationError);
+                    payload.add("assistant", assistantJson.deepCopy());
+                    traceService.record("llm_error", "Invalid final payload", payload);
+                    return AgentLoopOutcome.error(validationError, payload);
                 }
                 traceService.record("decision", "LLM returned final result", assistantJson);
                 return AgentLoopOutcome.success(assistantJson);
@@ -173,7 +173,12 @@ public final class AgentToolLoopRunner {
         }
 
         if (debugMode) {
-            prompt.append("\nYou are in DEBUG mode. Diagnose why automation stalled. Prefer minimal fixes first: adjust template params before proposing large script rewrites. If a fix is available, return mode=execute. If not fixable now, return mode=answer with diagnosis and next checks. Use memory.add to record concise failure and fix notes when possible.");
+            prompt.append("\nYou are in DEBUG mode. Diagnose why automation stalled and repair it.")
+                    .append(" First inspect runtime evidence with bot.status and trace.get_recent, then use game.snapshot if needed.")
+                    .append(" Prefer minimal fixes first: adjust template params before proposing large script rewrites.")
+                    .append(" If bot is running and a safe repair exists, you MUST return mode=execute.")
+                    .append(" Use mode=answer only when no safe executable repair is currently possible.")
+                    .append(" Use memory.add to record concise failure and fix notes when possible.");
         }
 
         return prompt.toString();
@@ -284,6 +289,18 @@ public final class AgentToolLoopRunner {
             return "SCRIPT";
         }
         return "";
+    }
+
+    private String validateDebugFinalPayload(JsonObject assistantJson) {
+        String mode = readString(assistantJson, "mode", "");
+        if ("answer".equalsIgnoreCase(mode)) {
+            String answer = readString(assistantJson, "answer", "").trim();
+            return answer.isEmpty() ? "Debug answer mode requires non-empty answer" : null;
+        }
+        if ("execute".equalsIgnoreCase(mode)) {
+            return validatePlanFinalPayload(assistantJson);
+        }
+        return "Debug mode final payload requires mode=execute or mode=answer";
     }
 
     private String normalizeDecisionType(String value) {
