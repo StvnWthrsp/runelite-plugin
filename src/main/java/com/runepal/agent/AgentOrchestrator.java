@@ -22,6 +22,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
@@ -30,6 +32,7 @@ import java.util.function.Consumer;
 
 @Slf4j
 public class AgentOrchestrator {
+    private static final Pattern KILL_TARGET_PATTERN = Pattern.compile("\\bkill\\b\\s+([^\\n\\r]+)", Pattern.CASE_INSENSITIVE);
     private final BotConfig config;
     private final LlmClient llmClient;
     private final ScriptParser scriptParser;
@@ -197,10 +200,12 @@ public class AgentOrchestrator {
         List<LlmMessage> messages = new ArrayList<>();
         messages.add(LlmMessage.system(
                 "You are an OSRS automation planner. Return strict JSON only. "
-                        + "Choose either a template or a script. "
+                        + "Prefer decisionType='template' whenever a suitable template exists in the provided templates list. "
+                        + "Only choose decisionType='script' when templates cannot accomplish the goal. "
                         + "Output object fields: decisionType ('template'|'script'|'idle'), reason, "
                         + "templateName, templateParams, script. "
-                        + "If script is chosen, script must include name, entryState, states."));
+                        + "If script is chosen, script must include name, entryState, states. "
+                        + "Use templateParams keys exactly as suggested by the template parameter hints."));
 
         JsonObject context = new JsonObject();
         context.addProperty("goal", goal);
@@ -290,8 +295,9 @@ public class AgentOrchestrator {
         }
 
         if (normalizedGoal.contains("KILL") || normalizedGoal.contains("COMBAT") || normalizedGoal.contains("ATTACK")) {
+            String npcTarget = inferNpcTargetFromGoal(goal);
             JsonObject params = new JsonObject();
-            params.addProperty("combatNpcNames", "Goblin");
+            params.addProperty("combatNpcNames", npcTarget);
             return PlannedAction.runTemplate(AgentSkillTemplate.COMBAT_BASIC, params);
         }
 
@@ -353,6 +359,10 @@ public class AgentOrchestrator {
 
     private void publishDecision(AgentDecisionRecord decision) {
         this.lastDecision = decision;
+        log.info("Agent decision: type={}, source={}, reason={}",
+                decision.getDecisionType(),
+                decision.getSource(),
+                decision.getReason());
         decisionSink.accept(decision);
     }
 
@@ -401,6 +411,55 @@ public class AgentOrchestrator {
             return "";
         }
         return value.trim().toUpperCase(Locale.US).replace('-', '_').replace(' ', '_');
+    }
+
+    private String inferNpcTargetFromGoal(String goal) {
+        if (goal == null || goal.trim().isEmpty()) {
+            return "Goblin";
+        }
+
+        String lower = goal.trim().toLowerCase(Locale.US);
+        if (lower.contains("cow")) {
+            return "Cow";
+        }
+        if (lower.contains("chicken")) {
+            return "Chicken";
+        }
+        if (lower.contains("goblin")) {
+            return "Goblin";
+        }
+        if (lower.contains("rat")) {
+            return "Rat";
+        }
+
+        Matcher matcher = KILL_TARGET_PATTERN.matcher(lower);
+        if (!matcher.find()) {
+            return "Goblin";
+        }
+
+        String captured = matcher.group(1);
+        if (captured == null) {
+            return "Goblin";
+        }
+
+        // Stop at common clause boundaries: "until", "for", "with", "at"
+        String trimmed = captured.split("\\b(until|for|with|at|in|on)\\b")[0].trim();
+        if (trimmed.isEmpty()) {
+            return "Goblin";
+        }
+
+        // Drop trailing punctuation
+        trimmed = trimmed.replaceAll("[\\p{Punct}]+$", "").trim();
+        if (trimmed.endsWith("s") && trimmed.length() > 3) {
+            trimmed = trimmed.substring(0, trimmed.length() - 1);
+        }
+
+        // Title-case first letter only (CombatTask uses contains-ignorecase)
+        char first = Character.toUpperCase(trimmed.charAt(0));
+        if (trimmed.length() == 1) {
+            return String.valueOf(first);
+        }
+        return first + trimmed.substring(1);
     }
 
     public enum PlannedActionType {

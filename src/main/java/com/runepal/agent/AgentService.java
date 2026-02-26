@@ -13,6 +13,7 @@ import com.runepal.agent.script.ScriptValidator;
 import com.runepal.llm.LlmClient;
 import com.runepal.llm.LlmResult;
 import lombok.extern.slf4j.Slf4j;
+import net.runelite.api.GameState;
 import net.runelite.client.config.ConfigManager;
 import org.java_websocket.WebSocket;
 
@@ -73,8 +74,7 @@ public class AgentService {
     public void onGameTick() {
         synchronizeServerLifecycle();
 
-        AgentWebSocketServer server = webSocketServer;
-        if (server == null) {
+        if (!config.agentEnable()) {
             return;
         }
 
@@ -113,6 +113,42 @@ public class AgentService {
         latestSnapshotPayload = null;
     }
 
+    // UI-friendly API (no WebSocket client required)
+    public void setGoalFromUi(String goal) {
+        orchestrator.setGoal(goal);
+        if (config.agentAutoPlanOnGoal()) {
+            requestPlanInternal();
+        }
+    }
+
+    public boolean planNowFromUi() {
+        return requestPlanInternal();
+    }
+
+    public void stopAllFromUi() {
+        commandQueue.offer(QueuedCommand.stop(null, null, "stop_all_ui"));
+    }
+
+    public JsonObject getGoalSnapshot() {
+        return goalStore.toJson();
+    }
+
+    public JsonObject getDecisionSnapshot() {
+        return orchestrator.getLastDecisionSnapshot();
+    }
+
+    public JsonObject getSkillStatusSnapshot() {
+        return skillExecutor.getStatusSnapshot();
+    }
+
+    public JsonObject getScriptStatusSnapshot() {
+        return scriptExecutor.getStatusSnapshot();
+    }
+
+    public boolean isPlanning() {
+        return orchestrator.isPlanning();
+    }
+
     public void queueRunSkill(AgentSkillTemplate template, JsonObject params) {
         if (template == null) {
             return;
@@ -126,6 +162,8 @@ public class AgentService {
     }
 
     void onSocketOpen(WebSocket connection) {
+        log.info("Agent client connected: {}", connection.getRemoteSocketAddress());
+
         JsonObject payload = new JsonObject();
         payload.addProperty("protocol", "runepal-agent-v2");
         payload.addProperty("localOnly", true);
@@ -146,7 +184,7 @@ public class AgentService {
     }
 
     void onSocketClose(WebSocket connection, int code, String reason, boolean remote) {
-        log.debug("Agent socket closed (code={}, remote={}): {}", code, remote, reason);
+        log.info("Agent client disconnected (code={}, remote={}): {}", code, remote, reason);
     }
 
     void onSocketServerStarted() {
@@ -280,6 +318,17 @@ public class AgentService {
     private void processQueuedCommands() {
         QueuedCommand command;
         while ((command = commandQueue.poll()) != null) {
+            log.info("Processing queued agent command: {}", command.requestType);
+
+            boolean loggedIn = plugin.getClient().getGameState() == GameState.LOGGED_IN;
+            if (!loggedIn && (command.type == QueuedCommandType.RUN_TEMPLATE
+                    || command.type == QueuedCommandType.RUN_SCRIPT_NAME
+                    || command.type == QueuedCommandType.RUN_SCRIPT_JSON)) {
+                sendResponse(command.connection, command.requestType, command.requestId,
+                        false, "Cannot execute automation while not logged in", new JsonObject());
+                continue;
+            }
+
             switch (command.type) {
                 case STOP_ALL:
                     plugin.stopBot();
@@ -328,6 +377,7 @@ public class AgentService {
     private void handleSetGoal(WebSocket connection, String requestType, String requestId, JsonObject request) {
         String goal = readString(request, "goal", "");
         orchestrator.setGoal(goal);
+        log.info("Agent goal updated: {}", goal);
 
         JsonObject payload = new JsonObject();
         payload.add("goal", goalStore.toJson());
@@ -342,6 +392,7 @@ public class AgentService {
     }
 
     private void handlePlanNow(WebSocket connection, String requestType, String requestId) {
+        log.info("Agent plan requested via plan_now command");
         boolean started = requestPlanInternal();
         JsonObject payload = new JsonObject();
         payload.addProperty("planningStarted", started);
@@ -352,9 +403,15 @@ public class AgentService {
     }
 
     private boolean requestPlanInternal() {
-        JsonObject snapshot = latestSnapshotPayload == null ? new JsonObject() : latestSnapshotPayload.deepCopy();
+        JsonObject snapshot = latestSnapshotPayload == null
+                ? snapshotBuilder.buildSnapshot(tickCounter)
+                : latestSnapshotPayload.deepCopy();
         JsonArray templates = skillExecutor.listSkillDefinitions();
-        return orchestrator.requestPlan(snapshot, templates);
+        boolean started = orchestrator.requestPlan(snapshot, templates);
+        if (started) {
+            log.info("Agent planning started");
+        }
+        return started;
     }
 
     private void handleSaveScript(WebSocket connection, String requestType, String requestId, JsonObject request) {
@@ -474,6 +531,7 @@ public class AgentService {
 
         switch (action.getType()) {
             case RUN_TEMPLATE:
+                log.info("Queued planned template execution: {}", action.getTemplate() == null ? "unknown" : action.getTemplate().getWireName());
                 commandQueue.offer(QueuedCommand.runTemplate(
                         null,
                         null,
@@ -485,6 +543,7 @@ public class AgentService {
                 if (action.getScriptSpec() == null) {
                     return;
                 }
+                log.info("Queued planned script execution: {}", action.getScriptSpec().getName());
                 commandQueue.offer(QueuedCommand.runScriptJson(
                         null,
                         null,
@@ -514,6 +573,10 @@ public class AgentService {
             return false;
         }
         if (orchestrator.isPlanning()) {
+            return false;
+        }
+
+        if (plugin.getClient().getGameState() != GameState.LOGGED_IN) {
             return false;
         }
         String goal = goalStore.getGoal();

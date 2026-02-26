@@ -4,6 +4,7 @@ import lombok.Getter;
 
 @Getter
 public enum BotType {
+    AGENT_MODE("Agent"),
     MINING_BOT("Mining"),
     COMBAT_BOT("Combat"),
     FISHING_BOT("Fishing"),

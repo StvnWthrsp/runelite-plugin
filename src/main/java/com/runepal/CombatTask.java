@@ -52,6 +52,7 @@ public class CombatTask implements BotTask {
     private int combatStartTicks = 0;
     private int waitToVerifyTicks = 0;
     private boolean prayerManagementEnabled = false;
+    private int noTargetFoundTicks = 0;
     
     // Food item IDs (common foods)
     private static final int[] FOOD_IDS = {
@@ -244,6 +245,11 @@ public class CombatTask implements BotTask {
             
             NpcEntity npcEntity = (NpcEntity) interactable;
             NPC npc = npcEntity.getNpc();
+
+            // Must be on-screen/clickable for RemoteInput-driven interaction.
+            if (npcEntity.getClickbox() == null) {
+                return false;
+            }
             
             // Check if NPC name is null
             if (npc.getName() == null) {
@@ -272,10 +278,15 @@ public class CombatTask implements BotTask {
         });
 
         if (selectedEntity == null) {
-            log.debug("No valid NPCs found, waiting...");
+            noTargetFoundTicks++;
+            if (noTargetFoundTicks % 20 == 0) {
+                log.info("No valid NPCs found for targets {} (still searching)", Arrays.toString(npcNames));
+            }
             targetNpc = null;
             return;
         }
+
+        noTargetFoundTicks = 0;
         
         targetNpc = ((NpcEntity) selectedEntity).getNpc();
         

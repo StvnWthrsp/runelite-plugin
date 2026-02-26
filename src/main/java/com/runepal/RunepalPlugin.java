@@ -336,6 +336,9 @@ public class RunepalPlugin extends Plugin {
 
 	private boolean startTaskForBotType(BotType botType) {
 		switch (botType) {
+			case AGENT_MODE:
+				log.warn("Agent mode does not start a single bot task. Use the Agent panel to set a goal and plan.");
+				return false;
 			case MINING_BOT:
 				taskManager.pushTask(new MiningTask(this, config, taskManager, pathfinderConfig, actionService,
 						gameService, eventService, humanizerService));

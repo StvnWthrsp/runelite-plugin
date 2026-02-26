@@ -20,6 +20,9 @@ The user-visible behavior is: set an LLM provider and API key in plugin config, 
 - [x] (2026-02-26 17:18Z) Integrated script start lifecycle into `src/main/java/com/runepal/RunepalPlugin.java` via `startScriptSpec(ScriptSpec)`.
 - [x] (2026-02-26 17:18Z) Added parser/validator tests under `src/test/java/com/runepal/agent/script/**` and retained template normalization test.
 - [x] (2026-02-26 17:26Z) Fixed logging-classpath regression by aligning WebSocket dependency with SLF4J 1.7 (`Java-WebSocket` 1.5.3) in `build.gradle`.
+- [x] (2026-02-26 17:40Z) Improved heuristic combat planning so goals like "kill cows" set `combatNpcNames=Cow` on fallback, and accepted `npcNames` alias in template params.
+- [x] (2026-02-26 17:40Z) Added an in-plugin Agent UI panel via `BotType.AGENT_MODE` and `src/main/java/com/runepal/AgentBotPanel.java` so users can set goals and trigger planning without a separate WebSocket client.
+- [x] (2026-02-26 17:40Z) Improved combat target selection to require on-screen clickbox and added periodic info logs when no targets are found.
 - [ ] (2026-02-26 17:18Z) Validation partially complete (completed: attempted `./gradlew compileJava` and focused test command; remaining: rerun in JDK 11 environment with `JAVA_HOME` configured).
 
 ## Surprises & Discoveries
@@ -39,6 +42,12 @@ The user-visible behavior is: set an LLM provider and API key in plugin config, 
       SLF4J: No SLF4J providers were found.
       SLF4J: Class path contains SLF4J bindings targeting slf4j-api versions 1.7.x or earlier.
       SLF4J: Ignoring binding found at [...]/logback-classic/1.2.9/.../StaticLoggerBinder.class
+
+- Observation: In manual testing, "kill cows" could start `CombatTask` but produce no in-game actions when LLM planning failed and the heuristic fallback targeted `Goblin`, which may not exist nearby; `CombatTask` only logged this at debug level.
+  Evidence:
+
+      [agent-orchestrator] WARN  com.runepal.llm.LlmClient - LLM request failed: An existing connection was forcibly closed by the remote host
+      [Client] INFO  com.runepal.CombatTask - Starting Combat Task.
 
 ## Decision Log
 
@@ -66,9 +75,17 @@ The user-visible behavior is: set an LLM provider and API key in plugin config, 
   Rationale: Version 1.5.6 pulls `slf4j-api` 2.x and breaks RuneLite runtime logging that currently binds to SLF4J 1.7.x; 1.5.3 uses 1.7.x-compatible SLF4J.
   Date/Author: 2026-02-26 / OpenCode.
 
+- Decision: Add `BotType.AGENT_MODE` and a dedicated `AgentBotPanel` so the agent can be controlled entirely from within the plugin UI.
+  Rationale: Users should not need a separate WebSocket client to set goals, trigger planning, or stop automation; WebSocket becomes optional for external tooling.
+  Date/Author: 2026-02-26 / OpenCode.
+
+- Decision: Improve heuristic planning for combat goals by extracting the target NPC from the goal text.
+  Rationale: When LLM calls fail (network/provider), the fallback must still produce a locally actionable plan.
+  Date/Author: 2026-02-26 / OpenCode.
+
 ## Outcomes & Retrospective
 
-The implementation now includes end-to-end architecture for goal-driven planning and script execution: LLM config, OpenAI-compatible HTTP client, script DSL parsing/validation/execution, persistent script repository, and expanded agent WebSocket APIs (`set_goal`, `get_goal`, `plan_now`, `list_scripts`, `save_script`, `run_script`, `stop_script`, `llm_ping`) in addition to existing skill commands.
+The implementation now includes end-to-end architecture for goal-driven planning and script execution: LLM config, OpenAI-compatible HTTP client, script DSL parsing/validation/execution, persistent script repository, expanded agent WebSocket APIs (`set_goal`, `get_goal`, `plan_now`, `list_scripts`, `save_script`, `run_script`, `stop_script`, `llm_ping`) in addition to existing skill commands, and an in-plugin Agent UI panel (`BotType.AGENT_MODE`) to control planning without external clients.
 
 What remains is runtime validation in an environment with JDK 11 and manual RuneLite gameplay verification. The main lesson from this pass is that keeping decisions asynchronous while queueing all execution mutations onto tick processing keeps the design simple and thread-safe.
 
@@ -116,11 +133,21 @@ Acceptance criteria:
 
 Manual verification scenario:
 
+Option A (in-plugin UI):
+
+1. In RuneLite, select `Agent` from the bot type dropdown.
+2. Enable "Enable Local Agent" and "Enable LLM Planning" (and set API key in plugin config).
+3. Enter a goal (e.g. "kill cows") and click "Set Goal" then "Plan Now".
+4. Observe status/decision updates and verify in-game actions begin.
+5. Click "Stop Automation".
+
+Option B (WebSocket):
+
 1. Enable local agent and LLM config.
 2. Connect to WebSocket and call `llm_ping`.
 3. Call `set_goal` and `plan_now`.
 4. Observe `decision` messages and either template run or script run.
-5. Call `stop_script` and verify bot stops.
+5. Call `stop_script` (or `stop_skill`) and verify bot stops.
 
 ## Idempotence and Recovery
 

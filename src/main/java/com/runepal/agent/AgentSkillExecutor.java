@@ -217,7 +217,9 @@ public class AgentSkillExecutor {
                 break;
 
             case COMBAT_BASIC:
-                setConfig("combatNpcNames", readCsvParam(params, "combatNpcNames", config.combatNpcNames()));
+                String npcNames = readCsvParam(params, "combatNpcNames",
+                        readCsvParam(params, "npcNames", config.combatNpcNames()));
+                setConfig("combatNpcNames", npcNames);
                 setConfig("combatEatAtHealthPercent",
                         readIntParam(params, "combatEatAtHealthPercent", config.combatEatAtHealthPercent(), 1, 99));
                 break;

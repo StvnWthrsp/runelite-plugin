@@ -94,6 +94,9 @@ public class BotPanel extends PluginPanel {
 
         // Create appropriate bot panel based on selection
         switch (botType) {
+            case AGENT_MODE:
+                currentBotPanel = new AgentBotPanel(plugin, config, configManager);
+                break;
             case MINING_BOT:
                 currentBotPanel = createMiningBotPanel();
                 break;
