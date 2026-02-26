@@ -37,7 +37,7 @@ public class LlmClient {
     public LlmResult ping() {
         return chatCompletion(
                 java.util.Collections.singletonList(LlmMessage.user("Reply with the exact text PONG.")),
-                LlmRequestOptions.builder().maxTokens(8).temperature(0.0).build());
+                LlmRequestOptions.builder().maxTokens(8).build());
     }
 
     public LlmResult chatCompletion(List<LlmMessage> messages, LlmRequestOptions options) {
@@ -135,14 +135,6 @@ public class LlmClient {
         }
         if (maxTokens != null && maxTokens > 0) {
             payload.addProperty("max_tokens", maxTokens);
-        }
-
-        Double temperature = options.getTemperature();
-        if (temperature == null && config.llmTemperature() >= 0.0 && config.llmTemperature() <= 2.0) {
-            temperature = config.llmTemperature();
-        }
-        if (temperature != null) {
-            payload.addProperty("temperature", temperature);
         }
 
         if (options.isRequireJsonResponse()) {

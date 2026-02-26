@@ -918,21 +918,10 @@ public interface BotConfig extends Config
 	}
 
 	@ConfigItem(
-			keyName = "llmTemperature",
-			name = "Temperature",
-			description = "Sampling temperature (0.0 to 2.0)",
-			position = 7,
-			section = llmSection
-	)
-	default double llmTemperature() {
-		return 0.2;
-	}
-
-	@ConfigItem(
 			keyName = "llmRequireScriptApproval",
 			name = "Require Script Approval",
 			description = "Do not auto-run generated scripts until manually executed",
-			position = 8,
+			position = 7,
 			section = llmSection
 	)
 	default boolean llmRequireScriptApproval() {

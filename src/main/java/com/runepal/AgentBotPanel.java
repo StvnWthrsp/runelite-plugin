@@ -15,13 +15,13 @@ import javax.swing.JOptionPane;
 import javax.swing.BoxLayout;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
+import javax.swing.ScrollPaneConstants;
 import javax.swing.JTextArea;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import java.awt.BorderLayout;
 import java.awt.Dimension;
-import java.awt.FlowLayout;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
@@ -69,7 +69,9 @@ public class AgentBotPanel extends PluginPanel implements BotStatusPanel {
         this.configManager = configManager;
 
         setLayout(new BorderLayout());
-        add(new JScrollPane(buildContent()), BorderLayout.CENTER);
+        JScrollPane container = new JScrollPane(buildContent());
+        container.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+        add(container, BorderLayout.CENTER);
 
         bindActions();
         refreshFromRuntime();
@@ -95,10 +97,16 @@ public class AgentBotPanel extends PluginPanel implements BotStatusPanel {
         goalArea.setWrapStyleWord(true);
         goalPanel.add(new JScrollPane(goalArea), BorderLayout.CENTER);
 
-        JPanel goalButtons = new JPanel(new FlowLayout(FlowLayout.CENTER));
-        setGoalButton.setPreferredSize(new Dimension(120, 32));
-        planNowButton.setPreferredSize(new Dimension(120, 32));
+        JPanel goalButtons = new JPanel();
+        goalButtons.setLayout(new BoxLayout(goalButtons, BoxLayout.Y_AXIS));
+        setGoalButton.setPreferredSize(new Dimension(220, 32));
+        planNowButton.setPreferredSize(new Dimension(220, 32));
+        setGoalButton.setMaximumSize(new Dimension(Integer.MAX_VALUE, 32));
+        planNowButton.setMaximumSize(new Dimension(Integer.MAX_VALUE, 32));
+        setGoalButton.setAlignmentX(CENTER_ALIGNMENT);
+        planNowButton.setAlignmentX(CENTER_ALIGNMENT);
         goalButtons.add(setGoalButton);
+        goalButtons.add(new JLabel(" "));
         goalButtons.add(planNowButton);
         goalPanel.add(goalButtons, BorderLayout.SOUTH);
 
@@ -135,14 +143,23 @@ public class AgentBotPanel extends PluginPanel implements BotStatusPanel {
         gbc.gridy++;
         statusPanel.add(memoryLabel, gbc);
 
-        JPanel controls = new JPanel(new FlowLayout(FlowLayout.CENTER));
+        JPanel controls = new JPanel();
+        controls.setLayout(new BoxLayout(controls, BoxLayout.Y_AXIS));
         controls.setBorder(BorderFactory.createTitledBorder("Control"));
         stopButton.setPreferredSize(new Dimension(240, 36));
         debugNowButton.setPreferredSize(new Dimension(240, 36));
         approveScriptButton.setPreferredSize(new Dimension(240, 36));
+        stopButton.setMaximumSize(new Dimension(Integer.MAX_VALUE, 36));
+        debugNowButton.setMaximumSize(new Dimension(Integer.MAX_VALUE, 36));
+        approveScriptButton.setMaximumSize(new Dimension(Integer.MAX_VALUE, 36));
+        stopButton.setAlignmentX(CENTER_ALIGNMENT);
+        debugNowButton.setAlignmentX(CENTER_ALIGNMENT);
+        approveScriptButton.setAlignmentX(CENTER_ALIGNMENT);
         approveScriptButton.setEnabled(false);
         controls.add(approveScriptButton);
+        controls.add(new JLabel(" "));
         controls.add(debugNowButton);
+        controls.add(new JLabel(" "));
         controls.add(stopButton);
 
         JPanel stacked = new JPanel();
@@ -188,9 +205,18 @@ public class AgentBotPanel extends PluginPanel implements BotStatusPanel {
         obs.gridy++;
         observabilityPanel.add(new JScrollPane(toolResultArea), obs);
 
-        JPanel toolButtons = new JPanel(new FlowLayout(FlowLayout.CENTER));
+        JPanel toolButtons = new JPanel();
+        toolButtons.setLayout(new BoxLayout(toolButtons, BoxLayout.Y_AXIS));
+        wikiTestButton.setMaximumSize(new Dimension(Integer.MAX_VALUE, 32));
+        snapshotToolButton.setMaximumSize(new Dimension(Integer.MAX_VALUE, 32));
+        captureToolButton.setMaximumSize(new Dimension(Integer.MAX_VALUE, 32));
+        wikiTestButton.setAlignmentX(CENTER_ALIGNMENT);
+        snapshotToolButton.setAlignmentX(CENTER_ALIGNMENT);
+        captureToolButton.setAlignmentX(CENTER_ALIGNMENT);
         toolButtons.add(wikiTestButton);
+        toolButtons.add(new JLabel(" "));
         toolButtons.add(snapshotToolButton);
+        toolButtons.add(new JLabel(" "));
         toolButtons.add(captureToolButton);
         obs.gridy++;
         observabilityPanel.add(toolButtons, obs);
@@ -366,13 +392,13 @@ public class AgentBotPanel extends PluginPanel implements BotStatusPanel {
 
             planningLabel.setText("Planning: " + agentService.isPlanning());
             String debugReason = agentService.getLastDebugReason();
-            debugLabel.setText("Debug: " + (debugReason == null || debugReason.isEmpty() ? "(none)" : debugReason));
+            debugLabel.setText("Debug: " + (debugReason == null || debugReason.isEmpty() ? "(none)" : ellipsize(debugReason, 72)));
 
             JsonObject decision = agentService.getDecisionSnapshot();
             if (decision != null) {
                 String type = decision.has("decisionType") ? decision.get("decisionType").getAsString() : "";
                 String reason = decision.has("reason") ? decision.get("reason").getAsString() : "";
-                decisionLabel.setText("Decision: " + type + (reason.isEmpty() ? "" : " - " + reason));
+                decisionLabel.setText("Decision: " + type + (reason.isEmpty() ? "" : " - " + ellipsize(reason, 72)));
             }
 
             JsonObject skill = agentService.getSkillStatusSnapshot();
@@ -391,7 +417,7 @@ public class AgentBotPanel extends PluginPanel implements BotStatusPanel {
             boolean hasPending = pending != null && pending.has("present") && pending.get("present").getAsBoolean();
             if (hasPending) {
                 String name = pending.has("name") ? pending.get("name").getAsString() : "";
-                pendingScriptLabel.setText("Pending script: " + (name.isEmpty() ? "(unnamed)" : name));
+                pendingScriptLabel.setText("Pending script: " + (name.isEmpty() ? "(unnamed)" : ellipsize(name, 72)));
                 pendingScriptArea.setText(pending.has("script") ? pending.get("script").toString() : "");
             } else {
                 pendingScriptLabel.setText("Pending script: (none)");
@@ -407,7 +433,7 @@ public class AgentBotPanel extends PluginPanel implements BotStatusPanel {
             traceArea.setText(formatTrace(trace));
 
             String memoryTitle = agentService.getLatestMemoryTitle();
-            memoryLabel.setText("Memory: " + (memoryTitle == null || memoryTitle.isEmpty() ? "(none)" : memoryTitle));
+            memoryLabel.setText("Memory: " + (memoryTitle == null || memoryTitle.isEmpty() ? "(none)" : ellipsize(memoryTitle, 72)));
 
             if (config.startBot()) {
                 statusLabel.setText("Automation running");
@@ -443,6 +469,17 @@ public class AgentBotPanel extends PluginPanel implements BotStatusPanel {
                     .append('\n');
         }
         return builder.toString();
+    }
+
+    private String ellipsize(String value, int maxLength) {
+        if (value == null) {
+            return "";
+        }
+        int safeMax = Math.max(8, maxLength);
+        if (value.length() <= safeMax) {
+            return value;
+        }
+        return value.substring(0, safeMax - 3) + "...";
     }
 
     @Override
