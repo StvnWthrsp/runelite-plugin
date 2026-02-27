@@ -11,6 +11,7 @@ import javax.inject.Inject;
 import java.awt.Point;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
@@ -34,6 +35,7 @@ public class WindmouseService {
     private final AtomicBoolean isMoving = new AtomicBoolean(false);
     private final AtomicReference<String> currentMovementId = new AtomicReference<>();
     private final AtomicReference<CompletableFuture<Void>> currentMovement = new AtomicReference<>();
+    private final ConcurrentHashMap<String, CompletableFuture<MouseMovementCompletedEvent>> movementResults = new ConcurrentHashMap<>();
 
     // Mathematical constants
     private static final double SQRT_3 = Math.sqrt(3.0);
@@ -56,9 +58,25 @@ public class WindmouseService {
      * @param movementId  unique identifier for this movement
      */
     public void moveToPoint(Point start, Point destination, String movementId) {
+        startMovement(start, destination, movementId, null);
+    }
+
+    public CompletableFuture<MouseMovementCompletedEvent> moveToPointAsync(Point start, Point destination, String movementId) {
+        CompletableFuture<MouseMovementCompletedEvent> resultFuture = new CompletableFuture<>();
+        startMovement(start, destination, movementId, resultFuture);
+        return resultFuture;
+    }
+
+    private void startMovement(Point start,
+            Point destination,
+            String movementId,
+            CompletableFuture<MouseMovementCompletedEvent> resultFuture) {
         if (start == null || destination == null || movementId == null) {
             log.warn("Invalid parameters for moveToPoint: start={}, destination={}, movementId={}", start, destination,
                     movementId);
+            if (resultFuture != null) {
+                resultFuture.completeExceptionally(new IllegalArgumentException("Invalid movement parameters"));
+            }
             return;
         }
 
@@ -68,6 +86,9 @@ public class WindmouseService {
         // Start new movement
         currentMovementId.set(movementId);
         isMoving.set(true);
+        if (resultFuture != null) {
+            movementResults.put(movementId, resultFuture);
+        }
 
         CompletableFuture<Void> movement = CompletableFuture.runAsync(() -> {
             try {
@@ -75,7 +96,12 @@ public class WindmouseService {
             } catch (Exception e) {
                 log.error("Error during Windmouse movement {}: {}", movementId, e.getMessage(), e);
                 // Publish completion event with error
-                eventService.publish(new MouseMovementCompletedEvent(movementId, destination, 0, true));
+                MouseMovementCompletedEvent event = new MouseMovementCompletedEvent(movementId, destination, 0, true);
+                eventService.publish(event);
+                CompletableFuture<MouseMovementCompletedEvent> completionFuture = movementResults.remove(movementId);
+                if (completionFuture != null) {
+                    completionFuture.complete(event);
+                }
             }
         });
 
@@ -114,9 +140,14 @@ public class WindmouseService {
 
             currentMovementId.set(null);
             currentMovement.set(null);
+            CompletableFuture<MouseMovementCompletedEvent> completionFuture = movementResults.remove(movementId);
 
             // Publish cancellation event
-            eventService.publish(new MouseMovementCompletedEvent(movementId, null, 0, true));
+            MouseMovementCompletedEvent event = new MouseMovementCompletedEvent(movementId, null, 0, true);
+            eventService.publish(event);
+            if (completionFuture != null) {
+                completionFuture.complete(event);
+            }
         }
     }
 
@@ -252,7 +283,13 @@ public class WindmouseService {
         }
 
         // Publish completion event
-        eventService.publish(new MouseMovementCompletedEvent(movementId, finalPosition, duration, cancelled));
+        MouseMovementCompletedEvent completionEvent = new MouseMovementCompletedEvent(movementId, finalPosition, duration,
+                cancelled);
+        eventService.publish(completionEvent);
+        CompletableFuture<MouseMovementCompletedEvent> completionFuture = movementResults.remove(movementId);
+        if (completionFuture != null) {
+            completionFuture.complete(completionEvent);
+        }
 
         log.debug("Windmouse movement {} completed in {}ms, cancelled={}", movementId, duration, cancelled);
     }

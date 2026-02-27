@@ -64,3 +64,10 @@ tasks.register('shadowJar', Jar) {
 	archiveClassifier.set('shadow')
 	archiveFileName.set("${rootProject.name}-${project.version}-all.jar")
 }
+
+tasks.register('runBrain', JavaExec) {
+	group = 'application'
+	description = 'Runs external brain WebSocket CLI POC'
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass.set('com.runepal.brain.RunepalBrainMain')
+}

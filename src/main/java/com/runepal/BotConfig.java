@@ -831,11 +831,63 @@ public interface BotConfig extends Config
 		return true;
 	}
 
+	// Harness section
+	@ConfigSection(
+			name = "External Brain Harness",
+			description = "Local WebSocket harness for external brain runtime",
+			position = 46
+	)
+	String harnessSection = "externalBrainHarness";
+
+	@ConfigItem(
+			keyName = "harnessEnable",
+			name = "Enable Harness",
+			description = "Start local-only harness WebSocket server",
+			position = 0,
+			section = harnessSection
+	)
+	default boolean harnessEnable() {
+		return false;
+	}
+
+	@ConfigItem(
+			keyName = "harnessPort",
+			name = "Harness Port",
+			description = "Loopback port for harness WebSocket server",
+			position = 1,
+			section = harnessSection
+	)
+	default int harnessPort() {
+		return 8766;
+	}
+
+	@ConfigItem(
+			keyName = "harnessStreamEveryTicks",
+			name = "Stream Every N Ticks",
+			description = "Broadcast one harness snapshot every N ticks",
+			position = 2,
+			section = harnessSection
+	)
+	default int harnessStreamEveryTicks() {
+		return 2;
+	}
+
+	@ConfigItem(
+			keyName = "harnessIncludeScreenshots",
+			name = "Include Screenshots",
+			description = "Attach screenshot payload to streamed harness snapshots",
+			position = 3,
+			section = harnessSection
+	)
+	default boolean harnessIncludeScreenshots() {
+		return false;
+	}
+
 	// LLM section
 	@ConfigSection(
 			name = "LLM Provider",
 			description = "OpenAI-compatible model provider settings for agent planning",
-			position = 46
+			position = 47
 	)
 	String llmSection = "llmProvider";
 

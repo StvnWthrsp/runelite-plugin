@@ -4,6 +4,7 @@ import com.runepal.agent.AgentService;
 import com.runepal.agent.trace.AgentTraceService;
 import com.runepal.agent.script.ScriptSpec;
 import com.runepal.agent.script.ScriptTask;
+import com.runepal.harness.HarnessService;
 import com.runepal.services.*;
 import com.google.inject.Provides;
 import java.time.Duration;
@@ -69,7 +70,11 @@ public class RunepalPlugin extends Plugin {
 	@Getter
 	private RemoteInputService remoteInputService = null;
 	@Getter
+	private WindmouseService windmouseService = null;
+	@Getter
 	private AgentService agentService = null;
+	@Getter
+	private HarnessService harnessService = null;
 
 	// Debugging and tracking variables
 	@Getter
@@ -152,10 +157,10 @@ public class RunepalPlugin extends Plugin {
 		EntityService entityService = new EntityService(client, gameStateService);
 		ClickService clickService = new ClickService();
 		UtilityService utilityService = new UtilityService(client);
-		WindmouseService windMouseService = new WindmouseService(this, eventService, config, remoteInputService);
+		windmouseService = new WindmouseService(this, eventService, config, remoteInputService);
 
 		gameService = new GameService(gameStateService, entityService, clickService, utilityService);
-		actionService = new ActionService(this, gameService, eventService, config, windMouseService,
+		actionService = new ActionService(this, gameService, eventService, config, windmouseService,
 				remoteInputService);
 
 		// Initialize combat-specific services
@@ -164,6 +169,7 @@ public class RunepalPlugin extends Plugin {
 
 		pathfinderConfig = new PathfinderConfig(client, config);
 		agentService = new AgentService(this, config, configManager);
+		harnessService = new HarnessService(this, config);
 
 		log.info("Runepal initialized with RemoteInput.");
 	}
@@ -196,6 +202,10 @@ public class RunepalPlugin extends Plugin {
 		if (agentService != null) {
 			agentService.shutdown();
 			agentService = null;
+		}
+		if (harnessService != null) {
+			harnessService.shutdown();
+			harnessService = null;
 		}
 
 		// Disconnect RemoteInput
@@ -261,6 +271,10 @@ public class RunepalPlugin extends Plugin {
 			agentService.onGameTick();
 		}
 
+		if (harnessService != null) {
+			harnessService.onGameTick();
+		}
+
 		if (panel != null) {
 			panel.setStatus(currentState);
 			panel.setButtonText(config.startBot() ? "Stop" : "Start");
@@ -308,6 +322,34 @@ public class RunepalPlugin extends Plugin {
 	public void onClientTick(ClientTick clientTick) {
 		if (eventService != null) {
 			eventService.publish(clientTick);
+		}
+	}
+
+	@Subscribe
+	public void onNpcSpawned(NpcSpawned event) {
+		if (harnessService != null && event != null) {
+			harnessService.onNpcSpawned(event.getNpc());
+		}
+	}
+
+	@Subscribe
+	public void onNpcDespawned(NpcDespawned event) {
+		if (harnessService != null && event != null) {
+			harnessService.onNpcDespawned(event.getNpc());
+		}
+	}
+
+	@Subscribe
+	public void onGameObjectSpawned(GameObjectSpawned event) {
+		if (harnessService != null && event != null) {
+			harnessService.onObjectSpawned(event.getGameObject());
+		}
+	}
+
+	@Subscribe
+	public void onGameObjectDespawned(GameObjectDespawned event) {
+		if (harnessService != null && event != null) {
+			harnessService.onObjectDespawned(event.getGameObject());
 		}
 	}
 
