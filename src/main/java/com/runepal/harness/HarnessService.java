@@ -49,7 +49,7 @@ public class HarnessService {
     }
 
     public void onGameTick() {
-        synchronizeServerLifecycle();
+        refreshLifecycle();
         if (!config.harnessEnable()) {
             return;
         }
@@ -66,6 +66,10 @@ public class HarnessService {
         JsonObject snapshotPayload = snapshotBuilder.buildSnapshot(tickCounter);
         latestSnapshotMessage = envelopeToJson("snapshot", snapshotPayload);
         safeBroadcast(latestSnapshotMessage);
+    }
+
+    public void refreshLifecycle() {
+        synchronizeServerLifecycle();
     }
 
     public synchronized void shutdown() {

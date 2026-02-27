@@ -19,6 +19,7 @@ import net.runelite.api.GameState;
 import net.runelite.api.events.*;
 import net.runelite.api.Skill;
 import net.runelite.client.config.ConfigManager;
+import net.runelite.client.events.ConfigChanged;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
@@ -170,6 +171,7 @@ public class RunepalPlugin extends Plugin {
 		pathfinderConfig = new PathfinderConfig(client, config);
 		agentService = new AgentService(this, config, configManager);
 		harnessService = new HarnessService(this, config);
+		harnessService.refreshLifecycle();
 
 		log.info("Runepal initialized with RemoteInput.");
 	}
@@ -252,6 +254,23 @@ public class RunepalPlugin extends Plugin {
 	public void onInteractingChanged(InteractingChanged interactingChanged) {
 		if (eventService != null) {
 			eventService.publish(interactingChanged);
+		}
+	}
+
+	@Subscribe
+	public void onConfigChanged(ConfigChanged event) {
+		if (harnessService == null || event == null) {
+			return;
+		}
+		if (!"runepal".equals(event.getGroup())) {
+			return;
+		}
+		String key = event.getKey();
+		if ("harnessEnable".equals(key)
+				|| "harnessPort".equals(key)
+				|| "harnessStreamEveryTicks".equals(key)
+				|| "harnessIncludeScreenshots".equals(key)) {
+			harnessService.refreshLifecycle();
 		}
 	}
 
